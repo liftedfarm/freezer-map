@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Backend, CONFIG_MISSING, makeBackend } from './api'
 import { FREEZER_STATUSES } from './types'
+import { MergeForm, SplitForm, TagForm, WeightForm, lbs } from './forms'
 import type { Freezer, FreezerStatus, InvEvent, Pallet, Site, Slot, Snapshot } from './types'
 
 const backend: Backend = makeBackend()
@@ -15,7 +16,6 @@ function hue(strain: string | null) {
   for (const c of strain.toLowerCase()) h = (h * 31 + c.charCodeAt(0)) % 360
   return h
 }
-const lbs = (n: number | null | undefined) => n == null ? '' : `${Math.round(n).toLocaleString()} lbs`
 const when = (iso: string) => new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
 const who = (email: string | null) => (email ?? '').split('@')[0]
 
@@ -51,13 +51,25 @@ function whereIs(ix: Index, slotId: number | null) {
   return `${f.site} F${f.number} · ${s.code}`
 }
 
-function describe(ix: Index, e: InvEvent) {
-  const code = e.pallet_id != null ? (ix.pallet.get(e.pallet_id)?.code ?? `#${e.pallet_id}`) : ''
+function describe(ix: Index, e: InvEvent, names?: Map<number, string>) {
+  const code = e.pallet_id != null ? (ix.pallet.get(e.pallet_id)?.code ?? names?.get(e.pallet_id) ?? `#${e.pallet_id}`) : ''
   switch (e.type) {
     case 'move': return `${code} moved ${whereIs(ix, e.from_slot_id)} to ${whereIs(ix, e.to_slot_id)}`
     case 'unslot': return `${code} taken out of ${whereIs(ix, e.from_slot_id)} to staging`
     case 'import': return `${code} imported at ${whereIs(ix, e.to_slot_id)}`
     case 'review_cleared': return `${code} review flag cleared`
+    case 'split': { const d = e.details as { child?: string; remaining?: number } | null
+      return `${code} split: ${lbs(e.lbs)} off to ${d?.child}, ${lbs(d?.remaining)} left` }
+    case 'split_from': { const d = e.details as { parent?: string; tag?: string | null } | null
+      return `${code} created from ${d?.parent} (${lbs(e.lbs)})${d?.tag ? '' : ', tag pending'}` }
+    case 'merge': { const d = e.details as { sources?: string[] } | null
+      return `${code} made by merging ${(d?.sources ?? []).join(', ')} (${lbs(e.lbs)})` }
+    case 'merged_into': { const d = e.details as { into?: string } | null
+      return `${code} merged into ${d?.into} (${lbs(e.lbs)})` }
+    case 'tag_set': { const d = e.details as { from?: string | null; to?: string } | null
+      return `${code} METRC tag ${d?.from ? `changed from ${d.from} ` : ''}set to ${d?.to}` }
+    case 'weight_adjust': { const d = e.details as { from?: number | null; to?: number } | null
+      return `${code} weight adjusted ${d?.from != null ? `from ${lbs(d.from)} ` : ''}to ${lbs(d?.to)}` }
     case 'freezer_status': {
       const f = e.freezer_id != null ? ix.freezer.get(e.freezer_id) : undefined
       const d = e.details as { from?: string; to?: string } | null
@@ -83,6 +95,8 @@ export default function App() {
   const [extra, setExtra] = useState<Pallet[]>([])
   const [busy, setBusy] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [form, setForm] = useState<{ kind: 'split' | 'merge' | 'tag' | 'weight'; p: Pallet } | null>(null)
+  const [pool, setPool] = useState<Pallet[]>([])
 
   const reload = useCallback(async () => { setSnap(await backend.load()) }, [])
   const flash = (text: string, bad = false) => { setToast({ text, bad }); setTimeout(() => setToast(null), bad ? 5000 : 2500) }
@@ -118,9 +132,9 @@ export default function App() {
       const dest = `${f.site} Freezer ${f.number}, slot ${slot.code}`
       if (here.length) {
         setConfirm({
-          text: `${slot.code} already has ${here.map(h => h.code).join(', ')}. Combine ${p.code} into the same slot?`,
-          ok: 'Combine',
-          run: async () => { await act(() => backend.movePallet(p.id, slot.id, true), `${p.code} combined into ${slot.code}`); setMoving(null) },
+          text: `${slot.code} already has ${here.map(h => h.code).join(', ')}. Put ${p.code} in the same slot? Each pallet keeps its own number. (To combine same-strain pallets into one, use Merge on the pallet card.)`,
+          ok: 'Share slot',
+          run: async () => { await act(() => backend.movePallet(p.id, slot.id, true), `${p.code} now shares ${slot.code}`); setMoving(null) },
         })
       } else {
         setConfirm({
@@ -154,7 +168,19 @@ export default function App() {
   const siteFreezers = snap.freezers.filter(f => f.site === site).sort((a, b) => a.number - b.number)
   const staging = snap.pallets.filter(p => p.status === 'unslotted')
   const review = snap.pallets.filter(p => p.needs_review)
-  const selected = palletId != null ? (ix.pallet.get(palletId) ?? extra.find(p => p.id === palletId) ?? null) : null
+  const pendingTags = snap.pallets.filter(p => p.tag_pending)
+  const selected = palletId != null ? (ix.pallet.get(palletId) ?? pool.find(p => p.id === palletId) ?? extra.find(p => p.id === palletId) ?? null) : null
+  const where = (p: Pallet) => whereIs(ix, p.slot_id)
+  const mergeCandidates = (p: Pallet) => snap.pallets
+    .filter(x => x.id !== p.id && x.strain && p.strain && x.strain.toLowerCase() === p.strain.toLowerCase())
+    .sort((a, b) => Number(b.slot_id === p.slot_id) - Number(a.slot_id === p.slot_id)
+      || Number(ix.slot.get(b.slot_id ?? -1)?.freezer_id === ix.slot.get(p.slot_id ?? -1)?.freezer_id) - Number(ix.slot.get(a.slot_id ?? -1)?.freezer_id === ix.slot.get(p.slot_id ?? -1)?.freezer_id)
+      || where(a).localeCompare(where(b), undefined, { numeric: true }))
+  async function submit<T>(fn: () => Promise<T>, ok: (r: T) => string, after?: (r: T) => void) {
+    setBusy(true)
+    try { const r = await fn(); await reload(); setForm(null); flash(ok(r)); after?.(r) }
+    catch (e) { flash((e as Error).message, true) } finally { setBusy(false) }
+  }
   const openFreezer = (id: number) => { setFreezerId(id); setView('freezer'); window.scrollTo(0, 0) }
 
   return (
@@ -212,18 +238,22 @@ export default function App() {
           <ListView title="Staging" empty="Nothing in staging. Pallets taken out of a freezer land here until they're placed again."
             items={staging} ix={ix} onPallet={setPalletId} />
         )}
-        {view === 'review' && (
-          <ListView title="Needs review" empty="All clear."
-            note="Flagged during import from the spreadsheet: duplicates, items not in the pallet list, or missing data. Fix the info in the spreadsheet for now and clear the flag here."
+        {view === 'review' && (<>
+          <ListView title={`METRC tags pending (${pendingTags.length})`} empty="No pending tags."
+            note="Splits and merges waiting on a new METRC tag. Open one and tap Enter tag."
+            items={pendingTags} ix={ix} onPallet={setPalletId} />
+          <div style={{ height: 18 }} />
+          <ListView title={`Import issues (${review.length})`} empty="All clear."
+            note="Flagged during import from the spreadsheet: duplicates, items not in the pallet list, or missing data. Fix the info and clear the flag."
             items={review} ix={ix} onPallet={setPalletId} showReason />
-        )}
+        </>)}
         {view === 'activity' && <ActivityView ix={ix} />}
       </main>
 
       <nav className="bottom">
         <button className={view === 'map' || view === 'freezer' ? 'on' : ''} onClick={() => setView(view !== 'map' && view !== 'freezer' && freezerId != null ? 'freezer' : 'map')}>Map</button>
         <button className={view === 'staging' ? 'on' : ''} onClick={() => setView('staging')}>Staging{staging.length > 0 && <span className="badge">{staging.length}</span>}</button>
-        <button className={view === 'review' ? 'on' : ''} onClick={() => setView('review')}>Review{review.length > 0 && <span className="badge warn">{review.length}</span>}</button>
+        <button className={view === 'review' ? 'on' : ''} onClick={() => setView('review')}>Review{review.length + pendingTags.length > 0 && <span className="badge warn">{review.length + pendingTags.length}</span>}</button>
         <button className={view === 'activity' ? 'on' : ''} onClick={() => setView('activity')}>Activity</button>
       </nav>
 
@@ -238,7 +268,32 @@ export default function App() {
             setPalletId(null)
           }}
           onMove={() => { setMoving(selected); setPalletId(null); if (selected.slot_id != null) { const f = ix.freezer.get(ix.slot.get(selected.slot_id)!.freezer_id)!; setSite(f.site) } }}
-          onClear={() => act(() => backend.clearReview(selected.id), 'Flag cleared')} />
+          onClear={() => act(() => backend.clearReview(selected.id), 'Flag cleared')}
+          onForm={(kind) => setForm({ kind, p: selected })}
+          onLineage={(ps) => setPool(ps)} />
+      )}
+
+      {form?.kind === 'split' && (
+        <SplitForm p={form.p} where={form.p.slot_id != null ? where(form.p) : null} busy={busy} onClose={() => setForm(null)}
+          onSubmit={(n, tag, pending, dest, note) => submit(
+            () => backend.splitPallet(form.p.id, n, tag, pending, dest === 'same' ? 'same' : 'staging', note),
+            c => `${c.code} created (${lbs(n)})`,
+            c => { setPalletId(null); if (dest === 'other') setMoving(c) })} />
+      )}
+      {form?.kind === 'merge' && (
+        <MergeForm p={form.p} candidates={mergeCandidates(form.p)} whereOf={where} busy={busy} onClose={() => setForm(null)}
+          onSubmit={(ids, tag, pending, dest, note) => submit(
+            () => backend.mergePallets(ids, tag, pending, dest === 'same' ? form.p.slot_id : null, note),
+            m => `${m.code} created from ${ids.length} pallets`,
+            m => { if (dest === 'other') { setPalletId(null); setMoving(m) } else setPalletId(m.id) })} />
+      )}
+      {form?.kind === 'tag' && (
+        <TagForm p={form.p} busy={busy} onClose={() => setForm(null)}
+          onSubmit={tag => submit(() => backend.setTag(form.p.id, tag), () => 'Tag saved')} />
+      )}
+      {form?.kind === 'weight' && (
+        <WeightForm p={form.p} busy={busy} onClose={() => setForm(null)}
+          onSubmit={(w, note) => submit(() => backend.adjustWeight(form.p.id, w, note), () => 'Weight updated')} />
       )}
 
       {confirm && (
@@ -385,7 +440,7 @@ function FreezerView({ ix, freezer, query, moving, siblings, onOpen, onBack, onS
               {here.length === 0 && <span className="muted">{moving ? (dead ? 'Not working' : 'Place here') : 'empty'}</span>}
               {here.map(p => (
                 <span key={p.id} className="p" onClick={e => { if (!moving) { e.stopPropagation(); onPallet(p.id) } }}>
-                  <b>{p.code}{p.needs_review && <span className="flag" title={p.needs_review}>!</span>}</b>
+                  <b>{p.code}{p.needs_review && <span className="flag" title={p.needs_review}>!</span>}{p.tag_pending && <span className="flag tag" title="METRC tag pending">T</span>}</b>
                   <span className="strain">{p.strain ?? p.label ?? 'No strain'}</span>
                   <span className="w">{lbs(p.current_weight)}</span>
                 </span>
@@ -420,14 +475,21 @@ function ListView({ title, note, empty, items, ix, onPallet, showReason }: {
 
 function ActivityView({ ix }: { ix: Index }) {
   const [events, setEvents] = useState<InvEvent[] | null>(null)
-  useEffect(() => { backend.recentEvents(300).then(setEvents) }, [ix])
+  const [names, setNames] = useState<Map<number, string>>(new Map())
+  useEffect(() => {
+    backend.recentEvents(300).then(async evs => {
+      setEvents(evs)
+      const missing = [...new Set(evs.map(e => e.pallet_id).filter((id): id is number => id != null && !ix.pallet.has(id)))]
+      if (missing.length) setNames(new Map((await backend.byIds(missing)).map(p => [p.id, p.code])))
+    })
+  }, [ix])
   return (
     <div className="list">
       <h2>Activity</h2>
       {events?.length === 0 && <p className="muted">No moves yet. Everything people do in the app shows up here.</p>}
       {events?.map(e => (
         <div key={e.id} className="li static">
-          <div>{describe(ix, e)}</div>
+          <div>{describe(ix, e, names)}</div>
           <div className="muted">{when(e.at)} · {who(e.user_email)}{e.note && <> · "{e.note}"</>}</div>
         </div>
       ))}
@@ -435,13 +497,26 @@ function ActivityView({ ix }: { ix: Index }) {
   )
 }
 
-function PalletSheet({ ix, p, others, busy, onClose, onGo, onMove, onClear, onPick }: {
+function PalletSheet({ ix, p, others, busy, onClose, onGo, onMove, onClear, onPick, onForm, onLineage }: {
   ix: Index; p: Pallet; others: Pallet[]; busy: boolean
   onClose: () => void; onGo: () => void; onMove: () => void; onClear: () => void; onPick: (id: number) => void
+  onForm: (kind: 'split' | 'merge' | 'tag' | 'weight') => void; onLineage: (ps: Pallet[]) => void
 }) {
   const [hist, setHist] = useState<InvEvent[] | null>(null)
-  useEffect(() => { setHist(null); backend.palletEvents(p.id).then(setHist) }, [p.id, p.slot_id, p.needs_review])
+  const [kin, setKin] = useState<Pallet[]>([])
+  useEffect(() => { setHist(null); backend.palletEvents(p.id).then(setHist) }, [p.id, p.slot_id, p.needs_review, p.current_weight, p.package_tag, p.status])
+  useEffect(() => {
+    if (p.parent_id == null && p.merged_into == null && !/^C\d+$/.test(p.code) && !hist?.some(e => e.type === 'split')) { setKin([]); return }
+    backend.lineage(p).then(ps => { setKin(ps); onLineage(ps) }).catch(() => setKin([]))
+  }, [p.id, p.parent_id, p.merged_into, hist])
   const live = p.status === 'in_freezer' || p.status === 'unslotted'
+  const parent = kin.find(k => k.id === p.parent_id)
+  const children = kin.filter(k => k.parent_id === p.id)
+  const into = kin.find(k => k.id === p.merged_into)
+  const sources = kin.filter(k => k.merged_into === p.id)
+  const link = (k: Pallet) => <a key={k.id} onClick={() => onPick(k.id)}>{k.code}</a>
+  const join = (ks: Pallet[]) => ks.map((k, i) => <span key={k.id}>{i > 0 && ', '}{link(k)}</span>)
+  const statusText: Record<string, string> = { merged: 'Merged (closed out)', shipped: 'Shipped', depleted: 'Depleted', archived: 'Not in a freezer (old record)' }
   return (
     <div className="scrim" onClick={onClose}>
       <div className="sheet" onClick={e => e.stopPropagation()}>
@@ -453,32 +528,45 @@ function PalletSheet({ ix, p, others, busy, onClose, onGo, onMove, onClear, onPi
           <button className="ghost" onClick={onClose}>✕</button>
         </div>
         {p.needs_review && <div className="warnbox">{p.needs_review}</div>}
+        {p.tag_pending && live && <div className="warnbox">METRC tag pending. <a onClick={() => onForm('tag')}>Enter tag</a></div>}
         <dl>
-          <dt>Location</dt><dd>{live ? <a onClick={onGo}>{whereIs(ix, p.slot_id)}</a> : p.status}</dd>
-          <dt>Weight</dt><dd>{lbs(p.current_weight) || 'unknown'}{p.og_weight && p.og_weight !== p.current_weight ? <span className="muted"> (orig {lbs(p.og_weight)})</span> : null}</dd>
-          <dt>METRC tag</dt><dd className="mono">{p.package_tag ?? 'none'}</dd>
+          <dt>Location</dt><dd>{live ? <a onClick={onGo}>{whereIs(ix, p.slot_id)}</a> : statusText[p.status] ?? p.status}</dd>
+          <dt>Weight</dt><dd>{lbs(p.current_weight) || 'unknown'}{p.og_weight && p.og_weight !== p.current_weight ? <span className="muted"> (started at {lbs(p.og_weight)})</span> : null}</dd>
+          <dt>METRC tag</dt><dd className="mono">{p.package_tag ?? (p.tag_pending ? 'pending' : 'none')}</dd>
           <dt>Harvested</dt><dd>{p.harvest_date ?? ''}</dd>
           <dt>Zone</dt><dd>{p.zone ?? ''}</dd>
+          {parent && <><dt>Split from</dt><dd>{link(parent)}</dd></>}
+          {children.length > 0 && <><dt>Split off</dt><dd>{join(children)}</dd></>}
+          {sources.length > 0 && <><dt>Made from</dt><dd>{join(sources)}</dd></>}
+          {into && <><dt>Merged into</dt><dd>{link(into)}</dd></>}
           {p.notes && <><dt>Notes</dt><dd>{p.notes}</dd></>}
         </dl>
         {others.length > 0 && (
-          <div className="muted">Shares the slot with {others.map(o => <a key={o.id} onClick={() => onPick(o.id)}>{o.code} </a>)}</div>
+          <div className="muted">Shares the slot with {join(others)}</div>
         )}
-        {live && (
-          <div className="row">
+        {live && (<>
+          <div className="row actions">
             <button className="primary big" disabled={busy} onClick={onMove}>Move</button>
-            {p.needs_review && <button className="ghost" disabled={busy} onClick={onClear}>Clear flag</button>}
+            <button className="ghost big" disabled={busy || !p.current_weight} onClick={() => onForm('split')}>Split</button>
+            <button className="ghost big" disabled={busy || !p.strain} onClick={() => onForm('merge')}>Merge</button>
           </div>
-        )}
+          <div className="row">
+            <button className="ghost small" disabled={busy} onClick={() => onForm('weight')}>Adjust weight</button>
+            <button className="ghost small" disabled={busy} onClick={() => onForm('tag')}>{p.package_tag ? 'Edit tag' : 'Enter tag'}</button>
+            {p.needs_review && <button className="ghost small" disabled={busy} onClick={onClear}>Clear flag</button>}
+          </div>
+        </>)}
         <h3>History</h3>
         {!hist && <p className="muted">Loading…</p>}
         {hist?.length === 0 && <p className="muted">No history.</p>}
-        {hist?.map(e => (
-          <div key={e.id} className="hist">
-            <div>{describe(ix, e)}</div>
-            <div className="muted">{when(e.at)} · {who(e.user_email)}{e.note && <> · "{e.note}"</>}</div>
-          </div>
-        ))}
+        <div className="timeline">
+          {hist?.map(e => (
+            <div key={e.id} className={`hist t-${e.type}`}>
+              <div>{describe(ix, e, new Map([[p.id, p.code]]))}</div>
+              <div className="muted">{when(e.at)} · {who(e.user_email)}{e.note && <> · "{e.note}"</>}</div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   )

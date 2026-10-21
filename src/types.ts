@@ -19,7 +19,7 @@ export interface Slot {
   front_rank: number
 }
 
-export type PalletStatus = 'in_freezer' | 'unslotted' | 'shipped' | 'depleted' | 'archived'
+export type PalletStatus = 'in_freezer' | 'unslotted' | 'shipped' | 'depleted' | 'archived' | 'merged'
 
 export interface Pallet {
   id: number
@@ -36,6 +36,9 @@ export interface Pallet {
   slot_id: number | null
   needs_review: string | null
   notes: string | null
+  parent_id?: number | null
+  merged_into?: number | null
+  tag_pending?: boolean
 }
 
 export interface InvEvent {
