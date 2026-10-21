@@ -170,7 +170,7 @@ type FormState =
   | { kind: 'pickmixed'; p: Pallet }
 interface Placing { title: string; sub: string; run: (slot: Slot) => Promise<void> }
 
-// opened from a request email: go straight to Reserves > Requests
+// opened from a request email: go straight to Sales > Requests or Orders
 const GO = new URLSearchParams(location.search).get('go')
 const GO_TAB: 'requests' | 'orders' | null = GO === 'requests' || GO === 'orders' ? GO : null
 
@@ -194,6 +194,11 @@ export default function App() {
   const [form, setForm] = useState<FormState | null>(null)
   const [pool, setPool] = useState<Pallet[]>([])
   const [loadId, setLoadId] = useState<number | null>(null)
+  const [counts, setCounts] = useState({ orders: 0, requests: 0 })
+  const isSales = !!me && canSales(me.role)
+  const refreshCounts = useCallback(() => { if (isSales) backend.salesCounts().then(setCounts).catch(() => {}) }, [isSales])
+  useEffect(() => { refreshCounts(); if (!isSales) return; const t = setInterval(refreshCounts, 60000); return () => clearInterval(t) }, [isSales, refreshCounts])
+  const salesBadge = counts.orders + (me?.role === 'admin' ? counts.requests : 0)
   const [loadForm, setLoadForm] = useState<{ load?: Load } | null>(null)
   const [pickLoad, setPickLoad] = useState<Pallet | null>(null)
   const [side, setSide] = useState<boolean>(() => { try { return localStorage.getItem('fm.side') !== '0' && window.innerWidth >= 1000 } catch { return false } })
@@ -439,7 +444,7 @@ export default function App() {
             items={review} ix={ix} where={where} onPallet={setPalletId} showReason />
         </>)}
         {view === 'activity' && <ActivityView ix={ix} />}
-        {view === 'reserves' && canSales(me?.role) && <ReservesView backend={backend} flash={flash} role={me!.role} initialMode={GO_TAB ?? undefined} customers={snap.customers ?? []} strains={snap.strains ?? []}
+        {view === 'reserves' && canSales(me?.role) && <ReservesView backend={backend} flash={flash} role={me!.role} onCounts={refreshCounts} initialMode={GO_TAB ?? undefined} customers={snap.customers ?? []} strains={snap.strains ?? []}
           onHand={snap.pallets.reduce((m, p) => (p.kind !== 'mixed' && p.strain && (p.status === 'in_freezer' || p.status === 'unslotted'))
             ? m.set(p.strain.toLowerCase(), (m.get(p.strain.toLowerCase()) ?? 0) + Number(p.current_weight ?? 0)) : m, new Map<string, number>())} />}
         {view === 'transit' && <TransitView ctx={ctx} onOpen={id => { setLoadId(id); setView('load'); window.scrollTo(0, 0) }} onNew={() => setLoadForm({})} />}
@@ -452,7 +457,7 @@ export default function App() {
         <button className={view === 'map' || view === 'freezer' ? 'on' : ''} onClick={() => setView(view !== 'map' && view !== 'freezer' && freezerId != null ? 'freezer' : 'map')}>Map</button>
         <button className={view === 'transit' || view === 'load' ? 'on' : ''} onClick={() => setView('transit')}>Transit{openLoads.length > 0 && <span className="badge">{openLoads.length}</span>}</button>
         <button className={view === 'review' ? 'on' : ''} onClick={() => setView('review')}>Review{reviewCount > 0 && <span className="badge warn">{reviewCount}</span>}</button>
-        {canSales(me?.role) && <button className={view === 'reserves' ? 'on' : ''} onClick={() => setView('reserves')}>Reserves</button>}
+        {canSales(me?.role) && <button className={view === 'reserves' ? 'on' : ''} onClick={() => setView('reserves')}>Sales{salesBadge > 0 && <span className="badge warn">{salesBadge}</span>}</button>}
         <button className={view === 'activity' ? 'on' : ''} onClick={() => setView('activity')}>Activity</button>
       </nav>
 

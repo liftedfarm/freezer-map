@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Backend } from './api'
 import { readSheet } from 'read-excel-file/browser'
 import { parseCsv } from './settings'
@@ -39,10 +39,11 @@ async function readRoshi(f: File): Promise<RoshiRow[]> {
   }).filter(r => /FL2[56]/.test(r.sku_name) && /fresh frozen/i.test(r.sku_name) && r.so_number)
 }
 
-export function ReservesView({ backend, customers, strains, onHand, flash, role, initialMode }: {
+export function ReservesView({ backend, customers, strains, onHand, flash, role, initialMode, onCounts }: {
   backend: Backend; customers: Customer[]; strains: Strain[]; onHand: Map<string, number>
-  flash: (t: string, bad?: boolean) => void; role: Role; initialMode?: 'requests' | 'orders'
+  flash: (t: string, bad?: boolean) => void; role: Role; initialMode?: 'requests' | 'orders'; onCounts?: () => void
 }) {
+  const picked = useRef(false)
   const isAdmin = role === 'admin'
   const [reqs, setReqs] = useState<ReserveRequest[]>([])
   const [nums, setNums] = useState<MenuNumbers[]>([])
@@ -51,7 +52,7 @@ export function ReservesView({ backend, customers, strains, onHand, flash, role,
   const [bal, setBal] = useState<Balance[] | null>(null)
   const [orders, setOrders] = useState<Order[]>([])
   const [err, setErr] = useState<string | null>(null)
-  const [mode, setMode] = useState<'customer' | 'strain' | 'orders' | 'requests' | 'menu'>(initialMode ?? 'customer')
+  const [mode, setMode] = useState<'customer' | 'strain' | 'orders' | 'requests' | 'menu'>(initialMode ?? 'menu')
   const [open, setOpen] = useState<number | null>(null)
   const [edit, setEdit] = useState<{ customer_id: number | null; strain: string; lbs: string; isNew: boolean } | null>(null)
   const [q, setQ] = useState('')
@@ -59,7 +60,11 @@ export function ReservesView({ backend, customers, strains, onHand, flash, role,
   const [result, setResult] = useState<ImportResult | null>(null)
   const load = () => Promise.all([backend.listBalances(), backend.listOrders().catch(() => [] as Order[]),
       backend.listRequests().catch(() => [] as ReserveRequest[]), backend.menuNumbers().catch(() => [] as MenuNumbers[])])
-    .then(([b, o, r, m]) => { setBal(b); setOrders(o); setReqs(r); setNums(m); setErr(null) }).catch(e => setErr(String(e?.message ?? e)))
+    .then(([b, o, r, m]) => {
+      setBal(b); setOrders(o); setReqs(r); setNums(m); setErr(null); onCounts?.()
+      // first open: go where the work is
+      if (!initialMode && !picked.current) { picked.current = true; if (o.some(x => x.status === 'submitted')) setMode('orders'); else if (isAdmin && r.some(x => x.status === 'pending')) setMode('requests') }
+    }).catch(e => setErr(String(e?.message ?? e)))
   useEffect(() => { load() }, [])
 
   const cust = useMemo(() => new Map(customers.map(c => [c.id, c])), [customers])
@@ -124,13 +129,13 @@ export function ReservesView({ backend, customers, strains, onHand, flash, role,
 
   return (
     <div className="list reserves">
-      <h2>Reserves <span className="muted">{n0(sum(bal, 'remaining'))} lbs left of {n0(sum(bal, 'reserved'))}</span></h2>
+      <h2>Sales <span className="muted">Reserves: {n0(sum(bal, 'remaining'))} lbs left of {n0(sum(bal, 'reserved'))}</span></h2>
       <div className="seg tabs">
-        <button className={mode === 'customer' ? 'on' : ''} onClick={() => setMode('customer')}>By customer</button>
-        <button className={mode === 'strain' ? 'on' : ''} onClick={() => setMode('strain')}>By strain</button>
         <button className={mode === 'menu' ? 'on' : ''} onClick={() => setMode('menu')}>Open menu</button>
         <button className={mode === 'orders' ? 'on' : ''} onClick={() => setMode('orders')}>Orders {submitted > 0 ? <span className="badge warn">{submitted} new</span> : <span className="muted">{orders.length}</span>}</button>
         <button className={mode === 'requests' ? 'on' : ''} onClick={() => setMode('requests')}>Requests {reqs.some(r => r.status === 'pending') ? <span className="badge warn">{reqs.filter(r => r.status === 'pending').length}</span> : <span className="muted">0</span>}</button>
+        <button className={mode === 'customer' ? 'on' : ''} onClick={() => setMode('customer')}>Reserves by customer</button>
+        <button className={mode === 'strain' ? 'on' : ''} onClick={() => setMode('strain')}>Reserves by strain</button>
       </div>
       <div className="row toolbar">
         <input className="search" type="search" placeholder="Search customer, strain or SO #" value={q} onChange={e => setQ(e.target.value)} />

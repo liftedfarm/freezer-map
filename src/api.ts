@@ -26,6 +26,7 @@ export interface Backend {
   cancelRequest(id: number): Promise<void>
   decideRequest(id: number, approve: boolean, note: string): Promise<void>
   listOrders(): Promise<Order[]>
+  salesCounts(): Promise<{ orders: number; requests: number }>
   placeOrder(lines: OrderInput[], note: string, po: string, wanted: string | null): Promise<number>
   cancelMyOrder(id: number): Promise<void>
   setOrderStatus(id: number, status: string, so: string, note: string): Promise<void>
@@ -194,6 +195,13 @@ class SupaBackend implements Backend {
   }
   async listBalances() {
     return pageAll<Balance>((a, b) => this.sb.from('reserve_balances').select('*').order('strain').range(a, b))
+  }
+  async salesCounts() {
+    const [o, r] = await Promise.all([
+      this.sb.from('orders').select('id', { count: 'exact', head: true }).eq('status', 'submitted'),
+      this.sb.from('reserve_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+    ])
+    return { orders: o.count ?? 0, requests: r.count ?? 0 }
   }
   async openMenu() {
     const { data, error } = await this.sb.rpc('open_menu'); fail(error); return (data ?? []) as MenuRow[]
@@ -468,6 +476,7 @@ class DemoBackend implements Backend {
   async changePassword() {}
   async listBalances() { return this.reserves.map(r => ({ id: r.id, customer_id: r.customer_id, strain: r.strain, reserved: r.lbs, shipped: 0, pending: 0, remaining: r.lbs })) }
   async listOrders() { return [] }
+  async salesCounts() { return { orders: 0, requests: 0 } }
   async placeOrder(): Promise<number> { throw new Error('Not in demo') }
   async cancelMyOrder() {}
   async setOrderStatus() {}
