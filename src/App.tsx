@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Backend, CONFIG_MISSING, makeBackend } from './api'
 import { FREEZER_STATUSES } from './types'
-import { MergeForm, MixedBuilder, NewPalletChooser, PickMixed, SingleForm, SplitForm, TagForm, WeightForm, lbs } from './forms'
+import { MergeForm, MergeHere, MixedBuilder, NewPalletChooser, PickMixed, SingleForm, SplitForm, TagForm, WeightForm, lbs } from './forms'
 import { SettingsView } from './settings'
 import { LoadForm, LoadView, PickLoad, TransitView, stopColor } from './loads'
 import type { LoadCtx } from './loads'
@@ -119,6 +119,8 @@ function describe(ix: Index, e: InvEvent, names?: Map<number, string>) {
       const d = e.details as { from?: string; to?: string } | null
       return `${f ? `${f.site} Freezer ${f.number}` : 'Freezer'}: ${d?.from} to ${d?.to}`
     }
+    case 'sheet_sync': { const d = e.details as { strain?: string; weight?: number } | null
+      return `${code} filled in from the spreadsheet: ${d?.strain ?? ''} ${lbs(d?.weight)}` }
     case 'load_created': return `Load ${(e.details as { load?: string } | null)?.load} created`
     case 'load_updated': return `Load ${(e.details as { load?: string } | null)?.load} edited`
     case 'load_planned': { const d = e.details as { load?: string; position?: number } | null
@@ -147,7 +149,7 @@ function describe(ix: Index, e: InvEvent, names?: Map<number, string>) {
 
 type FormState =
   | { kind: 'split' | 'merge' | 'tag' | 'weight'; p: Pallet }
-  | { kind: 'newchoice' | 'newmixed' | 'newsingle'; slot: Slot }
+  | { kind: 'newchoice' | 'newmixed' | 'newsingle' | 'newmerged'; slot: Slot }
   | { kind: 'addmixed'; m: Pallet; initial?: Pallet[] }
   | { kind: 'pickmixed'; p: Pallet }
 interface Placing { title: string; sub: string; run: (slot: Slot) => Promise<void> }
@@ -214,7 +216,7 @@ export default function App() {
     if (placing) {
       const pl = placing
       const go = async () => { setPlacing(null); await pl.run(slot) }
-      if (here.length) setConfirm({ text: `${slot.code} already has ${here.map(h => h.code).join(', ')}. Share the slot? Each pallet keeps its own number.`, ok: 'Share slot', run: go })
+      if (here.length) setConfirm({ text: `${slot.code} already has ${here.map(h => h.code).join(', ')}. Stack on top? Each pallet keeps its own number.`, ok: 'Stack', run: go })
       else go()
       return
     }
@@ -223,9 +225,9 @@ export default function App() {
       if (p.slot_id === slot.id) { flash('That is where it already is', true); return }
       if (here.length) {
         setConfirm({
-          text: `${slot.code} already has ${here.map(h => h.code).join(', ')}. Put ${p.code} in the same slot? Each pallet keeps its own number. (Same strain into one package: use Merge. Different strains on one pallet: use a Mixed pallet.)`,
-          ok: 'Share slot',
-          run: async () => { await act(() => backend.movePallet(p.id, slot.id, true), `${p.code} now shares ${slot.code}`); setMoving(null) },
+          text: `${slot.code} already has ${here.map(h => h.code).join(', ')}. Stack ${p.code} on top? Each pallet keeps its own number. (To combine same-strain partials into one pallet with a new tag, use Merge.)`,
+          ok: 'Stack',
+          run: async () => { await act(() => backend.movePallet(p.id, slot.id, true), `${p.code} stacked in ${slot.code}`); setMoving(null) },
         })
       } else {
         setConfirm({
@@ -399,7 +401,7 @@ export default function App() {
               run: slot => act(() => backend.takeOffMixed(selected.id, slot.id), `${selected.code} moved to ${slot.code}`) }, selected)
           }}
           onBreak={() => setConfirm({
-            text: `Break ${selected.code} apart? Each package stays in ${whereIs(ix, selected.slot_id)} as its own pallet, sharing the slot.`, ok: 'Break apart',
+            text: `Break ${selected.code} apart? Each package stays in ${whereIs(ix, selected.slot_id)} as its own pallet, stacked in that slot.`, ok: 'Break apart',
             run: async () => { await act(() => backend.breakMixed(selected.id), `${selected.code} broken apart`); setPalletId(null) },
           })}
           onLineage={(ps) => setPool(ps)}
@@ -440,11 +442,15 @@ export default function App() {
       )}
       {form?.kind === 'newchoice' && (
         <NewPalletChooser where={slotLabel(form.slot)} onClose={() => setForm(null)}
-          onPick={k => setForm({ kind: k === 'mixed' ? 'newmixed' : 'newsingle', slot: form.slot })} />
+          onPick={k => setForm({ kind: k === 'mixed' ? 'newmixed' : k === 'merged' ? 'newmerged' : 'newsingle', slot: form.slot })} />
       )}
       {form?.kind === 'newmixed' && (
         <MixedBuilder title="New mixed pallet" target={slotLabel(form.slot)} candidates={looseList} whereOf={where} busy={busy} onClose={() => setForm(null)}
           onSubmit={(lines, note) => submit(() => backend.createMixed(form.slot.id, lines, note), m => `${m.code} created with ${lines.length} package${lines.length === 1 ? '' : 's'}`, m => setPalletId(m.id))} />
+      )}
+      {form?.kind === 'newmerged' && (
+        <MergeHere where={slotLabel(form.slot)} candidates={looseList.filter(p => p.kind !== 'mixed' && p.strain && p.current_weight)} whereOf={where} busy={busy} onClose={() => setForm(null)}
+          onSubmit={(ids, tag, pending, note) => submit(() => backend.mergePallets(ids, tag, pending, form.slot.id, note), m => `${m.code} created from ${ids.length} pallets`, m => setPalletId(m.id))} />
       )}
       {form?.kind === 'newsingle' && (
         <SingleForm where={slotLabel(form.slot)} strains={strainNames} busy={busy} onClose={() => setForm(null)}
@@ -743,7 +749,7 @@ function PalletSheet({ ix, p, others, busy, where, onClose, onGo, onMove, onClea
             ))}
           </div>
         )}
-        {others.length > 0 && <div className="muted">Shares the slot with {join(others)}</div>}
+        {others.length > 0 && <div className="muted">Stacked with {join(others)}</div>}
 
         {live && isMixed && (<>
           <div className="row actions">

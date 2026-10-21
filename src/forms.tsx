@@ -152,12 +152,16 @@ export function WeightForm({ p, busy, onClose, onSubmit }: { p: Pallet; busy: bo
 
 // ---------- new pallet from an empty slot ----------
 
-export function NewPalletChooser({ where, onClose, onPick }: { where: string; onClose: () => void; onPick: (k: 'mixed' | 'single') => void }) {
+export function NewPalletChooser({ where, onClose, onPick }: { where: string; onClose: () => void; onPick: (k: 'mixed' | 'merged' | 'single') => void }) {
   return (
     <Dialog title={`New pallet in ${where}`} onClose={onClose}>
       <button className="bigchoice" onClick={() => onPick('mixed')}>
         <b>Mixed pallet (M)</b>
         <span className="muted">Stack packages from other pallets onto one pallet. Whole packages keep their METRC tag; partial amounts get split off with a new tag.</span>
+      </button>
+      <button className="bigchoice" onClick={() => onPick('merged')}>
+        <b>Merged pallet (C)</b>
+        <span className="muted">Combine partial pallets of the same strain into one new C pallet with a new METRC tag. The originals are closed out and linked in history.</span>
       </button>
       <button className="bigchoice" onClick={() => onPick('single')}>
         <b>Single pallet</b>
@@ -289,6 +293,53 @@ export function PickMixed({ mixed, whereOf, onClose, onPick }: { mixed: { p: Pal
             <b>{m.p.code}</b><span>{m.n} packages · {lbs(m.w)}</span><span className="muted">{whereOf(m.p)}</span>
           </button>
         ))}
+      </div>
+    </Dialog>
+  )
+}
+
+/** Merge started from an empty slot: pick a strain, check its partials, new tag, lands in this slot */
+export function MergeHere({ where, candidates, whereOf, busy, onClose, onSubmit }: {
+  where: string; candidates: Pallet[]; whereOf: (p: Pallet) => string; busy: boolean
+  onClose: () => void; onSubmit: (ids: number[], tag: string | null, pending: boolean, note: string) => void
+}) {
+  const [strain, setStrain] = useState('')
+  const [picked, setPicked] = useState<Set<number>>(new Set())
+  const [tag, setTag] = useState('')
+  const [pending, setPending] = useState(false)
+  const [note, setNote] = useState('')
+  const strains = [...new Set(candidates.map(c => c.strain!))].sort()
+  const list = candidates.filter(c => c.strain!.toLowerCase() === strain.trim().toLowerCase())
+    .sort((a, b) => (a.current_weight ?? 0) - (b.current_weight ?? 0))
+  const toggle = (id: number) => setPicked(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
+  const total = list.filter(c => picked.has(c.id)).reduce((a, c) => a + (c.current_weight ?? 0), 0)
+  const ok = picked.size >= 2 && (pending || tag.trim().length > 0)
+  return (
+    <Dialog title={`Merged pallet in ${where}`} onClose={onClose}>
+      <div className="field"><label>Strain</label>
+        <input list="merge-strains" value={strain} onChange={e => { setStrain(e.target.value); setPicked(new Set()) }} placeholder="Start typing" autoFocus />
+        <datalist id="merge-strains">{strains.map(s => <option key={s} value={s} />)}</datalist>
+      </div>
+      {strain.trim() && (
+        <div className="field">
+          <label>Pallets to combine ({list.length} available, smallest first)</label>
+          <div className="picklist">
+            {list.length === 0 && <div className="muted" style={{ padding: 10 }}>No {strain} pallets available.</div>}
+            {list.map(c => (
+              <label key={c.id} className={`pick ${picked.has(c.id) ? 'on' : ''}`}>
+                <input type="checkbox" checked={picked.has(c.id)} onChange={() => toggle(c.id)} />
+                <b>{c.code}</b><span>{lbs(c.current_weight)}</span><span className="muted">{whereOf(c)}</span>
+              </label>
+            ))}
+          </div>
+          {picked.size > 0 && <div className="muted">{picked.size} pallets · {lbs(total)}{picked.size < 2 ? ' · pick at least two' : ''}</div>}
+        </div>
+      )}
+      <TagField tag={tag} setTag={setTag} pending={pending} setPending={setPending} />
+      <div className="field"><label>Note (optional)</label><input value={note} onChange={e => setNote(e.target.value)} /></div>
+      <div className="row end">
+        <button className="ghost" onClick={onClose}>Cancel</button>
+        <button className="primary" disabled={!ok || busy} onClick={() => onSubmit([...picked], pending ? null : tag, pending, note)}>Merge {picked.size || ''} pallets</button>
       </div>
     </Dialog>
   )

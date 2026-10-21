@@ -173,7 +173,7 @@ export function LoadView({ ctx, loadId, onBack, onEdit }: { ctx: LoadCtx; loadId
       if (pos === it.position) { setPlaceItem(null); return }
       const others = here.filter(i => i.id !== it.id)
       const go = async () => { setPlaceItem(null); await ctx.run(() => ctx.api.moveItem(it.id, pos, null, others.length > 0), `Moved to position ${pos}`) }
-      if (others.length) ctx.confirm(`Position ${pos} has ${others.map(o => ctx.pallet(o.pallet_id)?.code).join(', ')}. Share it?`, 'Share', go)
+      if (others.length) ctx.confirm(`Position ${pos} has ${others.map(o => ctx.pallet(o.pallet_id)?.code).join(', ')}. Stack them?`, 'Stack', go)
       else go()
       return
     }
