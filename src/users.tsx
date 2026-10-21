@@ -23,7 +23,14 @@ export function UsersTab({ backend, me, customers, flash }: {
   const [err, setErr] = useState<string | null>(null)
   const [edit, setEdit] = useState<Partial<AppUser> | null>(null)
   const [q, setQ] = useState('')
-  const load = () => backend.listUsers().then(u => { setUsers(u); setErr(null) }).catch(e => setErr(String(e?.message ?? e)))
+  const [logins, setLogins] = useState<Map<string, { claimed: boolean; invited_at: string | null }>>(new Map())
+  const load = () => Promise.all([backend.listUsers(), backend.userLogins()])
+    .then(([u, l]) => { setUsers(u); setLogins(l); setErr(null) }).catch(e => setErr(String(e?.message ?? e)))
+  const loginStatus = (u: AppUser) => {
+    if (u.role !== 'customer') return ''
+    const l = logins.get(u.email)
+    return l?.claimed ? 'login set up' : l?.invited_at ? 'invited, not set up yet' : 'not invited yet'
+  }
   useEffect(() => { load() }, [])
 
   if (err) return <div className="warnbox">Users aren't set up in the database yet. Run the 007_roles.sql update in Supabase, then refresh. ({err})</div>
@@ -37,7 +44,7 @@ export function UsersTab({ backend, me, customers, flash }: {
         <input className="search" type="search" placeholder="Search users" value={q} onChange={e => setQ(e.target.value)} />
         <button className="primary" onClick={() => setEdit({ role: 'crew' })}>+ Add user</button>
       </div>
-      <p className="muted">Anyone with a Lifted Microsoft account can sign in and starts as Crew. Change their role here. Customer logins have to be added by an admin.</p>
+      <p className="muted">Anyone with a Lifted Microsoft account can sign in and starts as Crew. Change their role here. For a customer login, add them as Customer, then send them the invite link. They set their own password.</p>
       {ROLES.map(({ role, label: l }) => {
         const list = shown.filter(u => u.role === role)
         if (!list.length) return null
@@ -48,17 +55,22 @@ export function UsersTab({ backend, me, customers, flash }: {
               <button key={u.email} className="li setrow" onClick={() => setEdit({ ...u })}>
                 <div className="grow">
                   <div><b>{u.display_name || u.email}</b>{u.email === me.email && <span className="muted"> · you</span>}</div>
-                  <div className="muted">{[u.display_name ? u.email : '', u.customer_id ? cust.get(u.customer_id) : '', ago(u.last_seen)].filter(Boolean).join(' · ')}</div>
+                  <div className="muted">{[u.display_name ? u.email : '', u.customer_id ? cust.get(u.customer_id) : '', loginStatus(u), ago(u.last_seen)].filter(Boolean).join(' · ')}</div>
                 </div>
               </button>
             ))}
           </div>
         )
       })}
-      {edit && <UserForm user={edit} customers={customers} isMe={edit.email === me.email}
+      {edit && <UserForm user={edit} customers={customers} isMe={edit.email === me.email} backend={backend}
+        claimed={!!(edit.email && logins.get(edit.email)?.claimed)} flash={flash} onLinked={load}
         onClose={() => setEdit(null)}
         onSave={async (u) => {
-          try { await backend.setUser(u.email!, u.role!, u.customer_id ?? null, u.display_name ?? ''); await load(); setEdit(null); flash('Saved') }
+          try {
+            await backend.setUser(u.email!, u.role!, u.customer_id ?? null, u.display_name ?? ''); await load(); flash('Saved')
+            // new customer: keep the card open so the invite link can be made right away
+            if (u.role === 'customer' && !edit.created_at) setEdit({ ...u, created_at: new Date().toISOString(), added_by: me.email }); else setEdit(null)
+          }
           catch (e) { flash(String((e as Error).message ?? e), true) }
         }}
         onRemove={async (email) => {
@@ -69,8 +81,9 @@ export function UsersTab({ backend, me, customers, flash }: {
   )
 }
 
-function UserForm({ user, customers, isMe, onClose, onSave, onRemove }: {
-  user: Partial<AppUser>; customers: Customer[]; isMe: boolean
+function UserForm({ user, customers, isMe, onClose, onSave, onRemove, backend, claimed, flash, onLinked }: {
+  user: Partial<AppUser>; customers: Customer[]; isMe: boolean; backend: Backend; claimed: boolean
+  flash: (t: string, bad?: boolean) => void; onLinked: () => void
   onClose: () => void; onSave: (u: Partial<AppUser>) => Promise<void>; onRemove: (email: string) => Promise<void>
 }) {
   const [u, setU] = useState(user)
@@ -104,9 +117,10 @@ function UserForm({ user, customers, isMe, onClose, onSave, onRemove }: {
               <option value="">Pick a customer…</option>
               {external.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
-            <p className="muted">They'll only ever see this customer's reserves, menu and orders. Portal sign-in is coming in the next update.</p>
+            <p className="muted">They'll only ever see this customer's reserves, menu and orders. After saving, send them the invite link.</p>
           </div>
         )}
+        {!isNew && user.role === 'customer' && <LinkBox backend={backend} email={user.email!} claimed={claimed} flash={flash} onLinked={onLinked} />}
         {isMe && <p className="muted">You can't change your own role. Another admin can.</p>}
         <div className="row between">
           {!isNew && !isMe
@@ -119,6 +133,36 @@ function UserForm({ user, customers, isMe, onClose, onSave, onRemove }: {
         </div>
         {!isNew && <p className="muted">Added by {user.added_by ?? 'unknown'} · {ago(user.last_seen ?? null)}</p>}
       </div>
+    </div>
+  )
+}
+
+function LinkBox({ backend, email, claimed, flash, onLinked }: {
+  backend: Backend; email: string; claimed: boolean; flash: (t: string, bad?: boolean) => void; onLinked: () => void
+}) {
+  const [link, setLink] = useState<{ kind: 'invite' | 'reset'; url: string } | null>(null)
+  const [busy, setBusy] = useState(false)
+  async function make(kind: 'invite' | 'reset') {
+    setBusy(true)
+    try { const url = await backend.makeLoginLink(email, kind); setLink({ kind, url }); onLinked() }
+    catch (e) { flash(String((e as Error).message ?? e), true) } finally { setBusy(false) }
+  }
+  async function copy() {
+    if (!link) return
+    try { await navigator.clipboard.writeText(link.url); flash('Link copied') } catch { flash('Select the link and copy it', true) }
+  }
+  return (
+    <div className="field linkbox">
+      <label>Portal login <span className="muted">({claimed ? 'set up' : 'not set up yet'})</span></label>
+      <div className="row">
+        {!claimed && <button className="ghost small" disabled={busy} onClick={() => make('invite')}>Make invite link</button>}
+        {claimed && <button className="ghost small" disabled={busy} onClick={() => make('reset')}>Make password reset link</button>}
+      </div>
+      {link && <>
+        <input readOnly value={link.url} onFocus={e => e.target.select()} />
+        <div className="row"><button className="primary small" onClick={copy}>Copy link</button>
+          <span className="muted">Send it to them by email or text. Works once, for 14 days. Making a new link cancels the old one.</span></div>
+      </>}
     </div>
   )
 }

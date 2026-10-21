@@ -1,5 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
-import type { AppUser, Customer, Me, Role, Freezer, FreezerStatus, InvEvent, ListName, ListRow, Load, LoadItem, LoadStop, MixLine, Pallet, Settings, SingleInput, Slot, Snapshot, StopInput, Strain, Vehicle } from './types'
+import type { LinkInfo, AppUser, Customer, Me, Role, Freezer, FreezerStatus, InvEvent, ListName, ListRow, Load, LoadItem, LoadStop, MixLine, Pallet, Settings, SingleInput, Slot, Snapshot, StopInput, Strain, Vehicle } from './types'
 
 export interface Backend {
   demo: boolean
@@ -10,6 +10,13 @@ export interface Backend {
   listUsers(): Promise<AppUser[]>
   setUser(email: string, role: Role, customerId: number | null, name: string): Promise<void>
   removeUser(email: string): Promise<void>
+  userLogins(): Promise<Map<string, { claimed: boolean; invited_at: string | null }>>
+  makeLoginLink(email: string, kind: 'invite' | 'reset'): Promise<string>
+  checkLink(code: string): Promise<LinkInfo | null>
+  claimInvite(code: string, email: string, password: string): Promise<void>
+  resetPassword(code: string, password: string): Promise<string>
+  passwordSignIn(email: string, password: string): Promise<void>
+  changePassword(password: string): Promise<void>
   load(): Promise<Snapshot>
   movePallet(palletId: number, toSlot: number | null, combine: boolean, note?: string): Promise<void>
   setFreezerStatus(freezerId: number, status: FreezerStatus, note?: string): Promise<void>
@@ -47,6 +54,11 @@ export interface Backend {
 
 const URL_ = import.meta.env.VITE_SUPABASE_URL as string | undefined
 const KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
+
+// the customer portal's address (a second domain on the same Vercel project)
+export const PORTAL_ORIGIN = (import.meta.env.VITE_PORTAL_URL as string | undefined) ?? 'https://lifted-orders.vercel.app'
+export const portalUrl = (rest = '') => (import.meta.env.DEV ? location.origin + '/' : PORTAL_ORIGIN.replace(/\/$/, '') + '/') + rest
+export const IS_PORTAL = /order/i.test(location.hostname) || new URLSearchParams(location.search).has('portal')
 
 export const CONFIG_MISSING = !(URL_ && KEY) && !import.meta.env.DEV
 
@@ -112,6 +124,48 @@ class SupaBackend implements Backend {
   }
   async removeUser(email: string) {
     const { error } = await this.sb.rpc('remove_user', { p_email: email })
+    fail(error)
+  }
+  async userLogins() {
+    const { data, error } = await this.sb.from('user_logins').select('*')
+    if (error) return new Map()
+    return new Map((data ?? []).map((r: { email: string; claimed: boolean; invited_at: string | null }) => [r.email, r]))
+  }
+  async makeLoginLink(email: string, kind: 'invite' | 'reset') {
+    const { data, error } = await this.sb.rpc('make_login_link', { p_email: email, p_kind: kind })
+    fail(error)
+    return portalUrl(`?${kind}=${data as string}`)
+  }
+  async checkLink(code: string) {
+    const { data, error } = await this.sb.rpc('check_login_link', { p_code: code })
+    fail(error)
+    return (data as LinkInfo | null) ?? null
+  }
+  async claimInvite(code: string, email: string, password: string) {
+    const up = await this.sb.auth.signUp({ email, password })
+    if (up.error) {
+      // already has a login (e.g. tried before): sign in with the password they typed
+      if (!/already|registered|exists/i.test(up.error.message)) throw new Error(up.error.message)
+      const inn = await this.sb.auth.signInWithPassword({ email, password })
+      if (inn.error) throw new Error('This email already has a login and that password didn\'t match. Ask Lifted for a reset link.')
+    } else if (!up.data.session) {
+      const inn = await this.sb.auth.signInWithPassword({ email, password })
+      if (inn.error) throw new Error(inn.error.message)
+    }
+    const { error } = await this.sb.rpc('claim_invite', { p_code: code })
+    fail(error)
+  }
+  async resetPassword(code: string, password: string) {
+    const { data, error } = await this.sb.rpc('reset_password', { p_code: code, p_password: password })
+    fail(error)
+    return data as string
+  }
+  async passwordSignIn(email: string, password: string) {
+    const { error } = await this.sb.auth.signInWithPassword({ email: email.trim().toLowerCase(), password })
+    if (error) throw new Error(/invalid/i.test(error.message) ? 'Wrong email or password' : error.message)
+  }
+  async changePassword(password: string) {
+    const { error } = await this.sb.auth.updateUser({ password })
     fail(error)
   }
   // Crew only gets customer names (no contacts or licenses)
@@ -319,6 +373,13 @@ class DemoBackend implements Backend {
     else this.users.push({ email: e, role, customer_id: role === 'customer' ? customerId : null, display_name: name || null, added_by: this.user, created_at: new Date().toISOString(), last_seen: null })
   }
   async removeUser(email: string) { this.users = this.users.filter(u => u.email !== email) }
+  async userLogins() { return new Map() }
+  async makeLoginLink(_e: string, kind: 'invite' | 'reset') { return portalUrl(`?${kind}=demo`) }
+  async checkLink() { return null }
+  async claimInvite() { throw new Error('Not in demo') }
+  async resetPassword(): Promise<string> { throw new Error('Not in demo') }
+  async passwordSignIn() { throw new Error('Not in demo') }
+  async changePassword() {}
   async load() {
     if (!this.snap) {
       const r = await fetch('/demo-data.json')

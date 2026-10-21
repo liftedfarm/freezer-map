@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Backend, CONFIG_MISSING, makeBackend } from './api'
+import { Backend, CONFIG_MISSING, IS_PORTAL, makeBackend, portalUrl } from './api'
 import { FREEZER_STATUSES } from './types'
 import { MergeForm, MergeHere, MixedBuilder, NewPalletChooser, PickMixed, SingleForm, SplitForm, TagForm, WeightForm, lbs } from './forms'
 import { SettingsView } from './settings'
+import { Portal, PortalLink, PortalLogin } from './portal'
 import { Sidebar } from './sidebar'
 import { LoadForm, LoadView, PickLoad, TransitView, stopColor } from './loads'
 import type { LoadCtx } from './loads'
@@ -259,8 +260,14 @@ export default function App() {
     <div className="center"><h2>Setup needed</h2>
       <p className="muted">This build has no database connection. In Vercel, set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY, then redeploy.</p></div>
   )
+  const refreshUser = () => backend.getUser().then(setUser)
+  const linkParams = new URLSearchParams(location.search)
+  const link = linkParams.get('invite') ? { kind: 'invite' as const, code: linkParams.get('invite')! } : linkParams.get('reset') ? { kind: 'reset' as const, code: linkParams.get('reset')! } : null
+  if (link) return <PortalLink backend={backend} kind={link.kind} code={link.code} onDone={refreshUser} />
   if (user === undefined) return <div className="center muted">Loading…</div>
-  if (!user) return <Login />
+  if (!user) return IS_PORTAL ? <PortalLogin backend={backend} onDone={refreshUser} /> : <Login />
+  if (user && !me && !loadError) return <div className="center muted">Loading…</div>
+  if (me?.role === 'customer') return <Portal backend={backend} me={me} signOut={() => backend.signOut().then(() => setUser(null))} />
   if (me && !staff) return <NoAccess me={me} signOut={() => backend.signOut().then(() => setUser(null))} />
   if (loadError && !snap) return (
     <div className="center"><h2>Couldn't load freezers</h2>
@@ -524,7 +531,9 @@ function NoAccess({ me, signOut }: { me: Me; signOut: () => void }) {
       <img className="logo-login" src="/logo-big.png" alt="Lifted Farms" />
       {me.role === 'customer'
         ? <><h2>Hi{me.display_name ? ` ${me.display_name}` : ''}</h2><p className="muted">Your login is set up for {me.customer_name ?? 'your company'}. The order portal is coming soon.</p></>
-        : <><h2>No access yet</h2><p className="muted">{me.email} isn't set up for the Freezer Map. Ask an admin to add you in Settings &gt; Users.</p></>}
+        : IS_PORTAL
+          ? <><h2>Login not set up</h2><p className="muted">{me.email} isn't connected to a customer account yet. Use the invite link from your Lifted contact.</p></>
+          : <><h2>No access yet</h2><p className="muted">{me.email} isn't set up for the Freezer Map. Ask an admin to add you in Settings &gt; Users.</p></>}
       <button className="ghost" onClick={signOut}>Sign out</button>
     </div>
   )
@@ -537,6 +546,7 @@ function Login() {
       <h1>Freezer Map</h1>
       <p className="muted">Lifted Farms freezer inventory</p>
       <button className="primary big" onClick={() => backend.signIn()}>Sign in with Microsoft</button>
+      <p className="muted small-print">Customer? <a href={portalUrl('?portal')}>Sign in to the order portal</a></p>
     </div>
   )
 }

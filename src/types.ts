@@ -91,3 +91,4 @@ export type Role = 'admin' | 'sales' | 'crew' | 'customer' | 'none'
 export interface Me { email: string; role: Role; display_name: string | null; customer_id: number | null; customer_name: string | null }
 export interface AppUser { email: string; role: Role; customer_id: number | null; display_name: string | null; added_by: string | null; created_at: string; last_seen: string | null }
 export const canSales = (r?: Role) => r === 'admin' || r === 'sales'
+export interface LinkInfo { kind: 'invite' | 'reset'; email: string; display_name: string | null; customer_name: string | null }

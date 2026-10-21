@@ -350,3 +350,13 @@ select { padding: 10px; border: 1px solid var(--line); border-radius: 10px; back
 .tile .p.band.mx { background: repeating-linear-gradient(135deg, color-mix(in srgb, #7c3aed 22%, var(--panel)) 0 10px, color-mix(in srgb, #7c3aed 12%, var(--panel)) 10px 20px); }
 .tile .p.band + .p.band { border-top: 0; padding-top: 4px; }
 .grouph { margin: 16px 0 6px; font-size: 14px; text-transform: uppercase; letter-spacing: .04em; }
+.authform { display: flex; flex-direction: column; gap: 4px; width: 100%; max-width: 340px; text-align: left; margin: 8px auto; }
+.authform .primary.big { margin-top: 10px; }
+.portal-auth h1 { margin-bottom: 4px; }
+.small-print { margin-top: 18px; font-size: 13px; }
+.linkbox input[readonly] { font-size: 12px; margin: 6px 0; }
+.okbox { background: var(--ok-bg, #e6f4ea); padding: 8px 12px; border-radius: 10px; margin: 8px 0; }
+.portal-soon { margin-top: 16px; }
+.portal-soon h3 { margin: 14px 0 2px; }
+.card-ish { border: 1px solid var(--line, #ddd); border-radius: 12px; padding: 12px; margin: 8px 0; max-width: 380px; }
+.portal .top .grow { flex: 1; }
