@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
 import type { Backend } from './api'
 import type { LinkInfo, Me } from './types'
+import { MyReserves } from './reserves'
 
 const clean = () => history.replaceState(null, '', location.pathname)
 
 function Shell({ children }: { children: React.ReactNode }) {
+  useEffect(() => { document.title = 'Lifted Farms Orders' }, [])
   return (
     <div className="center login portal-auth">
       <img className="logo-login" src="/logo-big.png" alt="Lifted Farms" />
@@ -93,6 +95,7 @@ export function PortalLink({ backend, kind, code, onDone }: { backend: Backend; 
 }
 
 export function Portal({ backend, me, signOut }: { backend: Backend; me: Me; signOut: () => void }) {
+  useEffect(() => { document.title = 'Lifted Farms Orders' }, [])
   const [pwOpen, setPwOpen] = useState(false)
   const [pw, setPw] = useState('')
   const [pw2, setPw2] = useState('')
@@ -121,7 +124,7 @@ export function Portal({ backend, me, signOut }: { backend: Backend; me: Me; sig
           </form>
         )}
         <div className="portal-soon">
-          <h3>Your reserves</h3><p className="muted">Coming soon: what's reserved for you by strain, and what's left.</p>
+          <h3>Your reserves</h3><MyReserves backend={backend} />
           <h3>Menu</h3><p className="muted">Coming soon: live availability and your pricing.</p>
           <h3>Orders</h3><p className="muted">Coming soon: place orders and track them.</p>
         </div>

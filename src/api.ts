@@ -1,5 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
-import type { LinkInfo, AppUser, Customer, Me, Role, Freezer, FreezerStatus, InvEvent, ListName, ListRow, Load, LoadItem, LoadStop, MixLine, Pallet, Settings, SingleInput, Slot, Snapshot, StopInput, Strain, Vehicle } from './types'
+import type { Reserve, LinkInfo, AppUser, Customer, Me, Role, Freezer, FreezerStatus, InvEvent, ListName, ListRow, Load, LoadItem, LoadStop, MixLine, Pallet, Settings, SingleInput, Slot, Snapshot, StopInput, Strain, Vehicle } from './types'
 
 export interface Backend {
   demo: boolean
@@ -17,6 +17,8 @@ export interface Backend {
   resetPassword(code: string, password: string): Promise<string>
   passwordSignIn(email: string, password: string): Promise<void>
   changePassword(password: string): Promise<void>
+  listReserves(): Promise<Reserve[]>
+  setReserve(customerId: number, strain: string, lbs: number, note?: string): Promise<void>
   load(): Promise<Snapshot>
   movePallet(palletId: number, toSlot: number | null, combine: boolean, note?: string): Promise<void>
   setFreezerStatus(freezerId: number, status: FreezerStatus, note?: string): Promise<void>
@@ -166,6 +168,13 @@ class SupaBackend implements Backend {
   }
   async changePassword(password: string) {
     const { error } = await this.sb.auth.updateUser({ password })
+    fail(error)
+  }
+  async listReserves() {
+    return pageAll<Reserve>((a, b) => this.sb.from('reserves').select('*').order('strain').range(a, b))
+  }
+  async setReserve(customerId: number, strain: string, lbs: number, note?: string) {
+    const { error } = await this.sb.rpc('set_reserve', { p_customer: customerId, p_strain: strain, p_lbs: lbs, p_note: note || null })
     fail(error)
   }
   // Crew only gets customer names (no contacts or licenses)
@@ -380,6 +389,14 @@ class DemoBackend implements Backend {
   async resetPassword(): Promise<string> { throw new Error('Not in demo') }
   async passwordSignIn() { throw new Error('Not in demo') }
   async changePassword() {}
+  private reserves: Reserve[] = []
+  async listReserves() { return [...this.reserves] }
+  async setReserve(customerId: number, strain: string, lbs: number) {
+    const r = this.reserves.find(x => x.customer_id === customerId && x.strain.toLowerCase() === strain.toLowerCase())
+    if (lbs === 0) this.reserves = this.reserves.filter(x => x !== r)
+    else if (r) r.lbs = lbs
+    else this.reserves.push({ id: this.reserves.length + 1, customer_id: customerId, strain, product: 'fresh_frozen', lbs, notes: null, updated_by: this.user, updated_at: new Date().toISOString() })
+  }
   async load() {
     if (!this.snap) {
       const r = await fetch('/demo-data.json')

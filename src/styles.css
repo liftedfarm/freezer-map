@@ -360,3 +360,12 @@ select { padding: 10px; border: 1px solid var(--line); border-radius: 10px; back
 .portal-soon h3 { margin: 14px 0 2px; }
 .card-ish { border: 1px solid var(--line, #ddd); border-radius: 12px; padding: 12px; margin: 8px 0; max-width: 380px; }
 .portal .top .grow { flex: 1; }
+.restable { width: 100%; border-collapse: collapse; margin: 6px 0 12px; font-size: 14px; }
+.restable th, .restable td { padding: 7px 8px; border-bottom: 1px solid var(--line, #e3e3e3); text-align: left; vertical-align: top; }
+.restable th { font-size: 12px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted, #777); }
+.restable .num { text-align: right; white-space: nowrap; }
+.restable .small { font-size: 12px; }
+.rescard { margin-bottom: 6px; }
+.reserves h2 .muted { font-size: 15px; font-weight: 500; margin-left: 6px; }
+.bottom { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: 1fr; }
+@media (max-width: 480px) { .bottom button { font-size: 13px; padding: 14px 2px; } .badge { margin-left: 3px; padding: 1px 5px; } }

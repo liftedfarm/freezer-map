@@ -3,15 +3,17 @@ import { Backend, CONFIG_MISSING, IS_PORTAL, makeBackend, portalUrl } from './ap
 import { FREEZER_STATUSES } from './types'
 import { MergeForm, MergeHere, MixedBuilder, NewPalletChooser, PickMixed, SingleForm, SplitForm, TagForm, WeightForm, lbs } from './forms'
 import { SettingsView } from './settings'
+import { ReservesView } from './reserves'
 import { Portal, PortalLink, PortalLogin } from './portal'
 import { Sidebar } from './sidebar'
 import { LoadForm, LoadView, PickLoad, TransitView, stopColor } from './loads'
 import type { LoadCtx } from './loads'
+import { canSales } from './types'
 import type { Freezer, Me, FreezerStatus, InvEvent, Load, LoadItem, LoadStop, Pallet, Site, Slot, Snapshot } from './types'
 
 const backend: Backend = makeBackend()
 
-type View = 'map' | 'freezer' | 'transit' | 'load' | 'review' | 'activity' | 'settings'
+type View = 'map' | 'freezer' | 'transit' | 'load' | 'review' | 'activity' | 'settings' | 'reserves'
 
 // ---------- helpers ----------
 
@@ -145,6 +147,8 @@ function describe(ix: Index, e: InvEvent, names?: Map<number, string>) {
       return `${d?.list ? d.list[0].toUpperCase() + d.list.slice(1, -1) : 'Setting'} "${d?.name}" ${e.note === 'added' ? 'added' : d?.active === false ? 'retired' : 'updated'}` }
     case 'user_role': { const d = e.details as { email?: string; role?: string; was?: string } | null
       return d?.was ? `${d?.email} changed from ${d.was} to ${d.role}` : `${d?.email} added as ${d?.role}` }
+    case 'reserve_set': { const d = e.details as { customer?: string; strain?: string; lbs?: number; was?: number | null } | null
+      return d?.lbs === 0 ? `Reserve removed: ${d?.customer} · ${d?.strain}` : `Reserve ${d?.was != null ? `changed ${lbs(Number(d.was))} →` : 'set:'} ${d?.customer} · ${d?.strain} ${lbs(Number(d?.lbs ?? 0))}` }
     case 'user_removed': return `${e.note} removed from users`
     default: return `${e.type} ${code}`
   }
@@ -410,6 +414,9 @@ export default function App() {
             items={review} ix={ix} where={where} onPallet={setPalletId} showReason />
         </>)}
         {view === 'activity' && <ActivityView ix={ix} />}
+        {view === 'reserves' && canSales(me?.role) && <ReservesView backend={backend} flash={flash} customers={snap.customers ?? []} strains={snap.strains ?? []}
+          onHand={snap.pallets.reduce((m, p) => (p.kind !== 'mixed' && p.strain && (p.status === 'in_freezer' || p.status === 'unslotted'))
+            ? m.set(p.strain.toLowerCase(), (m.get(p.strain.toLowerCase()) ?? 0) + Number(p.current_weight ?? 0)) : m, new Map<string, number>())} />}
         {view === 'transit' && <TransitView ctx={ctx} onOpen={id => { setLoadId(id); setView('load'); window.scrollTo(0, 0) }} onNew={() => setLoadForm({})} />}
         {view === 'load' && loadId != null && <LoadView ctx={ctx} loadId={loadId} onBack={() => setView('transit')} onEdit={() => setLoadForm({ load: (snap.loads ?? []).find(l => l.id === loadId) })} />}
         {view === 'settings' && <SettingsView backend={backend} flash={flash} me={me!} onChanged={() => { reload() }}
@@ -420,6 +427,7 @@ export default function App() {
         <button className={view === 'map' || view === 'freezer' ? 'on' : ''} onClick={() => setView(view !== 'map' && view !== 'freezer' && freezerId != null ? 'freezer' : 'map')}>Map</button>
         <button className={view === 'transit' || view === 'load' ? 'on' : ''} onClick={() => setView('transit')}>Transit{openLoads.length > 0 && <span className="badge">{openLoads.length}</span>}</button>
         <button className={view === 'review' ? 'on' : ''} onClick={() => setView('review')}>Review{reviewCount > 0 && <span className="badge warn">{reviewCount}</span>}</button>
+        {canSales(me?.role) && <button className={view === 'reserves' ? 'on' : ''} onClick={() => setView('reserves')}>Reserves</button>}
         <button className={view === 'activity' ? 'on' : ''} onClick={() => setView('activity')}>Activity</button>
       </nav>
 
