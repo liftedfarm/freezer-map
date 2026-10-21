@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Backend, makeBackend } from './api'
+import { Backend, CONFIG_MISSING, makeBackend } from './api'
 import { FREEZER_STATUSES } from './types'
 import type { Freezer, FreezerStatus, InvEvent, Pallet, Site, Slot, Snapshot } from './types'
 
@@ -82,6 +82,7 @@ export default function App() {
   const [query, setQuery] = useState('')
   const [extra, setExtra] = useState<Pallet[]>([])
   const [busy, setBusy] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
 
   const reload = useCallback(async () => { setSnap(await backend.load()) }, [])
   const flash = (text: string, bad = false) => { setToast({ text, bad }); setTimeout(() => setToast(null), bad ? 5000 : 2500) }
@@ -89,7 +90,7 @@ export default function App() {
   useEffect(() => { backend.getUser().then(setUser) }, [])
   useEffect(() => {
     if (!user) return
-    reload().catch(e => flash(String(e.message ?? e), true))
+    reload().then(() => setLoadError(null)).catch(e => setLoadError(String(e?.message ?? e)))
     return backend.subscribe(() => { reload() })
   }, [user, reload])
 
@@ -134,8 +135,20 @@ export default function App() {
     else if (here.length > 1) setPalletId(here[0].id)
   }
 
+  if (CONFIG_MISSING) return (
+    <div className="center"><h2>Setup needed</h2>
+      <p className="muted">This build has no database connection. In Vercel, set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY, then redeploy.</p></div>
+  )
   if (user === undefined) return <div className="center muted">Loading…</div>
   if (!user) return <Login />
+  if (loadError && !snap) return (
+    <div className="center"><h2>Couldn't load freezers</h2>
+      <p className="muted">{loadError}</p>
+      <div className="row" style={{ justifyContent: 'center' }}>
+        <button className="primary" onClick={() => { setLoadError(null); reload().catch(e => setLoadError(String(e?.message ?? e))) }}>Try again</button>
+        <button className="ghost" onClick={() => backend.signOut().then(() => setUser(null))}>Sign out</button>
+      </div></div>
+  )
   if (!snap || !ix) return <div className="center muted">Loading freezers…</div>
 
   const siteFreezers = snap.freezers.filter(f => f.site === site).sort((a, b) => a.number - b.number)

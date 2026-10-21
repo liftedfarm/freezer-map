@@ -19,6 +19,8 @@ export interface Backend {
 const URL_ = import.meta.env.VITE_SUPABASE_URL as string | undefined
 const KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
 
+export const CONFIG_MISSING = !(URL_ && KEY) && !import.meta.env.DEV
+
 export function makeBackend(): Backend {
   const wantDemo = new URLSearchParams(location.search).has('demo')
   if (!wantDemo && URL_ && KEY) return new SupaBackend(createClient(URL_, KEY))

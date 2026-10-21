@@ -3,7 +3,7 @@
 Freezer inventory app for Lifted Farms (OHR and GVR). Tracks where every pallet is, who moved it and when.
 This is for inventory tracking only. BC and METRC stay the systems of record.
 
-- `web/`: the app (React + Vite), hosted on Vercel
+- `src/`, `index.html`, `package.json`: the app (React + Vite), hosted on Vercel. Every push to `main` deploys automatically.
 - `supabase/schema.sql`: database tables, security rules and actions
 - `supabase/seed.sql`: starting data generated from Freezer Map 26.xlsm
 - `tools/build_seed.py`: regenerates seed.sql from the workbook
@@ -34,7 +34,7 @@ This is for inventory tracking only. BC and METRC stay the systems of record.
 ### 3. Hosting (Vercel)
 1. Put this folder in a GitHub repo (or upload it with GitHub's "Add file > Upload files").
 2. Vercel > Add New > Project > import the repo.
-3. **Root Directory**: `web`. Framework: Vite (auto-detected).
+3. **Root Directory**: `./` (repo root). Framework: Vite (auto-detected).
 4. Environment Variables (from Supabase > Project Settings > API, or already added by the Vercel Supabase integration):
    - `VITE_SUPABASE_URL` = the project URL
    - `VITE_SUPABASE_ANON_KEY` = the anon / publishable key (safe for the browser; the database rules do the protecting)
@@ -45,7 +45,6 @@ Never put the service role key or the Azure client secret in Vercel or in the co
 ## Local preview with demo data
 
 ```
-cd web
 npm install
 npm run dev
 ```
