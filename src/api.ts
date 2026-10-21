@@ -1,5 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
-import type { Freezer, FreezerStatus, InvEvent, ListName, ListRow, Pallet, Settings, Slot, Snapshot, Strain } from './types'
+import type { Freezer, FreezerStatus, InvEvent, ListName, ListRow, MixLine, Pallet, Settings, SingleInput, Slot, Snapshot, Strain } from './types'
 
 export interface Backend {
   demo: boolean
@@ -10,7 +10,12 @@ export interface Backend {
   movePallet(palletId: number, toSlot: number | null, combine: boolean, note?: string): Promise<void>
   setFreezerStatus(freezerId: number, status: FreezerStatus, note?: string): Promise<void>
   clearReview(palletId: number, note?: string): Promise<void>
-  splitPallet(palletId: number, lbs: number, tag: string | null, tagPending: boolean, dest: 'same' | 'staging', note?: string): Promise<Pallet>
+  splitPallet(palletId: number, lbs: number, tag: string | null, tagPending: boolean, destSlot: number | null, note?: string): Promise<Pallet>
+  createMixed(slotId: number, lines: MixLine[], note?: string): Promise<Pallet>
+  addToMixed(mixedId: number, lines: MixLine[], note?: string): Promise<void>
+  takeOffMixed(palletId: number, slotId: number, note?: string): Promise<void>
+  breakMixed(mixedId: number, note?: string): Promise<void>
+  createSingle(slotId: number, input: SingleInput): Promise<Pallet>
   mergePallets(ids: number[], tag: string | null, tagPending: boolean, destSlot: number | null, note?: string): Promise<Pallet>
   setTag(palletId: number, tag: string, note?: string): Promise<void>
   adjustWeight(palletId: number, weight: number, note?: string): Promise<void>
@@ -96,9 +101,34 @@ class SupaBackend implements Backend {
     const { error } = await this.sb.rpc('clear_review', { p_pallet_id: palletId, p_note: note || null })
     fail(error)
   }
-  async splitPallet(palletId: number, lbs: number, tag: string | null, tagPending: boolean, dest: 'same' | 'staging', note?: string) {
+  async splitPallet(palletId: number, lbs: number, tag: string | null, tagPending: boolean, destSlot: number | null, note?: string) {
     const { data, error } = await this.sb.rpc('split_pallet', {
-      p_pallet_id: palletId, p_lbs: lbs, p_new_tag: tag, p_tag_pending: tagPending, p_dest: dest, p_note: note || null,
+      p_pallet_id: palletId, p_lbs: lbs, p_new_tag: tag, p_tag_pending: tagPending, p_dest_slot: destSlot, p_note: note || null,
+    })
+    fail(error)
+    return data as Pallet
+  }
+  async createMixed(slotId: number, lines: MixLine[], note?: string) {
+    const { data, error } = await this.sb.rpc('create_mixed_pallet', { p_slot: slotId, p_lines: lines, p_note: note || null })
+    fail(error)
+    return data as Pallet
+  }
+  async addToMixed(mixedId: number, lines: MixLine[], note?: string) {
+    const { error } = await this.sb.rpc('add_to_mixed', { p_mixed_id: mixedId, p_lines: lines, p_note: note || null })
+    fail(error)
+  }
+  async takeOffMixed(palletId: number, slotId: number, note?: string) {
+    const { error } = await this.sb.rpc('take_off_mixed', { p_pallet_id: palletId, p_slot: slotId, p_share: true, p_note: note || null })
+    fail(error)
+  }
+  async breakMixed(mixedId: number, note?: string) {
+    const { error } = await this.sb.rpc('break_mixed', { p_mixed_id: mixedId, p_note: note || null })
+    fail(error)
+  }
+  async createSingle(slotId: number, i: SingleInput) {
+    const { data, error } = await this.sb.rpc('create_single_pallet', {
+      p_slot: slotId, p_code: i.code, p_strain: i.strain, p_lbs: i.lbs, p_tag: i.tag, p_tag_pending: i.tag_pending,
+      p_harvest_date: i.harvest_date, p_note: i.note || null, p_share: false,
     })
     fail(error)
     return data as Pallet
@@ -205,17 +235,19 @@ class DemoBackend implements Backend {
     const s = this.snap!
     const p = s.pallets.find(x => x.id === palletId)
     if (!p) throw new Error('Pallet not found')
+    this.loose(p)
     if (p.slot_id === toSlot) throw new Error(`Pallet ${p.code} is already there`)
     if (toSlot != null) {
       const slot = s.slots.find(x => x.id === toSlot)!
       const f = s.freezers.find(x => x.id === slot.freezer_id)!
       if (f.status === 'Not Working') throw new Error(`Freezer ${f.number} is marked Not Working`)
-      if (!combine && s.pallets.some(x => x.slot_id === toSlot && x.id !== p.id))
+      if (!combine && s.pallets.some(x => x.slot_id === toSlot && x.id !== p.id && !x.container_id))
         throw new Error('That slot is occupied. Choose combine to share it.')
     }
     this.log({ type: toSlot == null ? 'unslot' : 'move', pallet_id: p.id, from_slot_id: p.slot_id, to_slot_id: toSlot, lbs: p.current_weight, note: note || null })
     p.slot_id = toSlot
     p.status = toSlot == null ? 'unslotted' : 'in_freezer'
+    if (p.kind === 'mixed') for (const c of s.pallets) if (c.container_id === p.id) c.slot_id = toSlot
   }
   async setFreezerStatus(freezerId: number, status: FreezerStatus, note?: string) {
     const f = this.snap!.freezers.find(x => x.id === freezerId)!
@@ -231,8 +263,9 @@ class DemoBackend implements Backend {
   private tagUsed(tag: string, except?: number) {
     return this.snap!.pallets.find(p => p.package_tag === tag && p.id !== except && (p.status === 'in_freezer' || p.status === 'unslotted'))?.code
   }
-  async splitPallet(palletId: number, lbs: number, tag: string | null, tagPending: boolean, dest: 'same' | 'staging', note?: string) {
+  async splitPallet(palletId: number, lbs: number, tag: string | null, tagPending: boolean, destSlot: number | null, note?: string) {
     const s = this.snap!, p = s.pallets.find(x => x.id === palletId)!
+    this.loose(p)
     tag = tag?.trim() || null
     if (p.current_weight == null) throw new Error(`Pallet ${p.code} has no weight. Adjust its weight first.`)
     if (!(lbs > 0)) throw new Error('Enter how many lbs to split off')
@@ -240,7 +273,7 @@ class DemoBackend implements Backend {
     if (!tag && !tagPending) throw new Error('Enter the new METRC tag, or mark it pending')
     if (tag && this.tagUsed(tag)) throw new Error(`Tag ${tag} is already on pallet ${this.tagUsed(tag)}`)
     const n = 1 + Math.max(0, ...s.pallets.map(x => x.code.startsWith(p.code + '-') && /^\d+$/.test(x.code.slice(p.code.length + 1)) ? +x.code.slice(p.code.length + 1) : 0))
-    const slot = dest === 'same' ? p.slot_id : null
+    const slot = destSlot ?? p.slot_id
     const child: Pallet = { ...p, id: this.nextId(), code: `${p.code}-${n}`, label: null, og_weight: lbs, current_weight: lbs,
       package_tag: tag, parent_id: p.id, merged_into: null, slot_id: slot, status: slot == null ? 'unslotted' : 'in_freezer',
       tag_pending: !tag, needs_review: null, notes: null }
@@ -269,6 +302,83 @@ class DemoBackend implements Backend {
       x.status = 'merged'; x.slot_id = null; x.merged_into = m.id
     }
     return structuredClone(m)
+  }
+  private loose(p: Pallet) {
+    if (p.container_id) throw new Error(`${p.code} is on mixed pallet ${this.snap!.pallets.find(x => x.id === p.container_id)?.code}. Take it off first.`)
+  }
+  private slotOk(slotId: number, share: boolean, ignore: number[] = []) {
+    const s = this.snap!
+    const slot = s.slots.find(x => x.id === slotId)
+    if (!slot) throw new Error('Slot not found')
+    const f = s.freezers.find(x => x.id === slot.freezer_id)!
+    if (f.status === 'Not Working') throw new Error(`Freezer ${f.number} is marked Not Working`)
+    if (!share && s.pallets.some(x => x.slot_id === slotId && !x.container_id && !ignore.includes(x.id))) throw new Error('That slot is occupied. Choose share slot or pick an empty one.')
+  }
+  private mixLine(m: Pallet, l: MixLine, note?: string) {
+    const s = this.snap!, p = s.pallets.find(x => x.id === l.pallet_id)!
+    this.loose(p)
+    if (l.lbs == null || l.lbs >= (p.current_weight ?? 0)) {
+      this.log({ type: 'mixed_on', pallet_id: p.id, from_slot_id: p.slot_id, to_slot_id: m.slot_id, lbs: p.current_weight, note: note || null, details: { mixed: m.code, whole: true } })
+      p.container_id = m.id; p.slot_id = m.slot_id; p.status = 'in_freezer'
+      return p.code
+    }
+    const tag = l.tag?.trim() || null
+    if (!tag && !l.tag_pending) throw new Error(`Enter the new METRC tag for the ${l.lbs} lbs from ${p.code}, or mark it pending`)
+    if (tag && this.tagUsed(tag)) throw new Error(`Tag ${tag} is already on pallet ${this.tagUsed(tag)}`)
+    const n = 1 + Math.max(0, ...s.pallets.map(x => x.code.startsWith(p.code + '-') && /^\d+$/.test(x.code.slice(p.code.length + 1)) ? +x.code.slice(p.code.length + 1) : 0))
+    const child: Pallet = { ...p, id: this.nextId(), code: `${p.code}-${n}`, label: null, og_weight: l.lbs, current_weight: l.lbs, package_tag: tag,
+      parent_id: p.id, merged_into: null, slot_id: m.slot_id, status: 'in_freezer', tag_pending: !tag, needs_review: null, notes: null, container_id: m.id }
+    s.pallets.push(child)
+    p.current_weight = Math.round(((p.current_weight ?? 0) - l.lbs) * 100) / 100
+    this.log({ type: 'split', pallet_id: p.id, from_slot_id: p.slot_id, lbs: l.lbs, note: note || null, details: { child: child.code, remaining: p.current_weight, mixed: m.code } })
+    this.log({ type: 'split_from', pallet_id: child.id, to_slot_id: m.slot_id, lbs: l.lbs, note: note || null, details: { parent: p.code, tag, mixed: m.code } })
+    return child.code
+  }
+  async createMixed(slotId: number, lines: MixLine[], note?: string) {
+    const s = this.snap!
+    if (!lines.length) throw new Error('Add at least one package')
+    this.slotOk(slotId, false)
+    const n = 1 + Math.max(0, ...s.pallets.map(x => /^M\d+$/.test(x.code) ? +x.code.slice(1) : 0))
+    const m: Pallet = { id: this.nextId(), code: `M${n}`, kind: 'mixed', label: 'Mixed pallet', strain: null, zone: null, harvest_date: null, planting_date: null,
+      og_weight: null, current_weight: null, package_tag: null, status: 'in_freezer', slot_id: slotId, needs_review: null, notes: null }
+    s.pallets.push(m)
+    const codes = lines.map(l => this.mixLine(m, l, note))
+    this.log({ type: 'mixed_created', pallet_id: m.id, to_slot_id: slotId, note: note || null, details: { packages: codes } })
+    return structuredClone(m)
+  }
+  async addToMixed(mixedId: number, lines: MixLine[], note?: string) {
+    const m = this.snap!.pallets.find(x => x.id === mixedId)!
+    const codes = lines.map(l => this.mixLine(m, l, note))
+    this.log({ type: 'mixed_added', pallet_id: m.id, note: note || null, details: { packages: codes } })
+  }
+  async takeOffMixed(palletId: number, slotId: number, note?: string) {
+    const s = this.snap!, p = s.pallets.find(x => x.id === palletId)!, m = s.pallets.find(x => x.id === p.container_id)!
+    this.slotOk(slotId, true)
+    this.log({ type: 'mixed_off', pallet_id: p.id, from_slot_id: m.slot_id, to_slot_id: slotId, lbs: p.current_weight, note: note || null, details: { mixed: m.code } })
+    p.container_id = null; p.slot_id = slotId
+  }
+  async breakMixed(mixedId: number, note?: string) {
+    const s = this.snap!, m = s.pallets.find(x => x.id === mixedId)!
+    const on = s.pallets.filter(x => x.container_id === m.id)
+    for (const p of on) { this.log({ type: 'mixed_off', pallet_id: p.id, from_slot_id: m.slot_id, lbs: p.current_weight, note: note || null, details: { mixed: m.code, broken: true } }); p.container_id = null }
+    this.log({ type: 'mixed_broken', pallet_id: m.id, from_slot_id: m.slot_id, note: note || null, details: { packages: on.map(x => x.code) } })
+    m.status = 'depleted'; m.slot_id = null
+  }
+  async createSingle(slotId: number, i: SingleInput) {
+    const s = this.snap!
+    this.slotOk(slotId, false)
+    const tag = i.tag?.trim() || null
+    if (!i.strain.trim()) throw new Error('Pick a strain')
+    if (!(i.lbs > 0)) throw new Error('Enter the weight')
+    if (!tag && !i.tag_pending) throw new Error('Enter the METRC tag, or mark it pending')
+    let code = i.code.trim().toUpperCase()
+    if (!code) code = `S${1 + Math.max(0, ...s.pallets.map(x => /^S\d+$/.test(x.code) ? +x.code.slice(1) : 0))}`
+    if (s.pallets.some(x => x.code === code)) throw new Error(`Pallet ${code} already exists. Search for it instead.`)
+    const p: Pallet = { id: this.nextId(), code, kind: 'package', label: null, strain: i.strain.trim(), zone: null, harvest_date: i.harvest_date, planting_date: null,
+      og_weight: i.lbs, current_weight: i.lbs, package_tag: tag, tag_pending: !tag, status: 'in_freezer', slot_id: slotId, needs_review: null, notes: i.note || null }
+    s.pallets.push(p)
+    this.log({ type: 'created', pallet_id: p.id, to_slot_id: slotId, lbs: i.lbs, note: i.note || null, details: { tag } })
+    return structuredClone(p)
   }
   async setTag(palletId: number, tag: string, note?: string) {
     const p = this.snap!.pallets.find(x => x.id === palletId)!

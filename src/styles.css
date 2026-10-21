@@ -227,3 +227,23 @@ main { padding: 14px 16px; max-width: 1200px; margin: 0 auto; }
 .prev.s-error span:last-child { color: var(--bad); }
 .prev.s-new span:last-child { color: var(--brand); }
 input[type=color] { width: 44px; height: 40px; padding: 2px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+
+/* mixed pallets / new pallet */
+.mini i.full.mx { background: repeating-linear-gradient(135deg, #7c3aed 0 3px, #c4b5fd 3px 6px); }
+.tile.full.mx { background: repeating-linear-gradient(135deg, color-mix(in srgb, #7c3aed 22%, var(--panel)) 0 10px, color-mix(in srgb, #7c3aed 12%, var(--panel)) 10px 20px); color: var(--ink); border-color: #7c3aed; }
+.tile.empty:not(:disabled) .muted { font-size: 13px; }
+.bottom.three { grid-template-columns: repeat(3, 1fr); }
+.bigchoice { display: grid; gap: 4px; width: 100%; text-align: left; padding: 14px; margin: 8px 0; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+.bigchoice b { font-size: 16px; }
+.bigchoice:hover { border-color: var(--brand); }
+.pick.addrow { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; width: 100%; text-align: left; background: var(--panel); border: 0; border-bottom: 1px solid var(--line); }
+.mixline { border: 1px solid var(--line); border-radius: 12px; padding: 10px; margin: 8px 0; display: grid; gap: 8px; }
+.lbs-in { width: 110px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); font-size: 16px; }
+.grow-in { flex: 1; min-width: 160px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
+.small-note { font-size: 13px; }
+.infobox { background: color-mix(in srgb, #7c3aed 12%, var(--panel)); border: 1px solid #7c3aed; border-radius: 10px; padding: 8px 10px; font-size: 14px; margin-bottom: 6px; }
+.contents { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; margin: 6px 0 10px; }
+.content { display: grid; grid-template-columns: auto 1fr auto; gap: 2px 10px; width: 100%; text-align: left; padding: 8px 10px; background: var(--panel); border: 0; border-bottom: 1px solid var(--line); }
+.content:last-child { border-bottom: 0; }
+.content .mono { grid-column: 1 / -1; color: var(--muted); }
+.timeline .t-mixed_on, .timeline .t-mixed_off, .timeline .t-mixed_created, .timeline .t-mixed_added, .timeline .t-mixed_broken { border-left-color: #7c3aed; }

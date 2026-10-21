@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import type { Pallet } from './types'
+import type { MixLine, Pallet, SingleInput } from './types'
 
 // Small shared pieces for the action dialogs (split, merge, tag, weight).
 
@@ -16,12 +16,12 @@ function Dialog({ title, children, onClose }: { title: string; children: React.R
   )
 }
 
-function TagField({ tag, setTag, pending, setPending }: {
-  tag: string; setTag: (v: string) => void; pending: boolean; setPending: (v: boolean) => void
+function TagField({ tag, setTag, pending, setPending, label = 'New METRC tag' }: {
+  tag: string; setTag: (v: string) => void; pending: boolean; setPending: (v: boolean) => void; label?: string
 }) {
   return (
     <div className="field">
-      <label>New METRC tag</label>
+      <label>{label}</label>
       <input className="mono-in" value={tag} disabled={pending} placeholder="1A40603000…"
         onChange={e => setTag(e.target.value.toUpperCase().replace(/\s/g, ''))} />
       <label className="check"><input type="checkbox" checked={pending} onChange={e => setPending(e.target.checked)} /> Tag pending, I'll add it later</label>
@@ -29,7 +29,7 @@ function TagField({ tag, setTag, pending, setPending }: {
   )
 }
 
-type Dest = 'same' | 'other' | 'staging'
+export type Dest = 'same' | 'other'
 
 function DestField({ dest, setDest, sameLabel }: { dest: Dest; setDest: (d: Dest) => void; sameLabel: string | null }) {
   return (
@@ -38,8 +38,8 @@ function DestField({ dest, setDest, sameLabel }: { dest: Dest; setDest: (d: Dest
       <div className="choices">
         {sameLabel && <button className={dest === 'same' ? 'on' : ''} onClick={() => setDest('same')}>{sameLabel}</button>}
         <button className={dest === 'other' ? 'on' : ''} onClick={() => setDest('other')}>Pick a slot</button>
-        <button className={dest === 'staging' ? 'on' : ''} onClick={() => setDest('staging')}>Staging</button>
       </div>
+      {dest === 'other' && <div className="muted">After you tap the button below, tap the slot on the freezer map.</div>}
     </div>
   )
 }
@@ -51,7 +51,7 @@ export function SplitForm({ p, where, busy, onClose, onSubmit }: {
   const [amt, setAmt] = useState('')
   const [tag, setTag] = useState('')
   const [pending, setPending] = useState(false)
-  const [dest, setDest] = useState<Dest>(where ? 'same' : 'staging')
+  const [dest, setDest] = useState<Dest>(where ? 'same' : 'other')
   const [note, setNote] = useState('')
   const n = parseFloat(amt)
   const w = p.current_weight ?? 0
@@ -84,7 +84,7 @@ export function MergeForm({ p, candidates, whereOf, busy, onClose, onSubmit }: {
   const [picked, setPicked] = useState<Set<number>>(new Set())
   const [tag, setTag] = useState('')
   const [pending, setPending] = useState(false)
-  const [dest, setDest] = useState<Dest>(p.slot_id != null ? 'same' : 'staging')
+  const [dest, setDest] = useState<Dest>(p.slot_id != null ? 'same' : 'other')
   const [note, setNote] = useState('')
   const total = useMemo(() => (p.current_weight ?? 0) + candidates.filter(c => picked.has(c.id)).reduce((a, c) => a + (c.current_weight ?? 0), 0), [picked, candidates, p])
   const toggle = (id: number) => setPicked(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
@@ -145,6 +145,150 @@ export function WeightForm({ p, busy, onClose, onSubmit }: { p: Pallet; busy: bo
       <div className="row end">
         <button className="ghost" onClick={onClose}>Cancel</button>
         <button className="primary" disabled={!(n >= 0) || busy} onClick={() => onSubmit(n, note)}>Save</button>
+      </div>
+    </Dialog>
+  )
+}
+
+// ---------- new pallet from an empty slot ----------
+
+export function NewPalletChooser({ where, onClose, onPick }: { where: string; onClose: () => void; onPick: (k: 'mixed' | 'single') => void }) {
+  return (
+    <Dialog title={`New pallet in ${where}`} onClose={onClose}>
+      <button className="bigchoice" onClick={() => onPick('mixed')}>
+        <b>Mixed pallet (M)</b>
+        <span className="muted">Stack packages from other pallets onto one pallet. Whole packages keep their METRC tag; partial amounts get split off with a new tag.</span>
+      </button>
+      <button className="bigchoice" onClick={() => onPick('single')}>
+        <b>Single pallet</b>
+        <span className="muted">Enter one package by hand: product that's in the freezer but not in the app yet.</span>
+      </button>
+    </Dialog>
+  )
+}
+
+interface Line { p: Pallet; whole: boolean; lbs: string; tag: string; pending: boolean }
+
+export function MixedBuilder({ title, target, candidates, initial, whereOf, busy, onClose, onSubmit }: {
+  title: string; target: string; candidates: Pallet[]; initial?: Pallet[]; whereOf: (p: Pallet) => string; busy: boolean
+  onClose: () => void; onSubmit: (lines: MixLine[], note: string) => void
+}) {
+  const [q, setQ] = useState('')
+  const [lines, setLines] = useState<Line[]>((initial ?? []).map(p => ({ p, whole: true, lbs: '', tag: '', pending: false })))
+  const [note, setNote] = useState('')
+  const picked = new Set(lines.map(l => l.p.id))
+  const results = q.trim().length < 1 ? [] : candidates
+    .filter(c => !picked.has(c.id) && [c.code, c.strain, c.package_tag].some(v => v?.toLowerCase().includes(q.trim().toLowerCase())))
+    .slice(0, 12)
+  const upd = (i: number, ch: Partial<Line>) => setLines(ls => ls.map((l, j) => j === i ? { ...l, ...ch } : l))
+  const lineLbs = (l: Line) => l.whole ? (l.p.current_weight ?? 0) : (parseFloat(l.lbs) || 0)
+  const lineErr = (l: Line) => {
+    if (l.whole) return ''
+    const n = parseFloat(l.lbs), w = l.p.current_weight ?? 0
+    if (!(n > 0)) return 'Enter lbs'
+    if (n >= w) return `That's the whole pallet (${lbs(w)}). Use Whole.`
+    if (!l.pending && !l.tag.trim()) return 'New tag or pending'
+    return ''
+  }
+  const total = lines.reduce((a, l) => a + lineLbs(l), 0)
+  const ok = lines.length > 0 && lines.every(l => !lineErr(l))
+  return (
+    <Dialog title={title} onClose={onClose}>
+      <p className="muted">Going to {target}. Add each package: take the whole pallet (keeps its METRC tag) or enter lbs to split off (needs a new tag or pending).</p>
+      <div className="field">
+        <label>Add a package</label>
+        <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search strain, pallet # or tag" autoFocus />
+        {results.length > 0 && (
+          <div className="picklist">
+            {results.map(c => (
+              <button key={c.id} className="pick addrow" onClick={() => { setLines(ls => [...ls, { p: c, whole: false, lbs: '', tag: '', pending: false }]); setQ('') }}>
+                <b>{c.code}</b><span>{c.strain}</span><span className="muted">{lbs(c.current_weight)} · {whereOf(c)}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      {lines.map((l, i) => (
+        <div key={l.p.id} className="mixline">
+          <div className="row between">
+            <div><b>{l.p.code}</b> {l.p.strain} <span className="muted">· has {lbs(l.p.current_weight)} · {whereOf(l.p)}</span></div>
+            <button className="ghost small" onClick={() => setLines(ls => ls.filter((_, j) => j !== i))}>✕</button>
+          </div>
+          <div className="row">
+            <div className="choices">
+              <button className={!l.whole ? 'on' : ''} onClick={() => upd(i, { whole: false })}>Part</button>
+              <button className={l.whole ? 'on' : ''} onClick={() => upd(i, { whole: true })}>Whole</button>
+            </div>
+            {!l.whole && <input className="lbs-in" type="number" inputMode="decimal" placeholder="lbs" value={l.lbs} onChange={e => upd(i, { lbs: e.target.value })} />}
+          </div>
+          {l.whole
+            ? <div className="muted">Keeps tag {l.p.package_tag ?? '(none)'}</div>
+            : <div className="row">
+                <input className="mono-in grow-in" placeholder="New METRC tag" disabled={l.pending} value={l.tag}
+                  onChange={e => upd(i, { tag: e.target.value.toUpperCase().replace(/\s/g, '') })} />
+                <label className="check"><input type="checkbox" checked={l.pending} onChange={e => upd(i, { pending: e.target.checked })} /> Pending</label>
+              </div>}
+          {lineErr(l) && <div className="warn-t small-note">{lineErr(l)}</div>}
+        </div>
+      ))}
+      {lines.length > 0 && <div className="muted">{lines.length} package{lines.length > 1 ? 's' : ''} · {lbs(total)}</div>}
+      <div className="field"><label>Note (optional)</label><input value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. Acquamarcia order" /></div>
+      <div className="row end">
+        <button className="ghost" onClick={onClose}>Cancel</button>
+        <button className="primary" disabled={!ok || busy} onClick={() => onSubmit(lines.map(l => l.whole
+          ? { pallet_id: l.p.id, lbs: null }
+          : { pallet_id: l.p.id, lbs: parseFloat(l.lbs), tag: l.pending ? null : l.tag.trim(), tag_pending: l.pending }), note)}>
+          {busy ? 'Saving…' : 'Save'}
+        </button>
+      </div>
+    </Dialog>
+  )
+}
+
+export function SingleForm({ where, strains, busy, onClose, onSubmit }: {
+  where: string; strains: string[]; busy: boolean; onClose: () => void; onSubmit: (i: SingleInput) => void
+}) {
+  const [code, setCode] = useState('')
+  const [strain, setStrain] = useState('')
+  const [w, setW] = useState('')
+  const [tag, setTag] = useState('')
+  const [pending, setPending] = useState(false)
+  const [hd, setHd] = useState('')
+  const [note, setNote] = useState('')
+  const known = strains.some(s => s.toLowerCase() === strain.trim().toLowerCase())
+  const ok = strain.trim() && parseFloat(w) > 0 && (pending || tag.trim())
+  return (
+    <Dialog title={`Single pallet in ${where}`} onClose={onClose}>
+      <div className="field"><label>Pallet # <span className="muted">(from the label; leave blank to auto-number S1, S2…)</span></label>
+        <input value={code} onChange={e => setCode(e.target.value.toUpperCase())} placeholder="e.g. T011" autoFocus /></div>
+      <div className="field"><label>Strain</label>
+        <input list="strain-list" value={strain} onChange={e => setStrain(e.target.value)} placeholder="Start typing" />
+        <datalist id="strain-list">{strains.map(s => <option key={s} value={s} />)}</datalist>
+        {strain.trim() && !known && <div className="warn-t small-note">Not in the Strains list. Check the spelling, or add it in Settings.</div>}
+      </div>
+      <div className="field"><label>Weight (lbs)</label>
+        <input type="number" inputMode="decimal" value={w} onChange={e => setW(e.target.value)} /></div>
+      <TagField label="METRC tag" tag={tag} setTag={setTag} pending={pending} setPending={setPending} />
+      <div className="field"><label>Harvest date (optional)</label><input type="date" value={hd} onChange={e => setHd(e.target.value)} /></div>
+      <div className="field"><label>Note (optional)</label><input value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. found during count" /></div>
+      <div className="row end">
+        <button className="ghost" onClick={onClose}>Cancel</button>
+        <button className="primary" disabled={!ok || busy} onClick={() => onSubmit({ code, strain: strain.trim(), lbs: parseFloat(w), tag: pending ? null : tag, tag_pending: pending, harvest_date: hd || null, note })}>Create</button>
+      </div>
+    </Dialog>
+  )
+}
+
+export function PickMixed({ mixed, whereOf, onClose, onPick }: { mixed: { p: Pallet; n: number; w: number }[]; whereOf: (p: Pallet) => string; onClose: () => void; onPick: (p: Pallet) => void }) {
+  return (
+    <Dialog title="Add to which mixed pallet?" onClose={onClose}>
+      {mixed.length === 0 && <p className="muted">No mixed pallets yet. Tap an empty slot on the map and choose New pallet, Mixed.</p>}
+      <div className="picklist">
+        {mixed.map(m => (
+          <button key={m.p.id} className="pick addrow" onClick={() => onPick(m.p)}>
+            <b>{m.p.code}</b><span>{m.n} packages · {lbs(m.w)}</span><span className="muted">{whereOf(m.p)}</span>
+          </button>
+        ))}
       </div>
     </Dialog>
   )

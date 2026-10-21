@@ -39,7 +39,13 @@ export interface Pallet {
   parent_id?: number | null
   merged_into?: number | null
   tag_pending?: boolean
+  kind?: 'package' | 'mixed'
+  container_id?: number | null
 }
+
+/** one line when building or adding to a mixed pallet: whole package (lbs null) or lbs split off with a new tag */
+export interface MixLine { pallet_id: number; lbs: number | null; tag?: string | null; tag_pending?: boolean }
+export interface SingleInput { code: string; strain: string; lbs: number; tag: string | null; tag_pending: boolean; harvest_date: string | null; note: string }
 
 export interface InvEvent {
   id: number
