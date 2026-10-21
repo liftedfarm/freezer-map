@@ -456,9 +456,9 @@ export default function App() {
       <nav className="bottom">
         <button className={view === 'map' || view === 'freezer' ? 'on' : ''} onClick={() => setView(view !== 'map' && view !== 'freezer' && freezerId != null ? 'freezer' : 'map')}>Map</button>
         <button className={view === 'transit' || view === 'load' ? 'on' : ''} onClick={() => setView('transit')}>Transit{openLoads.length > 0 && <span className="badge">{openLoads.length}</span>}</button>
-        <button className={view === 'review' ? 'on' : ''} onClick={() => setView('review')}>Review{reviewCount > 0 && <span className="badge warn">{reviewCount}</span>}</button>
         {canSales(me?.role) && <button className={view === 'reserves' ? 'on' : ''} onClick={() => setView('reserves')}>Sales{salesBadge > 0 && <span className="badge warn">{salesBadge}</span>}</button>}
         <button className={view === 'activity' ? 'on' : ''} onClick={() => setView('activity')}>Activity</button>
+        <button className={view === 'review' ? 'on' : ''} onClick={() => setView('review')}>Review{reviewCount > 0 && <span className="badge warn">{reviewCount}</span>}</button>
       </nav>
 
       {selected && !banner && (
