@@ -55,8 +55,16 @@ export interface InvEvent {
   details: Record<string, unknown> | null
 }
 
+export interface Vehicle { id: number; name: string; plate: string | null; kind: string | null; notes: string | null; active: boolean }
+export interface Customer { id: number; name: string; kind: 'internal' | 'external'; license: string | null; address: string | null; contact: string | null; notes: string | null; active: boolean }
+export interface Strain { id: number; name: string; aliases: string[]; color: string | null; notes: string | null; active: boolean }
+export type ListName = 'vehicles' | 'customers' | 'strains'
+export type ListRow = Vehicle | Customer | Strain
+export interface Settings { vehicles: Vehicle[]; customers: Customer[]; strains: Strain[] }
+
 export interface Snapshot {
   freezers: Freezer[]
   slots: Slot[]
   pallets: Pallet[]
+  strains?: Strain[]
 }

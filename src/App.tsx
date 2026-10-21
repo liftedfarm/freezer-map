@@ -2,14 +2,26 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Backend, CONFIG_MISSING, makeBackend } from './api'
 import { FREEZER_STATUSES } from './types'
 import { MergeForm, SplitForm, TagForm, WeightForm, lbs } from './forms'
+import { SettingsView } from './settings'
 import type { Freezer, FreezerStatus, InvEvent, Pallet, Site, Slot, Snapshot } from './types'
 
 const backend: Backend = makeBackend()
 
-type View = 'map' | 'freezer' | 'staging' | 'review' | 'activity'
+type View = 'map' | 'freezer' | 'staging' | 'review' | 'activity' | 'settings'
 
 // ---------- helpers ----------
 
+// custom map colors from the Strains list (name or other names), set when data loads
+let strainColors = new Map<string, string>()
+function setStrainColors(snap: Snapshot) {
+  strainColors = new Map((snap.strains ?? []).filter(s => s.color).flatMap(s => [s.name, ...(s.aliases ?? [])].map(n => [n.toLowerCase(), s.color!] as [string, string])))
+}
+function swatch(strain: string | null | undefined): { cls: string; style?: React.CSSProperties } {
+  const c = strain ? strainColors.get(strain.toLowerCase()) : undefined
+  if (c) return { cls: 'cc', style: { ['--c' as string]: c } }
+  const h = hue(strain ?? null)
+  return h < 0 ? { cls: 'unk' } : { cls: '', style: { ['--h' as string]: h } }
+}
 function hue(strain: string | null) {
   if (!strain) return -1
   let h = 0
@@ -75,6 +87,8 @@ function describe(ix: Index, e: InvEvent, names?: Map<number, string>) {
       const d = e.details as { from?: string; to?: string } | null
       return `${f ? `${f.site} Freezer ${f.number}` : 'Freezer'}: ${d?.from} to ${d?.to}`
     }
+    case 'settings': { const d = e.details as { list?: string; name?: string; active?: boolean } | null
+      return `${d?.list ? d.list[0].toUpperCase() + d.list.slice(1, -1) : 'Setting'} "${d?.name}" ${e.note === 'added' ? 'added' : d?.active === false ? 'retired' : 'updated'}` }
     default: return `${e.type} ${code}`
   }
 }
@@ -98,7 +112,7 @@ export default function App() {
   const [form, setForm] = useState<{ kind: 'split' | 'merge' | 'tag' | 'weight'; p: Pallet } | null>(null)
   const [pool, setPool] = useState<Pallet[]>([])
 
-  const reload = useCallback(async () => { setSnap(await backend.load()) }, [])
+  const reload = useCallback(async () => { const s = await backend.load(); setStrainColors(s); setSnap(s) }, [])
   const flash = (text: string, bad = false) => { setToast({ text, bad }); setTimeout(() => setToast(null), bad ? 5000 : 2500) }
 
   useEffect(() => { backend.getUser().then(setUser) }, [])
@@ -196,7 +210,8 @@ export default function App() {
         </div>
         <input className="search" type="search" placeholder="Pallet, strain or tag" value={query}
           onChange={e => { setQuery(e.target.value); if (view === 'freezer' || view === 'activity') setView('map') }} />
-        <button className="ghost small" title={user} onClick={() => backend.signOut().then(() => setUser(null))}>{who(user)} ⏏</button>
+        <button className={`ghost small ${view === 'settings' ? 'on-btn' : ''}`} title="Settings" onClick={() => setView('settings')}>⚙ Settings</button>
+        <button className="ghost small" title={`Signed in as ${user}. Click to sign out.`} onClick={() => backend.signOut().then(() => setUser(null))}>{who(user)} ⏏</button>
       </header>
 
       {moving && (
@@ -248,6 +263,8 @@ export default function App() {
             items={review} ix={ix} onPallet={setPalletId} showReason />
         </>)}
         {view === 'activity' && <ActivityView ix={ix} />}
+        {view === 'settings' && <SettingsView backend={backend} flash={flash} onChanged={() => { reload() }}
+          inventoryStrains={snap.pallets.reduce((m, p) => p.strain ? m.set(p.strain, (m.get(p.strain) ?? 0) + 1) : m, new Map<string, number>())} />}
       </main>
 
       <nav className="bottom">
@@ -330,10 +347,10 @@ function MiniGrid({ ix, slots, query }: { ix: Index; slots: Slot[]; query: strin
     <div className="mini">
       {[...slots].sort((a, b) => a.row - b.row || a.col - b.col).map(s => {
         const ps = ix.inSlot.get(s.id) ?? []
-        const h = hue(ps[0]?.strain ?? null)
+        const sw = swatch(ps[0]?.strain)
         const hit = ps.some(p => matches(p, query))
-        return <i key={s.id} className={`${ps.length ? 'full' : ''} ${query && !hit ? 'dim' : ''} ${ps.length && h < 0 ? 'unk' : ''}`}
-          style={ps.length && h >= 0 ? { ['--h' as string]: h } : undefined} />
+        return <i key={s.id} className={`${ps.length ? `full ${sw.cls}` : ''} ${query && !hit ? 'dim' : ''}`}
+          style={ps.length ? sw.style : undefined} />
       })}
     </div>
   )
@@ -428,12 +445,12 @@ function FreezerView({ ix, freezer, query, moving, siblings, onOpen, onBack, onS
         {grid.map(s => {
           const here = ix.inSlot.get(s.id) ?? []
           const isSrc = moving?.slot_id === s.id
-          const h = hue(here[0]?.strain ?? null)
+          const sw = swatch(here[0]?.strain)
           const dim = query && !here.some(p => matches(p, query))
           return (
             <button key={s.id}
-              className={`tile ${here.length ? 'full' : 'empty'} ${isSrc ? 'src' : ''} ${moving && !isSrc && !dead ? (here.length ? 'can-combine' : 'can-drop') : ''} ${dim ? 'dim' : ''} ${here.length && h < 0 ? 'unk' : ''}`}
-              style={here.length && h >= 0 ? { ['--h' as string]: h } : undefined}
+              className={`tile ${here.length ? 'full' : 'empty'} ${isSrc ? 'src' : ''} ${moving && !isSrc && !dead ? (here.length ? 'can-combine' : 'can-drop') : ''} ${dim ? 'dim' : ''} ${here.length ? sw.cls : ''}`}
+              style={here.length ? sw.style : undefined}
               disabled={!!moving && dead}
               onClick={() => onSlot(s)}>
               <span className="code">{s.code}</span>

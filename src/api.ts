@@ -1,5 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
-import type { Freezer, FreezerStatus, InvEvent, Pallet, Slot, Snapshot } from './types'
+import type { Freezer, FreezerStatus, InvEvent, ListName, ListRow, Pallet, Settings, Slot, Snapshot, Strain } from './types'
 
 export interface Backend {
   demo: boolean
@@ -16,6 +16,8 @@ export interface Backend {
   adjustWeight(palletId: number, weight: number, note?: string): Promise<void>
   lineage(p: Pallet): Promise<Pallet[]>
   byIds(ids: number[]): Promise<Pallet[]>
+  loadSettings(): Promise<Settings>
+  saveRow(list: ListName, row: Partial<ListRow>): Promise<void>
   palletEvents(palletId: number): Promise<InvEvent[]>
   recentEvents(limit: number): Promise<InvEvent[]>
   search(q: string): Promise<Pallet[]>
@@ -68,13 +70,15 @@ class SupaBackend implements Backend {
     await this.sb.auth.signOut()
   }
   async load(): Promise<Snapshot> {
-    const [freezers, slots, pallets] = await Promise.all([
+    const [freezers, slots, pallets, strains] = await Promise.all([
       pageAll<Freezer>((a, b) => this.sb.from('freezers').select('*').order('id').range(a, b)),
       pageAll<Slot>((a, b) => this.sb.from('slots').select('*').order('id').range(a, b)),
       pageAll<Pallet>((a, b) =>
         this.sb.from('pallets').select('*').in('status', ['in_freezer', 'unslotted']).order('id').range(a, b)),
+      // strains table arrives with migration 003; tolerate it missing
+      pageAll<Strain>((a, b) => this.sb.from('strains').select('*').order('name').range(a, b)).catch(() => [] as Strain[]),
     ])
-    return { freezers, slots, pallets }
+    return { freezers, slots, pallets, strains }
   }
   async movePallet(palletId: number, toSlot: number | null, combine: boolean, note?: string) {
     const { error } = await this.sb.rpc('move_pallet', {
@@ -121,6 +125,17 @@ class SupaBackend implements Backend {
     const { data, error } = await this.sb.from('pallets').select('*').or(ors.join(',')).limit(200)
     fail(error)
     return (data ?? []) as Pallet[]
+  }
+  async loadSettings(): Promise<Settings> {
+    const [vehicles, customers, strains] = await Promise.all((['vehicles', 'customers', 'strains'] as const).map(t =>
+      pageAll<ListRow>((a, b) => this.sb.from(t).select('*').order('name').range(a, b))))
+    return { vehicles, customers, strains } as Settings
+  }
+  async saveRow(list: ListName, row: Partial<ListRow>) {
+    const { id, ...rest } = row as ListRow
+    const clean = Object.fromEntries(Object.entries(rest).filter(([k]) => k !== 'updated_at'))
+    const { error } = id ? await this.sb.from(list).update(clean).eq('id', id) : await this.sb.from(list).insert(clean)
+    if (error) throw new Error(error.code === '23505' ? `"${(row as ListRow).name}" is already in the list` : error.message)
   }
   async byIds(ids: number[]) {
     const { data, error } = await this.sb.from('pallets').select('*').in('id', ids.slice(0, 300))
@@ -177,7 +192,7 @@ class DemoBackend implements Backend {
         if (p.status === 'in_freezer') this.log({ type: 'import', pallet_id: p.id, to_slot_id: p.slot_id, lbs: p.current_weight, note: 'Imported from Freezer Map 26.xlsm' }, 'import', '2026-10-20T08:00:00Z')
       }
     }
-    const snap = this.snap
+    const snap = { ...this.snap, strains: (await this.loadSettings()).strains }
     return structuredClone({ ...snap, pallets: snap.pallets.filter(p => p.status === 'in_freezer' || p.status === 'unslotted') })
   }
   private log(e: Partial<InvEvent>, who = this.user, at = new Date().toISOString()) {
@@ -271,6 +286,31 @@ class DemoBackend implements Backend {
   }
   async lineage(p: Pallet) {
     return structuredClone(this.snap!.pallets.filter(x => x.parent_id === p.id || x.merged_into === p.id || x.id === p.parent_id || x.id === p.merged_into))
+  }
+  private settings: Settings | null = null
+  async loadSettings() {
+    if (!this.settings) {
+      const names = new Map<string, string>()
+      for (const p of this.snap?.pallets ?? []) if (p.strain && !names.has(p.strain.toLowerCase())) names.set(p.strain.toLowerCase(), p.strain)
+      this.settings = {
+        vehicles: [{ id: 1, name: 'Isuzu Reefer', plate: '8ABC123', kind: 'Reefer truck', notes: null, active: true }],
+        customers: [{ id: 1, name: 'OHR', kind: 'internal', license: null, address: null, contact: null, notes: 'Lifted site', active: true },
+                    { id: 2, name: 'GVR', kind: 'internal', license: null, address: null, contact: null, notes: 'Lifted site', active: true }],
+        strains: [...names.values()].sort().map((name, i) => ({ id: i + 1, name, aliases: [], color: null, notes: null, active: true })),
+      }
+    }
+    return structuredClone(this.settings)
+  }
+  async saveRow(list: ListName, row: Partial<ListRow>) {
+    await this.loadSettings()
+    const rows = this.settings![list] as ListRow[]
+    const name = (row.name ?? '').trim()
+    if (!row.id && !name) throw new Error('Name is required')
+    if (name && rows.some(r => r.name.toLowerCase() === name.toLowerCase() && r.id !== row.id)) throw new Error(`"${name}" is already in the list`)
+    const ex = rows.find(r => r.id === row.id)
+    if (ex) Object.assign(ex, row)
+    else rows.push({ active: true, ...(list === 'strains' ? { aliases: [], color: null } : {}), ...row, id: Math.max(0, ...rows.map(r => r.id)) + 1 } as ListRow)
+    this.log({ type: 'settings', note: ex ? 'updated' : 'added', details: { list, name: name || ex?.name, active: (ex ?? row).active } })
   }
   async byIds(ids: number[]) { return structuredClone(this.snap!.pallets.filter(p => ids.includes(p.id))) }
   async palletEvents(palletId: number) { return this.events.filter(e => e.pallet_id === palletId) }
