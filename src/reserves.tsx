@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { Backend } from './api'
 import { readSheet } from 'read-excel-file/browser'
 import { parseCsv } from './settings'
+import { OpenMenu } from './menu'
 import type { MenuNumbers, ReserveRequest, Role, Balance, Customer, ImportResult, Order, RoshiRow, Strain } from './types'
 
 const n0 = (x: number) => Math.round(x).toLocaleString()
@@ -50,7 +51,7 @@ export function ReservesView({ backend, customers, strains, onHand, flash, role,
   const [bal, setBal] = useState<Balance[] | null>(null)
   const [orders, setOrders] = useState<Order[]>([])
   const [err, setErr] = useState<string | null>(null)
-  const [mode, setMode] = useState<'customer' | 'strain' | 'orders' | 'requests'>(initialMode ?? 'customer')
+  const [mode, setMode] = useState<'customer' | 'strain' | 'orders' | 'requests' | 'menu'>(initialMode ?? 'customer')
   const [open, setOpen] = useState<number | null>(null)
   const [edit, setEdit] = useState<{ customer_id: number | null; strain: string; lbs: string; isNew: boolean } | null>(null)
   const [q, setQ] = useState('')
@@ -99,6 +100,14 @@ export function ReservesView({ backend, customers, strains, onHand, flash, role,
     try { await backend.setReserve(edit.customer_id, edit.strain, lbs); await load(); setOpen(edit.customer_id); setEdit(null); flash(lbs === 0 ? 'Reserve removed' : 'Reserve saved') }
     catch (e) { flash(String((e as Error).message ?? e), true) }
   }
+  async function copyMenu() {
+    try {
+      const rows = (await backend.openMenu()).filter(r => Number(r.available) > 0)
+      const years = [...new Set(rows.map(r => r.crop_year))].sort((a, b) => b - a)
+      const text = years.map(y => `${y} crop, fresh frozen (lbs open)\n` + rows.filter(r => r.crop_year === y).map(r => `${r.strain}: ${n0(Number(r.available))}`).join('\n')).join('\n\n')
+      await navigator.clipboard.writeText(text); flash('Menu copied')
+    } catch (e) { flash(String((e as Error).message ?? e), true) }
+  }
   async function decide(id: number, approve: boolean) {
     setBusy(true)
     try { await backend.decideRequest(id, approve, decideNote[id] ?? ''); await load(); flash(approve ? 'Approved. Reserve updated.' : 'Declined') }
@@ -119,6 +128,7 @@ export function ReservesView({ backend, customers, strains, onHand, flash, role,
       <div className="seg tabs">
         <button className={mode === 'customer' ? 'on' : ''} onClick={() => setMode('customer')}>By customer</button>
         <button className={mode === 'strain' ? 'on' : ''} onClick={() => setMode('strain')}>By strain</button>
+        <button className={mode === 'menu' ? 'on' : ''} onClick={() => setMode('menu')}>Open menu</button>
         <button className={mode === 'orders' ? 'on' : ''} onClick={() => setMode('orders')}>Orders {submitted > 0 ? <span className="badge warn">{submitted} new</span> : <span className="muted">{orders.length}</span>}</button>
         <button className={mode === 'requests' ? 'on' : ''} onClick={() => setMode('requests')}>Requests {reqs.some(r => r.status === 'pending') ? <span className="badge warn">{reqs.filter(r => r.status === 'pending').length}</span> : <span className="muted">0</span>}</button>
       </div>
@@ -127,7 +137,7 @@ export function ReservesView({ backend, customers, strains, onHand, flash, role,
         {mode === 'orders'
           ? <label className={`primary filebtn ${busy ? 'disabled' : ''}`}>{busy ? 'Importing…' : 'Import Roshi orders'}
               <input type="file" accept=".xlsx,.csv" disabled={busy} onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) importFile(f) }} /></label>
-          : isAdmin && mode !== 'requests' && <button className="primary" onClick={() => setEdit({ customer_id: null, strain: '', lbs: '', isNew: true })}>+ Add reserve</button>}
+          : isAdmin && mode !== 'requests' && mode !== 'menu' && <button className="primary" onClick={() => setEdit({ customer_id: null, strain: '', lbs: '', isNew: true })}>+ Add reserve</button>}
       </div>
       {result && (
         <div className="okbox">
@@ -180,6 +190,11 @@ export function ReservesView({ backend, customers, strains, onHand, flash, role,
           <p className="muted">Free = on hand − pending orders − reserves not yet shipped − increases customers have requested (held until approved or declined). Customers see Free rounded down to 10 lbs. On hand is what's in the freezers in this app. Negative means more is promised than is in the freezers.</p>
         </>
       )}
+
+      {mode === 'menu' && <>
+        <p className="muted">Exactly what customers see on the portal: open lbs rounded down to 10, hidden strains left out. <a onClick={copyMenu}>Copy as text</a></p>
+        <OpenMenu backend={backend} reserves={false} />
+      </>}
 
       {mode === 'requests' && (() => {
         const shown = reqs.filter(r => !ql || cname(r.customer_id).toLowerCase().includes(ql) || r.strain.toLowerCase().includes(ql))

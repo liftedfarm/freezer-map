@@ -1,4 +1,5 @@
--- Migration 016: Roshi lines that list several METRC tags ("tag1, tag2") are now checked tag by tag.
+-- Migration 016: Roshi lines that list several METRC tags ("tag1, tag2") are now checked tag by tag,
+-- and Review lists shipped Roshi tags that aren't on any pallet in the app (so they can't be checked).
 -- For a line split across tags, pallets already off the map count first; what's left of the line is
 -- what shipped from the pallet(s) still in a freezer. Run after 015. Safe to re-run.
 set client_min_messages = warning;
@@ -52,5 +53,39 @@ begin
   on conflict (package_tag) do update set acked_lbs = excluded.acked_lbs, acked_by = excluded.acked_by, acked_at = now();
 end $$;
 
--- check
-select p.code, p.strain, p.current_weight, s.new_lbs, s.sos from shipped_in_freezer() s join pallets p on p.id = s.pallet_id order by p.code;
+-- shipped Roshi tags that match no pallet in the app (any status)
+create or replace function unmatched_shipped_tags()
+returns table (package_tag text, strain text, lbs numeric, tags_on_line int, sos text, last_shipped date)
+language plpgsql stable security definer set search_path = public as $$
+begin
+  if not is_staff() then raise exception 'Not allowed'; end if;
+  return query
+    with lt as (
+      select l.id, l.lbs, l.strain, o.so_number, o.shipped_date, trim(t) as tag,
+             array_length(string_to_array(l.package_tag, ','), 1) as n
+        from orders o join order_lines l on l.order_id = o.id
+        cross join lateral unnest(string_to_array(l.package_tag, ',')) t
+       where o.status = 'shipped' and l.package_tag is not null and trim(t) <> '')
+    select lt.tag, min(lt.strain), sum(lt.lbs), max(lt.n), string_agg(distinct lt.so_number, ', '), max(lt.shipped_date)
+      from lt
+     where not exists (select 1 from pallets p where p.package_tag = lt.tag)
+       and not exists (select 1 from shipped_tag_checks c where c.package_tag = lt.tag)
+     group by lt.tag
+     order by max(lt.shipped_date) desc nulls last, lt.tag;
+end $$;
+
+-- "dismiss" for an unmatched tag
+create or replace function dismiss_unmatched_tag(p_tag text) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  perform require_staff();
+  insert into shipped_tag_checks values (p_tag, 0, current_email(), now()) on conflict (package_tag) do nothing;
+end $$;
+
+revoke execute on function unmatched_shipped_tags(), dismiss_unmatched_tag(text) from public, anon;
+grant execute on function unmatched_shipped_tags(), dismiss_unmatched_tag(text) to authenticated;
+
+-- check: pallets now flagged (shipped in Roshi, still on the map)
+select p.code, p.strain, p.current_weight, round(s.lbs) as shipped_lbs, s.sos
+  from _shipped_by_tag() s join pallets p on p.package_tag = s.tag and p.kind = 'package' and p.status in ('in_freezer','unslotted')
+ order by p.code;

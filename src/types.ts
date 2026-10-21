@@ -86,6 +86,7 @@ export interface Snapshot {
   stops?: LoadStop[]
   items?: LoadItem[]
   shipped?: ShippedCheck[]
+  unmatched?: UnmatchedTag[]
 }
 
 export type Role = 'admin' | 'sales' | 'crew' | 'customer' | 'none'
@@ -103,5 +104,6 @@ export interface MenuRow { strain: string; crop_year: number; available: number;
 export interface MenuNumbers { strain: string; crop_year: number; on_menu: boolean; on_hand: number; pending: number; reserved_left: number; held: number; free: number }
 export interface ReserveRequest { id: number; customer_id: number; strain: string; current_lbs: number; requested_lbs: number; note: string | null; status: 'pending' | 'approved' | 'declined' | 'cancelled'; requested_by: string; requested_at: string; decided_by: string | null; decided_at: string | null; decision_note: string | null }
 export interface OrderInput { strain: string; lbs: number; crop_year?: number }
+export interface UnmatchedTag { package_tag: string; strain: string; lbs: number; tags_on_line: number; sos: string; last_shipped: string | null }
 export interface ShippedCheck { pallet_id: number; package_tag: string; shipped_lbs: number; new_lbs: number; sos: string; last_shipped: string | null }
 export interface Terms { name: string; price_per_lb: number | null; contract_lbs: number | null; reserves_enabled?: boolean }

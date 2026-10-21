@@ -1,5 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
-import type { ShippedCheck, OrderInput, Terms, MenuNumbers, MenuRow, ReserveRequest, Balance, ImportResult, Order, RoshiRow, Reserve, LinkInfo, AppUser, Customer, Me, Role, Freezer, FreezerStatus, InvEvent, ListName, ListRow, Load, LoadItem, LoadStop, MixLine, Pallet, Settings, SingleInput, Slot, Snapshot, StopInput, Strain, Vehicle } from './types'
+import type { UnmatchedTag, ShippedCheck, OrderInput, Terms, MenuNumbers, MenuRow, ReserveRequest, Balance, ImportResult, Order, RoshiRow, Reserve, LinkInfo, AppUser, Customer, Me, Role, Freezer, FreezerStatus, InvEvent, ListName, ListRow, Load, LoadItem, LoadStop, MixLine, Pallet, Settings, SingleInput, Slot, Snapshot, StopInput, Strain, Vehicle } from './types'
 
 export interface Backend {
   demo: boolean
@@ -62,6 +62,7 @@ export interface Backend {
   adjustWeight(palletId: number, weight: number, note?: string): Promise<void>
   markShipped(palletId: number, note?: string): Promise<void>
   ackShipped(tag: string): Promise<void>
+  dismissTag(tag: string): Promise<void>
   lineage(p: Pallet): Promise<Pallet[]>
   byIds(ids: number[]): Promise<Pallet[]>
   loadSettings(): Promise<Settings>
@@ -286,7 +287,8 @@ class SupaBackend implements Backend {
       pallets.push(...((data ?? []) as Pallet[]))
     }
     const shipped = await this.sb.rpc('shipped_in_freezer').then(r => (r.error ? [] : r.data) as ShippedCheck[], () => [] as ShippedCheck[])
-    return { freezers, slots, pallets, strains, vehicles, customers, loads, stops, items, shipped }
+    const unmatched = await this.sb.rpc('unmatched_shipped_tags').then(r => (r.error ? [] : r.data) as UnmatchedTag[], () => [] as UnmatchedTag[])
+    return { freezers, slots, pallets, strains, vehicles, customers, loads, stops, items, shipped, unmatched }
   }
   async movePallet(palletId: number, toSlot: number | null, combine: boolean, note?: string) {
     const { error } = await this.sb.rpc('move_pallet', {
@@ -373,6 +375,7 @@ class SupaBackend implements Backend {
     fail(error)
   }
   async markShipped(palletId: number, note?: string) { const { error } = await this.sb.rpc('mark_pallet_shipped', { p_pallet_id: palletId, p_note: note || null }); fail(error) }
+  async dismissTag(tag: string) { const { error } = await this.sb.rpc('dismiss_unmatched_tag', { p_tag: tag }); fail(error) }
   async ackShipped(tag: string) { const { error } = await this.sb.rpc('ack_shipped_tag', { p_tag: tag }); fail(error) }
   async adjustWeight(palletId: number, weight: number, note?: string) {
     const { error } = await this.sb.rpc('adjust_weight', { p_pallet_id: palletId, p_weight: weight, p_note: note || null })
@@ -676,6 +679,7 @@ class DemoBackend implements Backend {
   }
   async markShipped() {}
   async ackShipped() {}
+  async dismissTag() {}
   async adjustWeight(palletId: number, weight: number, note?: string) {
     const p = this.snap!.pallets.find(x => x.id === palletId)!
     if (!(weight >= 0)) throw new Error('Enter a weight of 0 or more')

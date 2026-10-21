@@ -9,7 +9,7 @@ import { Sidebar } from './sidebar'
 import { LoadForm, LoadView, PickLoad, TransitView, stopColor } from './loads'
 import type { LoadCtx } from './loads'
 import { canSales } from './types'
-import type { ShippedCheck, Freezer, Me, FreezerStatus, InvEvent, Load, LoadItem, LoadStop, Pallet, Site, Slot, Snapshot } from './types'
+import type { UnmatchedTag, ShippedCheck, Freezer, Me, FreezerStatus, InvEvent, Load, LoadItem, LoadStop, Pallet, Site, Slot, Snapshot } from './types'
 
 const backend: Backend = makeBackend()
 
@@ -419,6 +419,11 @@ export default function App() {
               run={(fn, ok) => act(fn, ok)} />
             <div style={{ height: 18 }} />
           </>}
+          {(snap.unmatched ?? []).length > 0 && <>
+            <UnmatchedTags tags={snap.unmatched!} busy={busy} run={(fn, ok) => act(fn, ok)}
+              find={s => { setQuery(s); setView('map') }} />
+            <div style={{ height: 18 }} />
+          </>}
           {unplaced.length > 0 && <>
             <ListView title={`Needs a spot (${unplaced.length})`} empty=""
               note="Pallets that aren't in a freezer slot, including ones just received from a load. Open one and tap Move to put it somewhere."
@@ -729,6 +734,30 @@ function FreezerView({ ix, freezer, query, moving, placing, siblings, onOpen, on
         })}
       </div>
       <div className="door">DOOR</div>
+    </div>
+  )
+}
+
+function UnmatchedTags({ tags, busy, run, find }: {
+  tags: UnmatchedTag[]; busy: boolean; run: (fn: () => Promise<unknown>, ok: string) => void; find: (strain: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="list">
+      <h2 className="tap" onClick={() => setOpen(!open)}>{open ? '▾' : '▸'} Shipped Roshi tags not on the map ({tags.length})</h2>
+      <p className="muted">Roshi shipped these METRC tags, but no pallet in the app has them, so the app can't check them. Usually the pallet's tag on the map is wrong or missing, or it was never on the map. Fix the tag on the right pallet (open it, Enter tag), or dismiss.</p>
+      {open && tags.map(t => (
+        <div key={t.package_tag} className="li">
+          <div><b>{t.strain}</b> <span className="muted">{lbs(Number(t.lbs))}{t.tags_on_line > 1 ? ` (line split over ${t.tags_on_line} tags)` : ''}</span></div>
+          <div className="muted mono">{t.package_tag}</div>
+          <div className="muted">{t.sos}{t.last_shipped ? ` · ${t.last_shipped}` : ''}</div>
+          <div className="row reqact">
+            <button className="ghost small" onClick={() => find(t.strain)}>Find {t.strain} pallets</button>
+            <button className="ghost small" onClick={() => { navigator.clipboard?.writeText(t.package_tag) }}>Copy tag</button>
+            <button className="ghost small" disabled={busy} onClick={() => run(() => backend.dismissTag(t.package_tag), 'Dismissed')}>Dismiss</button>
+          </div>
+        </div>
+      ))}
     </div>
   )
 }
