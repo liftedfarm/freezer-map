@@ -87,6 +87,8 @@ function describe(ix: Index, e: InvEvent, names?: Map<number, string>) {
       const d = e.details as { from?: string; to?: string } | null
       return `${f ? `${f.site} Freezer ${f.number}` : 'Freezer'}: ${d?.from} to ${d?.to}`
     }
+    case 'strain_renamed': { const d = e.details as { from?: string; to?: string } | null
+      return `${code} strain renamed from ${d?.from} to ${d?.to}` }
     case 'settings': { const d = e.details as { list?: string; name?: string; active?: boolean } | null
       return `${d?.list ? d.list[0].toUpperCase() + d.list.slice(1, -1) : 'Setting'} "${d?.name}" ${e.note === 'added' ? 'added' : d?.active === false ? 'retired' : 'updated'}` }
     default: return `${e.type} ${code}`
