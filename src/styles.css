@@ -349,3 +349,4 @@ select { padding: 10px; border: 1px solid var(--line); border-radius: 10px; back
 .tile .p.band.unk { background: var(--empty); border: 1px dashed var(--muted); }
 .tile .p.band.mx { background: repeating-linear-gradient(135deg, color-mix(in srgb, #7c3aed 22%, var(--panel)) 0 10px, color-mix(in srgb, #7c3aed 12%, var(--panel)) 10px 20px); }
 .tile .p.band + .p.band { border-top: 0; padding-top: 4px; }
+.grouph { margin: 16px 0 6px; font-size: 14px; text-transform: uppercase; letter-spacing: .04em; }

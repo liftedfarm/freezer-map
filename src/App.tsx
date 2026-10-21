@@ -6,7 +6,7 @@ import { SettingsView } from './settings'
 import { Sidebar } from './sidebar'
 import { LoadForm, LoadView, PickLoad, TransitView, stopColor } from './loads'
 import type { LoadCtx } from './loads'
-import type { Freezer, FreezerStatus, InvEvent, Load, LoadItem, LoadStop, Pallet, Site, Slot, Snapshot } from './types'
+import type { Freezer, Me, FreezerStatus, InvEvent, Load, LoadItem, LoadStop, Pallet, Site, Slot, Snapshot } from './types'
 
 const backend: Backend = makeBackend()
 
@@ -142,6 +142,9 @@ function describe(ix: Index, e: InvEvent, names?: Map<number, string>) {
       return `${code} strain renamed from ${d?.from} to ${d?.to}` }
     case 'settings': { const d = e.details as { list?: string; name?: string; active?: boolean } | null
       return `${d?.list ? d.list[0].toUpperCase() + d.list.slice(1, -1) : 'Setting'} "${d?.name}" ${e.note === 'added' ? 'added' : d?.active === false ? 'retired' : 'updated'}` }
+    case 'user_role': { const d = e.details as { email?: string; role?: string; was?: string } | null
+      return d?.was ? `${d?.email} changed from ${d.was} to ${d.role}` : `${d?.email} added as ${d?.role}` }
+    case 'user_removed': return `${e.note} removed from users`
     default: return `${e.type} ${code}`
   }
 }
@@ -157,6 +160,7 @@ interface Placing { title: string; sub: string; run: (slot: Slot) => Promise<voi
 
 export default function App() {
   const [user, setUser] = useState<string | null | undefined>(undefined)
+  const [me, setMe] = useState<Me | null>(null)
   const [snap, setSnap] = useState<Snapshot | null>(null)
   const [site, setSite] = useState<Site>('OHR')
   const [view, setView] = useState<View>('map')
@@ -183,10 +187,16 @@ export default function App() {
 
   useEffect(() => { backend.getUser().then(setUser) }, [])
   useEffect(() => {
+    setMe(null)
     if (!user) return
+    backend.me().then(setMe).catch(e => setLoadError(String(e?.message ?? e)))
+  }, [user])
+  const staff = !!me && ['admin', 'sales', 'crew'].includes(me.role)
+  useEffect(() => {
+    if (!staff) return
     reload().then(() => setLoadError(null)).catch(e => setLoadError(String(e?.message ?? e)))
     return backend.subscribe(() => { reload() })
-  }, [user, reload])
+  }, [staff, reload])
 
   // search outside the live set (archived / old pallets) once the query is specific
   useEffect(() => {
@@ -251,6 +261,7 @@ export default function App() {
   )
   if (user === undefined) return <div className="center muted">Loading…</div>
   if (!user) return <Login />
+  if (me && !staff) return <NoAccess me={me} signOut={() => backend.signOut().then(() => setUser(null))} />
   if (loadError && !snap) return (
     <div className="center"><h2>Couldn't load freezers</h2>
       <p className="muted">{loadError}</p>
@@ -349,7 +360,7 @@ export default function App() {
         <input className="search" type="search" placeholder="Pallet, strain or tag" value={query}
           onChange={e => { setQuery(e.target.value); if (view === 'freezer' || view === 'activity') setView('map') }} />
         <button className={`ghost small ${view === 'settings' ? 'on-btn' : ''}`} title="Settings" onClick={() => setView('settings')}>⚙ Settings</button>
-        <button className="ghost small" title={`Signed in as ${user}. Click to sign out.`} onClick={() => backend.signOut().then(() => setUser(null))}>{who(user)} ⏏</button>
+        <button className="ghost small" title={`Signed in as ${user} (${me?.role ?? ''}). Click to sign out.`} onClick={() => backend.signOut().then(() => setUser(null))}>{who(user)} ⏏</button>
       </header>
 
       {banner && (
@@ -394,7 +405,7 @@ export default function App() {
         {view === 'activity' && <ActivityView ix={ix} />}
         {view === 'transit' && <TransitView ctx={ctx} onOpen={id => { setLoadId(id); setView('load'); window.scrollTo(0, 0) }} onNew={() => setLoadForm({})} />}
         {view === 'load' && loadId != null && <LoadView ctx={ctx} loadId={loadId} onBack={() => setView('transit')} onEdit={() => setLoadForm({ load: (snap.loads ?? []).find(l => l.id === loadId) })} />}
-        {view === 'settings' && <SettingsView backend={backend} flash={flash} onChanged={() => { reload() }}
+        {view === 'settings' && <SettingsView backend={backend} flash={flash} me={me!} onChanged={() => { reload() }}
           inventoryStrains={snap.pallets.reduce((m, p) => p.strain ? m.set(p.strain, (m.get(p.strain) ?? 0) + 1) : m, new Map<string, number>())} />}
       </main>
 
@@ -506,6 +517,18 @@ export default function App() {
 }
 
 // ---------- views ----------
+
+function NoAccess({ me, signOut }: { me: Me; signOut: () => void }) {
+  return (
+    <div className="center login">
+      <img className="logo-login" src="/logo-big.png" alt="Lifted Farms" />
+      {me.role === 'customer'
+        ? <><h2>Hi{me.display_name ? ` ${me.display_name}` : ''}</h2><p className="muted">Your login is set up for {me.customer_name ?? 'your company'}. The order portal is coming soon.</p></>
+        : <><h2>No access yet</h2><p className="muted">{me.email} isn't set up for the Freezer Map. Ask an admin to add you in Settings &gt; Users.</p></>}
+      <button className="ghost" onClick={signOut}>Sign out</button>
+    </div>
+  )
+}
 
 function Login() {
   return (

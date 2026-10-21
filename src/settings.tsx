@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { readSheet } from 'read-excel-file/browser'
 import type { Backend } from './api'
-import type { Customer, ListName, ListRow, Settings, Strain, Vehicle } from './types'
+import { UsersTab } from './users'
+import { canSales } from './types'
+import type { Customer, ListName, Me, ListRow, Settings, Strain, Vehicle } from './types'
 
 // ---------- column definitions per list ----------
 
@@ -145,8 +147,8 @@ function downloadTemplate(list: ListName, rows: ListRow[]) {
 
 // ---------- screen ----------
 
-export function SettingsView({ backend, inventoryStrains, onChanged, flash }: {
-  backend: Backend; inventoryStrains: Map<string, number>
+export function SettingsView({ backend, inventoryStrains, onChanged, flash, me }: {
+  backend: Backend; inventoryStrains: Map<string, number>; me: Me
   onChanged: () => void; flash: (t: string, bad?: boolean) => void
 }) {
   const [data, setData] = useState<Settings | null>(null)
@@ -157,6 +159,8 @@ export function SettingsView({ backend, inventoryStrains, onChanged, flash }: {
   const [edit, setEdit] = useState<Partial<ListRow> | null>(null)
   const [plan, setPlan] = useState<{ rows: PlanRow[]; found: string[]; file: string } | null>(null)
   const [busy, setBusy] = useState(false)
+  const [usersTab, setUsersTab] = useState(false)
+  const lists: ListName[] = canSales(me.role) ? ['vehicles', 'customers', 'strains'] : ['vehicles', 'strains']
 
   const load = () => backend.loadSettings().then(d => { setData(d); setErr(null) }).catch(e => setErr(String(e?.message ?? e)))
   useEffect(() => { load() }, [])
@@ -208,10 +212,12 @@ export function SettingsView({ backend, inventoryStrains, onChanged, flash }: {
     <div className="list settings">
       <h2>Settings</h2>
       <div className="seg tabs">
-        {(['vehicles', 'customers', 'strains'] as ListName[]).map(t => (
-          <button key={t} className={t === tab ? 'on' : ''} onClick={() => { setTab(t); setQ('') }}>{TITLES[t]} <span className="muted">{(data[t] as ListRow[]).filter(r => r.active).length}</span></button>
+        {lists.map(t => (
+          <button key={t} className={t === tab && !usersTab ? 'on' : ''} onClick={() => { setTab(t); setQ(''); setUsersTab(false) }}>{TITLES[t]} <span className="muted">{(data[t] as ListRow[]).filter(r => r.active).length}</span></button>
         ))}
+        {me.role === 'admin' && <button className={usersTab ? 'on' : ''} onClick={() => setUsersTab(true)}>Users</button>}
       </div>
+      {usersTab ? <UsersTab backend={backend} me={me} customers={data.customers} flash={flash} /> : <>
       <div className="row toolbar">
         <input className="search" type="search" placeholder={`Search ${TITLES[tab].toLowerCase()}`} value={q} onChange={e => setQ(e.target.value)} />
         <button className="primary" onClick={() => setEdit(tab === 'customers' ? { kind: 'external', active: true } as Partial<Customer> : tab === 'strains' ? { aliases: [], active: true } as Partial<Strain> : { active: true, spaces: 8, across: 2 } as Partial<Vehicle>)}>+ Add</button>
@@ -242,6 +248,7 @@ export function SettingsView({ backend, inventoryStrains, onChanged, flash }: {
 
       {edit && <EditForm list={tab} row={edit} busy={busy} onClose={() => setEdit(null)} onSave={save} />}
       {plan && <ImportPreview list={tab} plan={plan} busy={busy} onClose={() => setPlan(null)} onApply={applyPlan} />}
+      </>}
     </div>
   )
 }

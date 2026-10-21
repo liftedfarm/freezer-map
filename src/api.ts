@@ -1,11 +1,15 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
-import type { Customer, Freezer, FreezerStatus, InvEvent, ListName, ListRow, Load, LoadItem, LoadStop, MixLine, Pallet, Settings, SingleInput, Slot, Snapshot, StopInput, Strain, Vehicle } from './types'
+import type { AppUser, Customer, Me, Role, Freezer, FreezerStatus, InvEvent, ListName, ListRow, Load, LoadItem, LoadStop, MixLine, Pallet, Settings, SingleInput, Slot, Snapshot, StopInput, Strain, Vehicle } from './types'
 
 export interface Backend {
   demo: boolean
   getUser(): Promise<string | null>
   signIn(): Promise<void>
   signOut(): Promise<void>
+  me(): Promise<Me>
+  listUsers(): Promise<AppUser[]>
+  setUser(email: string, role: Role, customerId: number | null, name: string): Promise<void>
+  removeUser(email: string): Promise<void>
   load(): Promise<Snapshot>
   movePallet(palletId: number, toSlot: number | null, combine: boolean, note?: string): Promise<void>
   setFreezerStatus(freezerId: number, status: FreezerStatus, note?: string): Promise<void>
@@ -86,6 +90,37 @@ class SupaBackend implements Backend {
   async signOut() {
     await this.sb.auth.signOut()
   }
+  private role: Role = 'crew'
+  async me(): Promise<Me> {
+    const email = (await this.getUser()) ?? ''
+    const { data, error } = await this.sb.rpc('whoami')
+    // before the roles update (007) is run, everyone keeps full access
+    if (error && /whoami/.test(error.message)) return { email, role: (this.role = 'admin'), display_name: null, customer_id: null, customer_name: null }
+    fail(error)
+    const me = data as Me
+    this.role = me.role
+    return me
+  }
+  async listUsers() {
+    const { data, error } = await this.sb.from('app_users').select('*').order('email')
+    fail(error)
+    return (data ?? []) as AppUser[]
+  }
+  async setUser(email: string, role: Role, customerId: number | null, name: string) {
+    const { error } = await this.sb.rpc('set_user', { p_email: email, p_role: role, p_customer: customerId, p_name: name || null })
+    fail(error)
+  }
+  async removeUser(email: string) {
+    const { error } = await this.sb.rpc('remove_user', { p_email: email })
+    fail(error)
+  }
+  // Crew only gets customer names (no contacts or licenses)
+  private customers() {
+    if (this.role === 'admin' || this.role === 'sales')
+      return pageAll<Customer>((a, b) => this.sb.from('customers').select('*').order('name').range(a, b))
+    return pageAll<Pick<Customer, 'id' | 'name' | 'kind' | 'active'>>((a, b) => this.sb.from('customer_names').select('*').order('name').range(a, b))
+      .then(rows => rows.map(r => ({ ...r, license: null, address: null, contact: null, notes: null }) as Customer))
+  }
   async load(): Promise<Snapshot> {
     const since = new Date(Date.now() - 14 * 864e5).toISOString()
     const loadsQ = this.sb.from('loads').select('*').or(`status.in.(planning,loading,in_transit),closed_at.gte.${since}`).order('load_date', { ascending: false }).limit(300)
@@ -97,7 +132,7 @@ class SupaBackend implements Backend {
       // later tables arrive with migrations; tolerate them missing
       pageAll<Strain>((a, b) => this.sb.from('strains').select('*').order('name').range(a, b)).catch(() => [] as Strain[]),
       pageAll<Vehicle>((a, b) => this.sb.from('vehicles').select('*').order('name').range(a, b)).catch(() => [] as Vehicle[]),
-      pageAll<Customer>((a, b) => this.sb.from('customers').select('*').order('name').range(a, b)).catch(() => [] as Customer[]),
+      this.customers().catch(() => [] as Customer[]),
       loadsQ.then(r => r, () => ({ data: null, error: null })),
     ])
     const loads = ((loadsRes as { data: Load[] | null }).data ?? []) as Load[]
@@ -216,7 +251,7 @@ class SupaBackend implements Backend {
   }
   async loadSettings(): Promise<Settings> {
     const [vehicles, customers, strains] = await Promise.all((['vehicles', 'customers', 'strains'] as const).map(t =>
-      pageAll<ListRow>((a, b) => this.sb.from(t).select('*').order('name').range(a, b))))
+      t === 'customers' ? this.customers() as Promise<ListRow[]> : pageAll<ListRow>((a, b) => this.sb.from(t).select('*').order('name').range(a, b))))
     return { vehicles, customers, strains } as Settings
   }
   async saveRow(list: ListName, row: Partial<ListRow>) {
@@ -275,6 +310,15 @@ class DemoBackend implements Backend {
   async getUser() { return this.user }
   async signIn() {}
   async signOut() {}
+  private users: AppUser[] = [{ email: 'demo@lifted-organics.com', role: 'admin', customer_id: null, display_name: 'Demo', added_by: 'setup', created_at: new Date().toISOString(), last_seen: new Date().toISOString() }]
+  async me(): Promise<Me> { return { email: this.user, role: 'admin', display_name: 'Demo', customer_id: null, customer_name: null } }
+  async listUsers() { return [...this.users] }
+  async setUser(email: string, role: Role, customerId: number | null, name: string) {
+    const e = email.trim().toLowerCase(), u = this.users.find(x => x.email === e)
+    if (u) Object.assign(u, { role, customer_id: role === 'customer' ? customerId : null, display_name: name || u.display_name })
+    else this.users.push({ email: e, role, customer_id: role === 'customer' ? customerId : null, display_name: name || null, added_by: this.user, created_at: new Date().toISOString(), last_seen: null })
+  }
+  async removeUser(email: string) { this.users = this.users.filter(u => u.email !== email) }
   async load() {
     if (!this.snap) {
       const r = await fetch('/demo-data.json')
