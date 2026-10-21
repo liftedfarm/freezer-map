@@ -161,7 +161,7 @@ export default function App() {
     <div className={`app ${moving ? 'is-moving' : ''}`}>
       <header className="top">
         <div className="brand" onClick={() => { setView('map'); setFreezerId(null) }}>
-          <span className="logo">❄</span> Freezer Map {backend.demo && <span className="demo">DEMO</span>}
+          <img className="logo-img" src="/logo.png" alt="Lifted Farms" /> <span className="app-name">Freezer Map</span> {backend.demo && <span className="demo">DEMO</span>}
         </div>
         <div className="seg">
           {(['OHR', 'GVR'] as Site[]).map(s => (
@@ -262,7 +262,7 @@ export default function App() {
 function Login() {
   return (
     <div className="center login">
-      <div className="logo big">❄</div>
+      <img className="logo-login" src="/logo-big.png" alt="Lifted Farms" />
       <h1>Freezer Map</h1>
       <p className="muted">Lifted Farms freezer inventory</p>
       <button className="primary big" onClick={() => backend.signIn()}>Sign in with Microsoft</button>

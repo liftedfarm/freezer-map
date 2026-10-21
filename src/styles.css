@@ -58,7 +58,13 @@ h3 { font-size: 15px; margin-top: 18px; }
 .small { padding: 5px 9px; font-size: 13px; }
 .big { padding: 14px 22px; font-size: 16px; }
 
-.login .logo.big { font-size: 48px; }
+.logo-img { height: 30px; width: auto; display: block; }
+.app-name { font-weight: 700; }
+.logo-login { width: 220px; max-width: 70vw; height: auto; margin: 0 auto 8px; display: block; }
+@media (prefers-color-scheme: dark) {
+  .logo-img, .logo-login { background: #f1f4f0; border-radius: 8px; padding: 3px 6px; }
+  .logo-login { padding: 10px 14px; border-radius: 14px; }
+}
 
 .app { padding-bottom: 76px; }
 .top { position: sticky; top: 0; z-index: 5; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
