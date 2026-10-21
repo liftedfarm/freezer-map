@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import type { Backend } from './api'
 import type { LinkInfo, Me } from './types'
 import { MyOrders, MyReserves } from './reserves'
-import { OpenMenu } from './menu'
+import { OpenMenu, OrderForm } from './menu'
 
 const clean = () => history.replaceState(null, '', location.pathname)
 
@@ -101,6 +101,8 @@ export function Portal({ backend, me, signOut }: { backend: Backend; me: Me; sig
   const [pw, setPw] = useState('')
   const [pw2, setPw2] = useState('')
   const [msg, setMsg] = useState<string | null>(null)
+  const [ordering, setOrdering] = useState(false)
+  const [rev, setRev] = useState(0)
   async function change(e: React.FormEvent) {
     e.preventDefault()
     try { await backend.changePassword(pw); setMsg('Password changed'); setPwOpen(false); setPw(''); setPw2('') }
@@ -111,25 +113,29 @@ export function Portal({ backend, me, signOut }: { backend: Backend; me: Me; sig
       <header className="top">
         <div className="brand"><img className="logo-img" src="/logo.png" alt="Lifted Farms" /> <span className="app-name">Orders</span></div>
         <span className="grow" />
-        <button className="ghost small" onClick={() => setPwOpen(!pwOpen)}>Password</button>
-        <button className="ghost small" onClick={signOut}>Sign out</button>
+        {!me.viewing_as && <button className="ghost small" onClick={() => setPwOpen(!pwOpen)}>Password</button>}
+        {!me.viewing_as && <button className="ghost small" onClick={signOut}>Sign out</button>}
       </header>
       <main className="list">
-        <h2>{me.customer_name}</h2>
-        <p className="muted">Signed in as {me.display_name ? `${me.display_name} (${me.email})` : me.email}</p>
-        {msg && <div className="okbox">{msg}</div>}
+        <div className="row between portal-head">
+          <div><h2>{me.customer_name}</h2>
+            <p className="muted">Signed in as {me.display_name ? `${me.display_name} (${me.email})` : me.email}</p></div>
+          <button className="primary big" onClick={() => setOrdering(true)}>Place an order</button>
+        </div>
+        {msg && <div className="okbox">{msg} <a onClick={() => setMsg(null)}>Dismiss</a></div>}
         {pwOpen && (
           <form className="authform card-ish" onSubmit={change}>
             <PasswordPair pw={pw} setPw={setPw} pw2={pw2} setPw2={setPw2} />
             <button className="primary" disabled={pw.length < 8 || pw !== pw2}>Change password</button>
           </form>
         )}
-        <div className="portal-soon">
+        <div className="portal-soon" key={rev}>
+          <h3>Orders</h3><MyOrders backend={backend} onChange={m => { setMsg(m); setRev(r => r + 1) }} />
           <h3>Your reserves</h3><MyReserves backend={backend} />
           <h3>Open menu</h3><OpenMenu backend={backend} />
-          <h3>Orders</h3><MyOrders backend={backend} />
         </div>
       </main>
+      {ordering && <OrderForm backend={backend} onClose={() => setOrdering(false)} onDone={m => { setOrdering(false); setMsg(m); setRev(r => r + 1) }} />}
     </div>
   )
 }

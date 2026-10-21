@@ -133,3 +133,78 @@ function RequestSheet({ backend, row, req, onClose, onDone }: {
     </div>
   )
 }
+
+// Customer portal: place an order (by strain, from their reserve plus what's open)
+export function OrderForm({ backend, onClose, onDone }: { backend: Backend; onClose: () => void; onDone: (msg: string) => void }) {
+  const [rows, setRows] = useState<MenuRow[] | null>(null)
+  const [price, setPrice] = useState<number | null>(null)
+  const [qty, setQty] = useState<Record<string, string>>({})
+  const [q, setQ] = useState('')
+  const [note, setNote] = useState('')
+  const [po, setPo] = useState('')
+  const [wanted, setWanted] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  useEffect(() => {
+    backend.openMenu().then(setRows).catch(e => setErr(String(e?.message ?? e)))
+    backend.myTerms().then(t => setPrice(t?.price_per_lb != null ? Number(t.price_per_lb) : null))
+  }, [])
+  const canOrder = (r: MenuRow) => Math.floor(Number(r.my_left ?? 0) / 10) * 10 + Number(r.available)
+  const list = (rows ?? []).filter(r => canOrder(r) > 0 && (!q || r.strain.toLowerCase().includes(q.toLowerCase())))
+    .sort((a, b) => Number(b.my_left ?? 0) - Number(a.my_left ?? 0) || a.strain.localeCompare(b.strain))
+  const lines = Object.entries(qty).map(([strain, v]) => ({ strain, lbs: Number(v) })).filter(l => l.lbs > 0)
+  const problems = lines.map(l => {
+    const r = rows?.find(x => x.strain === l.strain)
+    if (l.lbs % 10 !== 0) return `${l.strain}: use multiples of 10 lbs`
+    if (r && l.lbs > canOrder(r)) return `${l.strain}: up to ${n0(canOrder(r))} lbs`
+    return null
+  }).filter(Boolean) as string[]
+  const total = lines.reduce((a, l) => a + l.lbs, 0)
+
+  async function submit() {
+    setBusy(true); setErr(null)
+    try { const id = await backend.placeOrder(lines, note, po, wanted || null); onDone(`Order #${id} sent: ${n0(total)} lbs. Lifted will confirm it.`) }
+    catch (e) { setErr((e as Error).message) } finally { setBusy(false) }
+  }
+  return (
+    <div className="scrim" onClick={onClose}>
+      <div className="sheet form wide" onClick={e => e.stopPropagation()}>
+        <div className="sheet-h"><h2>New order</h2><button className="ghost" onClick={onClose}>✕</button></div>
+        <p className="muted">Fresh frozen, by the lb in steps of 10. You can order your reserve plus anything open on the menu.{price != null ? ` Your price: $${price.toFixed(2)}/lb.` : ''}</p>
+        <input className="search" type="search" placeholder="Search strains" value={q} onChange={e => setQ(e.target.value)} />
+        {!rows && !err && <p className="muted">Loading…</p>}
+        <div className="picklist orderlist">
+          <table className="restable">
+            <thead><tr><th>Strain</th><th className="num">Your reserve left</th><th className="num">Can order</th><th className="num">Lbs</th></tr></thead>
+            <tbody>
+              {list.map(r => (
+                <tr key={r.strain} className={Number(qty[r.strain] || 0) > 0 ? 'picked' : ''}>
+                  <td>{r.strain}</td>
+                  <td className="num">{r.my_left != null ? n0(r.my_left) : <span className="muted">-</span>}</td>
+                  <td className="num">{n0(canOrder(r))}</td>
+                  <td className="num"><input className="qty" type="number" min="0" step="10" max={canOrder(r)} value={qty[r.strain] ?? ''} placeholder="0"
+                    onChange={e => setQty({ ...qty, [r.strain]: e.target.value })} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {rows && list.length === 0 && <p className="muted">Nothing available to order{q ? ' matches' : ''}.</p>}
+        </div>
+        <div className="row orderfields">
+          <div className="field"><label>PO # <span className="muted">(optional)</span></label><input value={po} onChange={e => setPo(e.target.value)} /></div>
+          <div className="field"><label>Wanted by <span className="muted">(optional)</span></label><input type="date" value={wanted} onChange={e => setWanted(e.target.value)} /></div>
+        </div>
+        <div className="field"><label>Note <span className="muted">(optional)</span></label><input value={note} onChange={e => setNote(e.target.value)} placeholder="Pickup or delivery details" /></div>
+        {problems.map(p => <div key={p} className="warn-t">{p}</div>)}
+        {err && <div className="warn-t">{err}</div>}
+        <div className="row between">
+          <b>{n0(total)} lbs{price != null && total > 0 ? ` · $${(total * price).toLocaleString(undefined, { maximumFractionDigits: 0 })}` : ''}</b>
+          <div className="row">
+            <button className="ghost" onClick={onClose}>Cancel</button>
+            <button className="primary" disabled={busy || !lines.length || problems.length > 0} onClick={submit}>Send order</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}

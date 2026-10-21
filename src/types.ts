@@ -63,7 +63,7 @@ export interface InvEvent {
 }
 
 export interface Vehicle { id: number; name: string; plate: string | null; kind: string | null; notes: string | null; active: boolean; spaces: number; across: number; owner: string | null }
-export interface Customer { id: number; name: string; kind: 'internal' | 'external'; license: string | null; address: string | null; contact: string | null; notes: string | null; active: boolean }
+export interface Customer { id: number; name: string; kind: 'internal' | 'external'; license: string | null; address: string | null; contact: string | null; notes: string | null; active: boolean; price_per_lb?: number | null; contract_lbs?: number | null; monthly_min_lbs?: number | null; deposit_usd?: number | null; storage_fee?: number | null }
 export interface Strain { id: number; name: string; aliases: string[]; color: string | null; notes: string | null; active: boolean }
 export type ListName = 'vehicles' | 'customers' | 'strains'
 export type ListRow = Vehicle | Customer | Strain
@@ -88,16 +88,18 @@ export interface Snapshot {
 }
 
 export type Role = 'admin' | 'sales' | 'crew' | 'customer' | 'none'
-export interface Me { email: string; role: Role; display_name: string | null; customer_id: number | null; customer_name: string | null }
+export interface Me { email: string; role: Role; display_name: string | null; customer_id: number | null; customer_name: string | null; viewing_as?: boolean; real_email?: string }
 export interface AppUser { email: string; role: Role; customer_id: number | null; display_name: string | null; added_by: string | null; created_at: string; last_seen: string | null }
 export const canSales = (r?: Role) => r === 'admin' || r === 'sales'
 export interface LinkInfo { kind: 'invite' | 'reset'; email: string; display_name: string | null; customer_name: string | null }
 export interface Reserve { id: number; customer_id: number; strain: string; product: string; lbs: number; notes: string | null; updated_by: string | null; updated_at: string }
 export interface Balance { id: number; customer_id: number; strain: string; reserved: number; shipped: number; pending: number; remaining: number }
 export interface OrderLine { id: number; order_id: number; strain: string; lbs: number; price_per_lb: number | null; price_override: boolean; farm: string | null; package_tag: string | null }
-export interface Order { id: number; so_number: string | null; customer_id: number; status: 'draft' | 'pending' | 'shipped' | 'cancelled'; roshi_status: string | null; order_date: string | null; shipped_date: string | null; source: string; notes: string | null; order_lines: OrderLine[] }
+export interface Order { id: number; so_number: string | null; customer_id: number; status: 'draft' | 'submitted' | 'pending' | 'shipped' | 'cancelled'; roshi_status: string | null; order_date: string | null; shipped_date: string | null; source: string; notes: string | null; po_number?: string | null; wanted_date?: string | null; placed_by?: string | null; confirmed_by?: string | null; order_lines: OrderLine[] }
 export interface RoshiRow { line_id: string; so_number: string; customer: string; sku_name: string; sku_id: string | null; status: string; gross: number | null; units: number | null; order_date: string | null; shipped_date: string | null; package_tag: string | null }
 export interface ImportResult { orders_added: number; orders_updated: number; lines_added: number; lines_updated: number; skipped: number; new_customers: string[]; new_strains: string[] }
 export interface MenuRow { strain: string; available: number; my_reserved: number | null; my_shipped: number | null; my_pending: number | null; my_left: number | null; request_id: number | null; requested_lbs: number | null }
 export interface MenuNumbers { strain: string; on_hand: number; pending: number; reserved_left: number; held: number; free: number }
 export interface ReserveRequest { id: number; customer_id: number; strain: string; current_lbs: number; requested_lbs: number; note: string | null; status: 'pending' | 'approved' | 'declined' | 'cancelled'; requested_by: string; requested_at: string; decided_by: string | null; decided_at: string | null; decision_note: string | null }
+export interface OrderInput { strain: string; lbs: number }
+export interface Terms { name: string; price_per_lb: number | null; contract_lbs: number | null }

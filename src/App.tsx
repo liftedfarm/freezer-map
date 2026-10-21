@@ -170,16 +170,16 @@ type FormState =
 interface Placing { title: string; sub: string; run: (slot: Slot) => Promise<void> }
 
 // opened from a request email: go straight to Reserves > Requests
-const GO_REQUESTS = new URLSearchParams(location.search).get('go') === 'requests'
+const GO = new URLSearchParams(location.search).get('go')
+const GO_TAB: 'requests' | 'orders' | null = GO === 'requests' || GO === 'orders' ? GO : null
 
 export default function App() {
   const [user, setUser] = useState<string | null | undefined>(undefined)
   const [me, setMe] = useState<Me | null>(null)
   const [snap, setSnap] = useState<Snapshot | null>(null)
   const [site, setSite] = useState<Site>('OHR')
-  const goRequests = GO_REQUESTS
-  useEffect(() => { if (GO_REQUESTS) history.replaceState(null, '', location.pathname) }, [])
-  const [view, setView] = useState<View>(goRequests ? 'reserves' : 'map')
+  useEffect(() => { if (GO) history.replaceState(null, '', location.pathname) }, [])
+  const [view, setView] = useState<View>(GO_TAB ? 'reserves' : 'map')
   const [freezerId, setFreezerId] = useState<number | null>(null)
   const [palletId, setPalletId] = useState<number | null>(null)
   const [moving, setMoving] = useState<Pallet | null>(null)
@@ -282,8 +282,9 @@ export default function App() {
   if (user === undefined) return <div className="center muted">Loading…</div>
   if (!user) return IS_PORTAL ? <PortalLogin backend={backend} onDone={refreshUser} /> : <Login />
   if (user && !me && !loadError) return <div className="center muted">Loading…</div>
-  if (me?.role === 'customer') return <Portal backend={backend} me={me} signOut={() => backend.signOut().then(() => setUser(null))} />
-  if (me && !staff) return <NoAccess me={me} signOut={() => backend.signOut().then(() => setUser(null))} />
+  const viewBar = me?.viewing_as ? <ViewAsBar me={me} stop={() => backend.stopViewAs().then(() => location.reload())} /> : null
+  if (me?.role === 'customer') return <>{viewBar}<Portal backend={backend} me={me} signOut={() => backend.signOut().then(() => setUser(null))} /></>
+  if (me && !staff) return <>{viewBar}<NoAccess me={me} signOut={() => backend.signOut().then(() => setUser(null))} /></>
   if (loadError && !snap) return (
     <div className="center"><h2>Couldn't load freezers</h2>
       <p className="muted">{loadError}</p>
@@ -350,6 +351,7 @@ export default function App() {
 
   return (
     <div className={`app ${banner ? 'is-moving' : ''} ${side ? 'with-side' : ''}`}>
+      {viewBar}
       {side && <div className="side-scrim" onClick={() => toggleSide(false)} />}
       {side && (
         <Sidebar ctx={{
@@ -425,7 +427,7 @@ export default function App() {
             items={review} ix={ix} where={where} onPallet={setPalletId} showReason />
         </>)}
         {view === 'activity' && <ActivityView ix={ix} />}
-        {view === 'reserves' && canSales(me?.role) && <ReservesView backend={backend} flash={flash} role={me!.role} initialMode={goRequests ? 'requests' : undefined} customers={snap.customers ?? []} strains={snap.strains ?? []}
+        {view === 'reserves' && canSales(me?.role) && <ReservesView backend={backend} flash={flash} role={me!.role} initialMode={GO_TAB ?? undefined} customers={snap.customers ?? []} strains={snap.strains ?? []}
           onHand={snap.pallets.reduce((m, p) => (p.kind !== 'mixed' && p.strain && (p.status === 'in_freezer' || p.status === 'unslotted'))
             ? m.set(p.strain.toLowerCase(), (m.get(p.strain.toLowerCase()) ?? 0) + Number(p.current_weight ?? 0)) : m, new Map<string, number>())} />}
         {view === 'transit' && <TransitView ctx={ctx} onOpen={id => { setLoadId(id); setView('load'); window.scrollTo(0, 0) }} onNew={() => setLoadForm({})} />}
@@ -543,6 +545,16 @@ export default function App() {
 }
 
 // ---------- views ----------
+
+function ViewAsBar({ me, stop }: { me: Me; stop: () => void }) {
+  const label: Record<string, string> = { sales: 'Sales', crew: 'Crew', customer: 'Customer', none: 'No access' }
+  return (
+    <div className="viewas">
+      <span>Viewing as <b>{me.display_name || me.email}</b> ({label[me.role] ?? me.role}{me.customer_name ? ` · ${me.customer_name}` : ''}). Read-only.</span>
+      <button className="small" onClick={stop}>Stop</button>
+    </div>
+  )
+}
 
 function NoAccess({ me, signOut }: { me: Me; signOut: () => void }) {
   return (

@@ -397,3 +397,13 @@ select { padding: 10px; border: 1px solid var(--line); border-radius: 10px; back
 .stats b { font-size: 16px; }
 .stepper input { flex: 1; text-align: center; font-size: 18px; }
 .portal .portal-soon h3 { margin-top: 22px; }
+.viewas { position: sticky; top: 0; z-index: 30; display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  background: #7c3aed; color: #fff; padding: 8px 14px; font-size: 14px; }
+.viewas button { background: #fff; color: #5b21b6; border: 0; border-radius: 8px; padding: 4px 12px; font-weight: 600; }
+.portal-head { align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+.orderlist { max-height: 45vh; overflow: auto; margin: 8px 0; }
+.restable input.qty { width: 78px; text-align: right; padding: 4px 6px; }
+.restable tr.picked td { background: #ecfdf5; }
+.orderfields { gap: 10px; } .orderfields .field { flex: 1; }
+.ordered { padding: 0 2px 8px; }
+.pill.o-submitted { background: #dbeafe; color: #1e40af; }

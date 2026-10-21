@@ -1,5 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
-import type { MenuNumbers, MenuRow, ReserveRequest, Balance, ImportResult, Order, RoshiRow, Reserve, LinkInfo, AppUser, Customer, Me, Role, Freezer, FreezerStatus, InvEvent, ListName, ListRow, Load, LoadItem, LoadStop, MixLine, Pallet, Settings, SingleInput, Slot, Snapshot, StopInput, Strain, Vehicle } from './types'
+import type { OrderInput, Terms, MenuNumbers, MenuRow, ReserveRequest, Balance, ImportResult, Order, RoshiRow, Reserve, LinkInfo, AppUser, Customer, Me, Role, Freezer, FreezerStatus, InvEvent, ListName, ListRow, Load, LoadItem, LoadStop, MixLine, Pallet, Settings, SingleInput, Slot, Snapshot, StopInput, Strain, Vehicle } from './types'
 
 export interface Backend {
   demo: boolean
@@ -26,6 +26,13 @@ export interface Backend {
   cancelRequest(id: number): Promise<void>
   decideRequest(id: number, approve: boolean, note: string): Promise<void>
   listOrders(): Promise<Order[]>
+  placeOrder(lines: OrderInput[], note: string, po: string, wanted: string | null): Promise<number>
+  cancelMyOrder(id: number): Promise<void>
+  setOrderStatus(id: number, status: string, so: string, note: string): Promise<void>
+  setOrderLine(orderId: number, lineId: number | null, strain: string, lbs: number, price: number | null): Promise<void>
+  myTerms(): Promise<Terms | null>
+  startViewAs(email: string): Promise<void>
+  stopViewAs(): Promise<void>
   importRoshi(rows: RoshiRow[]): Promise<ImportResult>
   setReserve(customerId: number, strain: string, lbs: number, note?: string): Promise<void>
   load(): Promise<Snapshot>
@@ -198,10 +205,29 @@ class SupaBackend implements Backend {
   async requestReserve(strain: string, lbs: number, note: string) {
     const { data, error } = await this.sb.rpc('request_reserve_change', { p_strain: strain, p_lbs: lbs, p_note: note || null })
     fail(error)
-    // email the admins (best effort; the request is saved either way)
-    const { data: s } = await this.sb.auth.getSession()
-    fetch('/api/notify-request', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${s.session?.access_token ?? ''}` }, body: JSON.stringify({ id: data }) }).catch(() => {})
+    this.notify('reserve', data as number)
   }
+  // email staff (best effort; the request or order is saved either way)
+  private async notify(kind: 'reserve' | 'order', id: number) {
+    const { data: s } = await this.sb.auth.getSession()
+    fetch('/api/notify-request', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${s.session?.access_token ?? ''}` }, body: JSON.stringify({ kind, id }) }).catch(() => {})
+  }
+  async placeOrder(lines: OrderInput[], note: string, po: string, wanted: string | null) {
+    const { data, error } = await this.sb.rpc('place_order', { p_lines: lines, p_note: note || null, p_po: po || null, p_wanted: wanted || null })
+    fail(error)
+    this.notify('order', data as number)
+    return data as number
+  }
+  async cancelMyOrder(id: number) { const { error } = await this.sb.rpc('cancel_my_order', { p_id: id }); fail(error) }
+  async setOrderStatus(id: number, status: string, so: string, note: string) {
+    const { error } = await this.sb.rpc('set_order_status', { p_id: id, p_status: status, p_so: so || null, p_note: note || null }); fail(error)
+  }
+  async setOrderLine(orderId: number, lineId: number | null, strain: string, lbs: number, price: number | null) {
+    const { error } = await this.sb.rpc('set_order_line', { p_order: orderId, p_line: lineId, p_strain: strain, p_lbs: lbs, p_price: price }); fail(error)
+  }
+  async myTerms() { const { data, error } = await this.sb.rpc('my_terms'); if (error) return null; return data as Terms | null }
+  async startViewAs(email: string) { const { error } = await this.sb.rpc('start_view_as', { p_email: email }); fail(error) }
+  async stopViewAs() { const { error } = await this.sb.rpc('stop_view_as'); fail(error) }
   async cancelRequest(id: number) {
     const { error } = await this.sb.rpc('cancel_reserve_request', { p_id: id }); fail(error)
   }
@@ -434,6 +460,13 @@ class DemoBackend implements Backend {
   async changePassword() {}
   async listBalances() { return this.reserves.map(r => ({ id: r.id, customer_id: r.customer_id, strain: r.strain, reserved: r.lbs, shipped: 0, pending: 0, remaining: r.lbs })) }
   async listOrders() { return [] }
+  async placeOrder(): Promise<number> { throw new Error('Not in demo') }
+  async cancelMyOrder() {}
+  async setOrderStatus() {}
+  async setOrderLine() {}
+  async myTerms() { return null }
+  async startViewAs() { throw new Error('Not in demo') }
+  async stopViewAs() {}
   async openMenu() { return [] }
   async menuNumbers() { return [] }
   async listRequests() { return [] }

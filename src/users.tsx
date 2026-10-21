@@ -120,6 +120,11 @@ function UserForm({ user, customers, isMe, onClose, onSave, onRemove, backend, c
             <p className="muted">They'll only ever see this customer's reserves, menu and orders. After saving, send them the invite link.</p>
           </div>
         )}
+        {!isNew && !isMe && user.role !== 'admin' && (
+          <div className="field"><label>See what they see</label>
+            <div className="row"><button className="ghost small" disabled={busy} onClick={() => run(async () => { await backend.startViewAs(user.email!); location.reload() })}>View as {user.display_name || user.email}</button>
+              <span className="muted">Read-only, for up to 2 hours. Logged in Activity.</span></div></div>
+        )}
         {!isNew && user.role === 'customer' && <LinkBox backend={backend} email={user.email!} claimed={claimed} flash={flash} onLinked={onLinked} />}
         {isMe && <p className="muted">You can't change your own role. Another admin can.</p>}
         <div className="row between">

@@ -6,7 +6,7 @@ import type { MenuNumbers, ReserveRequest, Role, Balance, Customer, ImportResult
 
 const n0 = (x: number) => Math.round(x).toLocaleString()
 
-const STATUS_LABEL: Record<string, string> = { shipped: 'Shipped', pending: 'Pending', draft: 'Draft', cancelled: 'Cancelled' }
+const STATUS_LABEL: Record<string, string> = { shipped: 'Shipped', pending: 'Confirmed', submitted: 'Submitted', draft: 'Draft', cancelled: 'Cancelled' }
 const orderLbs = (o: Order) => o.order_lines.reduce((a, l) => a + Number(l.lbs), 0)
 const fmtDate = (d: string | null) => d ? new Date(d + 'T12:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: '2-digit' }) : ''
 
@@ -40,7 +40,7 @@ async function readRoshi(f: File): Promise<RoshiRow[]> {
 
 export function ReservesView({ backend, customers, strains, onHand, flash, role, initialMode }: {
   backend: Backend; customers: Customer[]; strains: Strain[]; onHand: Map<string, number>
-  flash: (t: string, bad?: boolean) => void; role: Role; initialMode?: 'requests'
+  flash: (t: string, bad?: boolean) => void; role: Role; initialMode?: 'requests' | 'orders'
 }) {
   const isAdmin = role === 'admin'
   const [reqs, setReqs] = useState<ReserveRequest[]>([])
@@ -87,7 +87,8 @@ export function ReservesView({ backend, customers, strains, onHand, flash, role,
       return { s, rs, left, have, pend, held: 0, free: have - pend - left }
     })).filter(x => (x.have > 0 || x.left > 0) && (!ql || x.s.toLowerCase().includes(ql) || x.rs.some(r => cname(r.customer_id).toLowerCase().includes(ql))))
     .sort((a, b) => a.s.localeCompare(b.s))
-  const shownOrders = orders.filter(o => !ql || cname(o.customer_id).toLowerCase().includes(ql) || (o.so_number ?? '').toLowerCase().includes(ql) || o.order_lines.some(l => l.strain.toLowerCase().includes(ql)))
+  const submitted = orders.filter(o => o.status === 'submitted').length
+  const shownOrders = [...orders].sort((a, b) => Number(b.status === 'submitted') - Number(a.status === 'submitted')).filter(o => !ql || cname(o.customer_id).toLowerCase().includes(ql) || (o.so_number ?? '').toLowerCase().includes(ql) || o.order_lines.some(l => l.strain.toLowerCase().includes(ql)))
 
   async function save() {
     if (!edit || edit.customer_id == null) return
@@ -115,7 +116,7 @@ export function ReservesView({ backend, customers, strains, onHand, flash, role,
       <div className="seg tabs">
         <button className={mode === 'customer' ? 'on' : ''} onClick={() => setMode('customer')}>By customer</button>
         <button className={mode === 'strain' ? 'on' : ''} onClick={() => setMode('strain')}>By strain</button>
-        <button className={mode === 'orders' ? 'on' : ''} onClick={() => setMode('orders')}>Orders <span className="muted">{orders.length}</span></button>
+        <button className={mode === 'orders' ? 'on' : ''} onClick={() => setMode('orders')}>Orders {submitted > 0 ? <span className="badge warn">{submitted} new</span> : <span className="muted">{orders.length}</span>}</button>
         <button className={mode === 'requests' ? 'on' : ''} onClick={() => setMode('requests')}>Requests {reqs.some(r => r.status === 'pending') ? <span className="badge warn">{reqs.filter(r => r.status === 'pending').length}</span> : <span className="muted">0</span>}</button>
       </div>
       <div className="row toolbar">
@@ -217,16 +218,11 @@ export function ReservesView({ backend, customers, strains, onHand, flash, role,
           {shownOrders.map(o => (
             <div key={o.id} className="rescard">
               <button className="li setrow" onClick={() => setOpen(open === -o.id ? null : -o.id)}>
-                <div className="grow"><b>{o.so_number ?? `Order ${o.id}`}</b> <span className={`pill o-${o.status}`}>{STATUS_LABEL[o.status]}</span>
-                  <div className="muted">{cname(o.customer_id)} · {fmtDate(o.order_date)}{o.roshi_status && o.roshi_status !== 'Fulfilled' ? ` · Roshi: ${o.roshi_status}` : ''}</div></div>
+                <div className="grow"><b>{o.so_number ?? `Order #${o.id}`}</b> <span className={`pill o-${o.status}`}>{STATUS_LABEL[o.status]}</span>
+                  <div className="muted">{cname(o.customer_id)} · {fmtDate(o.order_date)}{o.source === 'portal' ? ' · from portal' : ''}{o.roshi_status && o.roshi_status !== 'Fulfilled' ? ` · Roshi: ${o.roshi_status}` : ''}</div></div>
                 <b className="num">{n0(orderLbs(o))} lbs</b>
               </button>
-              {open === -o.id && (
-                <table className="restable">
-                  <thead><tr><th>Strain</th><th className="num">Lbs</th><th className="num">$/lb</th></tr></thead>
-                  <tbody>{o.order_lines.map(l => <tr key={l.id}><td>{l.strain}{l.farm && <span className="muted"> · {l.farm}</span>}</td><td className="num">{n0(Number(l.lbs))}</td><td className="num">{l.price_per_lb != null ? `$${Number(l.price_per_lb).toFixed(2)}` : ''}</td></tr>)}</tbody>
-                </table>
-              )}
+              {open === -o.id && <OrderEditor backend={backend} o={o} strains={strains} flash={flash} onChanged={load} />}
             </div>
           ))}
           <p className="muted">Import the Roshi sales order export (the same one the menu engine uses) any time. New orders are added and existing ones are updated. Only 2026 fresh frozen lines are used.</p>
@@ -279,7 +275,7 @@ export function MyReserves({ backend }: { backend: Backend }) {
   )
 }
 
-export function MyOrders({ backend }: { backend: Backend }) {
+export function MyOrders({ backend, onChange }: { backend: Backend; onChange?: (msg: string) => void }) {
   const [rows, setRows] = useState<Order[] | null>(null)
   const [open, setOpen] = useState<number | null>(null)
   useEffect(() => { backend.listOrders().then(setRows).catch(() => setRows([])) }, [])
@@ -290,7 +286,7 @@ export function MyOrders({ backend }: { backend: Backend }) {
       {rows.map(o => (
         <div key={o.id} className="rescard">
           <button className="li setrow" onClick={() => setOpen(open === o.id ? null : o.id)}>
-            <div className="grow"><b>{o.so_number ?? `Order ${o.id}`}</b> <span className={`pill o-${o.status}`}>{STATUS_LABEL[o.status]}</span>
+            <div className="grow"><b>{o.so_number ?? `Order #${o.id}`}</b> <span className={`pill o-${o.status}`}>{STATUS_LABEL[o.status]}</span>
               <div className="muted">{fmtDate(o.order_date)}{o.shipped_date && o.status === 'shipped' ? ` · shipped ${fmtDate(o.shipped_date)}` : ''}</div></div>
             <b className="num">{n0(orderLbs(o))} lbs</b>
           </button>
@@ -298,10 +294,76 @@ export function MyOrders({ backend }: { backend: Backend }) {
             <table className="restable">
               <thead><tr><th>Strain</th><th className="num">Lbs</th><th className="num">$/lb</th></tr></thead>
               <tbody>{o.order_lines.map(l => <tr key={l.id}><td>{l.strain}</td><td className="num">{n0(Number(l.lbs))}</td><td className="num">{l.price_per_lb != null ? `$${Number(l.price_per_lb).toFixed(2)}` : ''}</td></tr>)}</tbody>
+              {(o.po_number || o.notes || o.status === 'submitted') && <tfoot><tr><td colSpan={3}>
+                {o.po_number && <div className="muted">PO {o.po_number}</div>}{o.notes && <div className="muted">"{o.notes}"</div>}
+                {o.status === 'submitted' && <button className="ghost small" onClick={async () => {
+                  try { await backend.cancelMyOrder(o.id); onChange?.(`Order #${o.id} cancelled`) } catch (e) { onChange?.(String((e as Error).message)) }
+                }}>Cancel this order</button>}
+              </td></tr></tfoot>}
             </table>
           )}
         </div>
       ))}
     </>
+  )
+}
+
+// staff: confirm / ship / cancel an order, change lbs or price on a line, add a line
+function OrderEditor({ backend, o, strains, flash, onChanged }: {
+  backend: Backend; o: Order; strains: Strain[]; flash: (t: string, bad?: boolean) => void; onChanged: () => void
+}) {
+  const [so, setSo] = useState(o.so_number ?? '')
+  const [edits, setEdits] = useState<Record<number, { lbs: string; price: string }>>({})
+  const [add, setAdd] = useState({ strain: '', lbs: '' })
+  const [busy, setBusy] = useState(false)
+  const run = async (f: () => Promise<void>, ok: string) => {
+    setBusy(true)
+    try { await f(); flash(ok); setEdits({}); setAdd({ strain: '', lbs: '' }); onChanged() } catch (e) { flash(String((e as Error).message ?? e), true) } finally { setBusy(false) }
+  }
+  const open_ = o.status === 'submitted' || o.status === 'pending'
+  const total = o.order_lines.reduce((a, l) => a + Number(l.lbs) * Number(l.price_per_lb ?? 0), 0)
+  return (
+    <div className="ordered">
+      <table className="restable">
+        <thead><tr><th>Strain</th><th className="num">Lbs</th><th className="num">$/lb</th>{open_ && <th />}</tr></thead>
+        <tbody>{o.order_lines.map(l => {
+          const e = edits[l.id]
+          return (
+            <tr key={l.id}>
+              <td>{l.strain}{l.farm && <span className="muted"> · {l.farm}</span>}{l.price_override && <div className="muted small">price overridden</div>}</td>
+              {e ? <>
+                <td className="num"><input className="qty" type="number" step="10" min="0" value={e.lbs} onChange={x => setEdits({ ...edits, [l.id]: { ...e, lbs: x.target.value } })} /></td>
+                <td className="num"><input className="qty" type="number" step="0.5" min="0" value={e.price} onChange={x => setEdits({ ...edits, [l.id]: { ...e, price: x.target.value } })} /></td>
+                <td className="num"><button className="primary small" disabled={busy} onClick={() => run(() => backend.setOrderLine(o.id, l.id, l.strain, Number(e.lbs), e.price === '' ? null : Number(e.price)), Number(e.lbs) === 0 ? 'Line removed' : 'Line saved')}>Save</button></td>
+              </> : <>
+                <td className="num">{n0(Number(l.lbs))}</td>
+                <td className="num">{l.price_per_lb != null ? `$${Number(l.price_per_lb).toFixed(2)}` : ''}</td>
+                {open_ && <td className="num"><button className="ghost small" onClick={() => setEdits({ ...edits, [l.id]: { lbs: String(l.lbs), price: l.price_per_lb != null ? String(l.price_per_lb) : '' } })}>Edit</button></td>}
+              </>}
+            </tr>
+          )
+        })}</tbody>
+        <tfoot>
+          {open_ && <tr><td><input list="order-strains" placeholder="Add a strain" value={add.strain} onChange={e => setAdd({ ...add, strain: e.target.value })} />
+            <datalist id="order-strains">{strains.filter(s => s.active).map(s => <option key={s.id} value={s.name} />)}</datalist></td>
+            <td className="num"><input className="qty" type="number" step="10" min="0" placeholder="lbs" value={add.lbs} onChange={e => setAdd({ ...add, lbs: e.target.value })} /></td>
+            <td className="muted small">customer price</td>
+            <td className="num"><button className="ghost small" disabled={busy || !add.strain || !(Number(add.lbs) > 0)} onClick={() => run(() => backend.setOrderLine(o.id, null, add.strain, Number(add.lbs), null), 'Line added')}>Add</button></td></tr>}
+          <tr><td colSpan={open_ ? 4 : 3}>
+            <div className="muted">{total > 0 && <>Total ${total.toLocaleString(undefined, { maximumFractionDigits: 0 })} · </>}{o.po_number && <>PO {o.po_number} · </>}{o.wanted_date && <>wanted by {fmtDate(o.wanted_date)} · </>}{o.placed_by && <>placed by {o.placed_by}</>}{o.confirmed_by && <> · confirmed by {o.confirmed_by}</>}</div>
+            {o.notes && <div className="muted">"{o.notes}"</div>}
+          </td></tr>
+        </tfoot>
+      </table>
+      {open_ && (
+        <div className="row reqact">
+          <input placeholder="Roshi SO # (optional)" value={so} onChange={e => setSo(e.target.value)} />
+          {o.status === 'submitted' && <button className="primary small" disabled={busy} onClick={() => run(() => backend.setOrderStatus(o.id, 'pending', so, ''), 'Order confirmed')}>Confirm</button>}
+          {o.status === 'pending' && so !== (o.so_number ?? '') && <button className="ghost small" disabled={busy} onClick={() => run(() => backend.setOrderStatus(o.id, 'pending', so, ''), 'SO # saved')}>Save SO #</button>}
+          <button className="ghost small" disabled={busy} onClick={() => run(() => backend.setOrderStatus(o.id, 'shipped', so, ''), 'Marked shipped')}>Mark shipped</button>
+          <button className="ghost small" disabled={busy} onClick={() => run(() => backend.setOrderStatus(o.id, 'cancelled', so, ''), 'Order cancelled')}>Cancel order</button>
+        </div>
+      )}
+    </div>
   )
 }
