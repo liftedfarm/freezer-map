@@ -526,6 +526,11 @@ function MiniGrid({ ix, slots, query }: { ix: Index; slots: Slot[]; query: strin
         const mixed = ps.some(p => p.kind === 'mixed')
         const sw = swatch(ps[0]?.strain)
         const hit = ps.some(p => matches(p, query, ix))
+        if (ps.length > 1) return (
+          <i key={s.id} className={`full stack ${query && !hit ? 'dim' : ''}`}>
+            {ps.map(p => { const w = swatch(p.strain); return <b key={p.id} className={p.kind === 'mixed' ? 'mx' : w.cls} style={p.kind === 'mixed' ? undefined : w.style} /> })}
+          </i>
+        )
         return <i key={s.id} className={`${ps.length ? `full ${mixed ? 'mx' : sw.cls}` : ''} ${query && !hit ? 'dim' : ''}`}
           style={ps.length && !mixed ? sw.style : undefined} />
       })}
@@ -625,24 +630,26 @@ function FreezerView({ ix, freezer, query, moving, placing, siblings, onOpen, on
         {grid.map(s => {
           const here = ix.inSlot.get(s.id) ?? []
           const isSrc = moving?.slot_id === s.id
-          const mixed = here.some(p => p.kind === 'mixed')
+          const stacked = here.length > 1
+          const mixed = !stacked && here.some(p => p.kind === 'mixed')
           const sw = swatch(here[0]?.strain)
           const dim = query && !here.some(p => matches(p, query, ix))
           return (
             <button key={s.id}
-              className={`tile ${here.length ? 'full' : 'empty'} ${isSrc ? 'src' : ''} ${choosing && !isSrc && !dead ? (here.length ? 'can-combine' : 'can-drop') : ''} ${dim ? 'dim' : ''} ${here.length ? (mixed ? 'mx' : sw.cls) : ''}`}
-              style={here.length && !mixed ? sw.style : undefined}
+              className={`tile ${here.length ? 'full' : 'empty'} ${isSrc ? 'src' : ''} ${choosing && !isSrc && !dead ? (here.length ? 'can-combine' : 'can-drop') : ''} ${dim ? 'dim' : ''} ${stacked ? 'stacked' : here.length ? (mixed ? 'mx' : sw.cls) : ''}`}
+              style={here.length && !mixed && !stacked ? sw.style : undefined}
               disabled={choosing && dead}
               onClick={() => onSlot(s)}>
               <span className="code">{s.code}</span>
               {here.length === 0 && <span className="muted">{choosing ? (dead ? 'Not working' : 'Place here') : dead ? 'empty' : '+ New pallet'}</span>}
               {here.map(p => {
                 const on = ix.contentsOf.get(p.id) ?? []
+                const ps = swatch(p.strain)
                 return (
-                  <span key={p.id} className="p" onClick={e => { if (!choosing) { e.stopPropagation(); onPallet(p.id) } }}>
+                  <span key={p.id} className={`p ${stacked ? `band ${p.kind === 'mixed' ? 'mx' : ps.cls}` : ''}`} style={stacked && p.kind !== 'mixed' ? ps.style : undefined} onClick={e => { if (!choosing) { e.stopPropagation(); onPallet(p.id) } }}>
                     <b>{p.code}{p.needs_review && <span className="flag" title={p.needs_review}>!</span>}{(p.tag_pending || on.some(c => c.tag_pending)) && <span className="flag tag" title="METRC tag pending">T</span>}{ix.loadOf.has(p.id) && <span className="flag load" title={`Planned on ${ix.loadOf.get(p.id)!.load.code}`}>L</span>}</b>
                     <span className="strain">{p.kind === 'mixed' ? `Mixed · ${on.length} pkg${on.length === 1 ? '' : 's'}: ${[...new Set(on.map(c => c.strain))].join(', ')}` : p.strain ?? p.label ?? 'No strain'}</span>
-                    <span className="w">{lbs(weightOf(ix, p))}</span>
+                    <span className="w">{p.kind !== 'mixed' && p.current_weight == null ? 'no weight' : lbs(weightOf(ix, p))}</span>
                   </span>
                 )
               })}

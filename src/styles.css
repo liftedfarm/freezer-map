@@ -336,3 +336,16 @@ select { padding: 10px; border: 1px solid var(--line); border-radius: 10px; back
 .side-pick > b:first-child { grid-column: 2; }
 .chk { width: 16px; height: 16px; border: 1px solid var(--line); border-radius: 4px; display: inline-grid; place-items: center; font-size: 11px; grid-row: 1 / 3; align-self: center; }
 .chk.on { background: var(--brand); color: var(--brand-ink); border-color: var(--brand); }
+
+/* stacked slots: each pallet keeps its own strain color */
+.mini i.stack { display: flex; gap: 1px; background: none; }
+.mini i.stack b { flex: 1; border-radius: 2px; background: hsl(var(--h, 0) var(--tile-s) calc(var(--tile-l) - 18%)); }
+.mini i.stack b.cc { background: color-mix(in srgb, var(--c) 85%, var(--panel)); }
+.mini i.stack b.unk { background: var(--muted); }
+.mini i.stack b.mx { background: repeating-linear-gradient(135deg, #7c3aed 0 3px, #c4b5fd 3px 6px); }
+.tile.full.stacked { background: var(--panel); border: 1px solid var(--line); padding: 20px 4px 4px; gap: 3px; }
+.tile .p.band { border-radius: 7px; padding: 4px 6px; background: hsl(var(--h, 0) var(--tile-s) var(--tile-l)); color: var(--tile-ink); }
+.tile .p.band.cc { background: color-mix(in srgb, var(--c) 45%, var(--panel)); color: var(--ink); }
+.tile .p.band.unk { background: var(--empty); border: 1px dashed var(--muted); }
+.tile .p.band.mx { background: repeating-linear-gradient(135deg, color-mix(in srgb, #7c3aed 22%, var(--panel)) 0 10px, color-mix(in srgb, #7c3aed 12%, var(--panel)) 10px 20px); }
+.tile .p.band + .p.band { border-top: 0; padding-top: 4px; }
