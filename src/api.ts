@@ -1,5 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
-import type { Reserve, LinkInfo, AppUser, Customer, Me, Role, Freezer, FreezerStatus, InvEvent, ListName, ListRow, Load, LoadItem, LoadStop, MixLine, Pallet, Settings, SingleInput, Slot, Snapshot, StopInput, Strain, Vehicle } from './types'
+import type { Balance, ImportResult, Order, RoshiRow, Reserve, LinkInfo, AppUser, Customer, Me, Role, Freezer, FreezerStatus, InvEvent, ListName, ListRow, Load, LoadItem, LoadStop, MixLine, Pallet, Settings, SingleInput, Slot, Snapshot, StopInput, Strain, Vehicle } from './types'
 
 export interface Backend {
   demo: boolean
@@ -18,6 +18,9 @@ export interface Backend {
   passwordSignIn(email: string, password: string): Promise<void>
   changePassword(password: string): Promise<void>
   listReserves(): Promise<Reserve[]>
+  listBalances(): Promise<Balance[]>
+  listOrders(): Promise<Order[]>
+  importRoshi(rows: RoshiRow[]): Promise<ImportResult>
   setReserve(customerId: number, strain: string, lbs: number, note?: string): Promise<void>
   load(): Promise<Snapshot>
   movePallet(palletId: number, toSlot: number | null, combine: boolean, note?: string): Promise<void>
@@ -172,6 +175,17 @@ class SupaBackend implements Backend {
   }
   async listReserves() {
     return pageAll<Reserve>((a, b) => this.sb.from('reserves').select('*').order('strain').range(a, b))
+  }
+  async listBalances() {
+    return pageAll<Balance>((a, b) => this.sb.from('reserve_balances').select('*').order('strain').range(a, b))
+  }
+  async listOrders() {
+    return pageAll<Order>((a, b) => this.sb.from('orders').select('*, order_lines(*)').order('order_date', { ascending: false }).order('id', { ascending: false }).range(a, b))
+  }
+  async importRoshi(rows: RoshiRow[]) {
+    const { data, error } = await this.sb.rpc('import_roshi_orders', { p_rows: rows })
+    fail(error)
+    return data as ImportResult
   }
   async setReserve(customerId: number, strain: string, lbs: number, note?: string) {
     const { error } = await this.sb.rpc('set_reserve', { p_customer: customerId, p_strain: strain, p_lbs: lbs, p_note: note || null })
@@ -389,6 +403,9 @@ class DemoBackend implements Backend {
   async resetPassword(): Promise<string> { throw new Error('Not in demo') }
   async passwordSignIn() { throw new Error('Not in demo') }
   async changePassword() {}
+  async listBalances() { return this.reserves.map(r => ({ id: r.id, customer_id: r.customer_id, strain: r.strain, reserved: r.lbs, shipped: 0, pending: 0, remaining: r.lbs })) }
+  async listOrders() { return [] }
+  async importRoshi(): Promise<ImportResult> { throw new Error('Not in demo') }
   private reserves: Reserve[] = []
   async listReserves() { return [...this.reserves] }
   async setReserve(customerId: number, strain: string, lbs: number) {

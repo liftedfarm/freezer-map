@@ -62,7 +62,7 @@ function parseKind(v: string): 'internal' | 'external' | undefined {
 }
 const parseAliases = (v: string) => v ? v.split(/[,;|]/).map(x => x.trim()).filter(Boolean) : []
 
-function parseCsv(text: string): string[][] {
+export function parseCsv(text: string): string[][] {
   const rows: string[][] = []; let row: string[] = []; let cell = ''; let q = false
   for (let i = 0; i < text.length; i++) {
     const c = text[i]

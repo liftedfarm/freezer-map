@@ -16,7 +16,7 @@ select v.name, 'Added from menu engine reserves' from (values ('Banana Split'), 
  where canonical_strain(v.name) is null;
 
 -- customer not in the list yet
-insert into customers (name, kind) select 'Ay Papi', 'external' where not exists (select 1 from customers where name ilike 'ay papi%');
+insert into customers (name, kind) select 'Ay Papi', 'external' where not exists (select 1 from customers where regexp_replace(lower(name), '[^a-z]', '', 'g') like 'aypapi%');
 
 create temp table me_reserves (customer text, strain text, lbs numeric) on commit drop;
 insert into me_reserves values
@@ -532,9 +532,14 @@ insert into me_reserves values
 ('Acquamarcia','Zushi',300),
 ('Rosin Tech Labs','Zushi',500);
 
+-- customer names are matched loosely (case, punctuation, LLC/Inc ignored)
+create or replace function pg_temp.norm(x text) returns text language sql immutable as $f$
+  select regexp_replace(regexp_replace(lower(coalesce(x, '')), '\m(llc|inc|corp|co)\M', '', 'g'), '[^a-z0-9]', '', 'g') $f$;
 create temp table matched on commit drop as
-  select m.*, c.id as customer_id, canonical_strain(m.strain) as canon
-    from me_reserves m left join customers c on lower(c.name) = lower(m.customer);
+  select m.*, (select c.id from customers c where pg_temp.norm(c.name) = pg_temp.norm(m.customer)
+                order by lower(c.name) = lower(m.customer) desc, c.active desc, c.id limit 1) as customer_id,
+         canonical_strain(m.strain) as canon
+    from me_reserves m;
 
 do $$
 declare bad text;

@@ -93,3 +93,8 @@ export interface AppUser { email: string; role: Role; customer_id: number | null
 export const canSales = (r?: Role) => r === 'admin' || r === 'sales'
 export interface LinkInfo { kind: 'invite' | 'reset'; email: string; display_name: string | null; customer_name: string | null }
 export interface Reserve { id: number; customer_id: number; strain: string; product: string; lbs: number; notes: string | null; updated_by: string | null; updated_at: string }
+export interface Balance { id: number; customer_id: number; strain: string; reserved: number; shipped: number; pending: number; remaining: number }
+export interface OrderLine { id: number; order_id: number; strain: string; lbs: number; price_per_lb: number | null; price_override: boolean; farm: string | null; package_tag: string | null }
+export interface Order { id: number; so_number: string | null; customer_id: number; status: 'draft' | 'pending' | 'shipped' | 'cancelled'; roshi_status: string | null; order_date: string | null; shipped_date: string | null; source: string; notes: string | null; order_lines: OrderLine[] }
+export interface RoshiRow { line_id: string; so_number: string; customer: string; sku_name: string; sku_id: string | null; status: string; gross: number | null; units: number | null; order_date: string | null; shipped_date: string | null; package_tag: string | null }
+export interface ImportResult { orders_added: number; orders_updated: number; lines_added: number; lines_updated: number; skipped: number; new_customers: string[]; new_strains: string[] }

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { Backend } from './api'
 import type { LinkInfo, Me } from './types'
-import { MyReserves } from './reserves'
+import { MyOrders, MyReserves } from './reserves'
 
 const clean = () => history.replaceState(null, '', location.pathname)
 
@@ -126,7 +126,7 @@ export function Portal({ backend, me, signOut }: { backend: Backend; me: Me; sig
         <div className="portal-soon">
           <h3>Your reserves</h3><MyReserves backend={backend} />
           <h3>Menu</h3><p className="muted">Coming soon: live availability and your pricing.</p>
-          <h3>Orders</h3><p className="muted">Coming soon: place orders and track them.</p>
+          <h3>Orders</h3><MyOrders backend={backend} />
         </div>
       </main>
     </div>

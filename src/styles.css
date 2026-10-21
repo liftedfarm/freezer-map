@@ -369,3 +369,17 @@ select { padding: 10px; border: 1px solid var(--line); border-radius: 10px; back
 .reserves h2 .muted { font-size: 15px; font-weight: 500; margin-left: 6px; }
 .bottom { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: 1fr; }
 @media (max-width: 480px) { .bottom button { font-size: 13px; padding: 14px 2px; } .badge { margin-left: 3px; padding: 1px 5px; } }
+.pill.o-shipped { background: #dcfce7; color: #166534; }
+.pill.o-pending { background: #fef3c7; color: #92400e; }
+.pill.o-cancelled { background: #fee2e2; color: #991b1b; }
+.pill.o-draft { background: #e5e7eb; color: #374151; }
+.restable tr.tap { cursor: pointer; }
+.restable tr.tap:hover td { background: var(--empty, #f0f0f0); }
+.rescard .li .num { text-align: right; }
+.filebtn.primary { position: relative; overflow: hidden; display: inline-flex; align-items: center; }
+.filebtn.disabled { opacity: .6; pointer-events: none; }
+@media (max-width: 480px) {
+  .restable { font-size: 13px; }
+  .restable th, .restable td { padding: 6px 3px; }
+  .restable th { font-size: 10px; letter-spacing: 0; }
+}
