@@ -149,6 +149,8 @@ function describe(ix: Index, e: InvEvent, names?: Map<number, string>) {
       return d?.was ? `${d?.email} changed from ${d.was} to ${d.role}` : `${d?.email} added as ${d?.role}` }
     case 'reserve_set': { const d = e.details as { customer?: string; strain?: string; lbs?: number; was?: number | null } | null
       return d?.lbs === 0 ? `Reserve removed: ${d?.customer} · ${d?.strain}` : `Reserve ${d?.was != null ? `changed ${lbs(Number(d.was))} →` : 'set:'} ${d?.customer} · ${d?.strain} ${lbs(Number(d?.lbs ?? 0))}` }
+    case 'reserve_import': { const d = e.details as { rows?: number; lbs?: number; customers?: number } | null
+      return `Reserves loaded from ${e.note ?? 'a file'}: ${d?.rows} reserves, ${d?.customers} customers, ${lbs(Number(d?.lbs ?? 0))}` }
     case 'user_removed': return `${e.note} removed from users`
     default: return `${e.type} ${code}`
   }
