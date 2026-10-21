@@ -6,7 +6,7 @@ const n0 = (x: number | null | undefined) => Math.round(Number(x ?? 0)).toLocale
 const STATUS: Record<string, string> = { pending: 'Waiting for approval', approved: 'Approved', declined: 'Declined', cancelled: 'Cancelled' }
 
 // Customer portal: live open menu + reserve change requests
-export function OpenMenu({ backend }: { backend: Backend }) {
+export function OpenMenu({ backend, reserves }: { backend: Backend; reserves: boolean }) {
   const [rows, setRows] = useState<MenuRow[] | null>(null)
   const [reqs, setReqs] = useState<ReserveRequest[]>([])
   const [err, setErr] = useState<string | null>(null)
@@ -20,7 +20,7 @@ export function OpenMenu({ backend }: { backend: Backend }) {
 
   if (err) return <p className="muted">The menu isn't available right now.</p>
   if (!rows) return <p className="muted">Loading…</p>
-  const shown = rows.filter(r => (!mine || r.my_reserved != null || r.request_id != null) && (!q || r.strain.toLowerCase().includes(q.toLowerCase())))
+  const shown = rows.filter(r => (reserves || Number(r.available) > 0) && (!mine || r.my_reserved != null || r.request_id != null) && (!q || r.strain.toLowerCase().includes(q.toLowerCase())))
   const totalAvail = rows.reduce((a, r) => a + Number(r.available), 0)
 
   return (
@@ -29,31 +29,31 @@ export function OpenMenu({ backend }: { backend: Backend }) {
       {msg && <div className="okbox">{msg} <a onClick={() => setMsg(null)}>Dismiss</a></div>}
       <div className="row toolbar">
         <input className="search" type="search" placeholder="Search strains" value={q} onChange={e => setQ(e.target.value)} />
-        <div className="seg">
+        {reserves && <div className="seg">
           <button className={!mine ? 'on' : ''} onClick={() => setMine(false)}>All</button>
           <button className={mine ? 'on' : ''} onClick={() => setMine(true)}>My reserves</button>
-        </div>
+        </div>}
       </div>
       <table className="restable menu">
-        <thead><tr><th>Strain</th><th className="num">Open</th><th className="num">Your reserve</th><th /></tr></thead>
+        <thead><tr><th>Strain</th><th className="num">Open</th>{reserves && <><th className="num">Your reserve</th><th /></>}</tr></thead>
         <tbody>
           {shown.map(r => (
             <tr key={r.strain}>
               <td>{r.strain}
                 {r.request_id != null && <div className="reqnote">Requested {n0(r.requested_lbs)} lbs · waiting</div>}</td>
               <td className="num">{Number(r.available) > 0 ? n0(r.available) : <span className="muted">0</span>}</td>
-              <td className="num">{r.my_reserved != null ? <>{n0(r.my_reserved)}<div className="muted small">{n0(r.my_left)} left</div></> : <span className="muted">-</span>}</td>
+              {reserves && <><td className="num">{r.my_reserved != null ? <>{n0(r.my_reserved)}<div className="muted small">{n0(r.my_left)} left</div></> : <span className="muted">-</span>}</td>
               <td className="num">
                 {(Number(r.available) > 0 || r.my_reserved != null || r.request_id != null) &&
                   <button className="ghost small" onClick={() => setPick(r)}>{r.request_id != null ? 'Edit request' : r.my_reserved != null ? 'Change' : 'Reserve'}</button>}
-              </td>
+              </td></>}
             </tr>
           ))}
         </tbody>
       </table>
       {shown.length === 0 && <p className="muted">Nothing matches.</p>}
 
-      {reqs.length > 0 && (
+      {reserves && reqs.length > 0 && (
         <>
           <h3>Your reserve requests</h3>
           {reqs.slice(0, 30).map(r => (
@@ -135,7 +135,7 @@ function RequestSheet({ backend, row, req, onClose, onDone }: {
 }
 
 // Customer portal: place an order (by strain, from their reserve plus what's open)
-export function OrderForm({ backend, onClose, onDone }: { backend: Backend; onClose: () => void; onDone: (msg: string) => void }) {
+export function OrderForm({ backend, reserves, onClose, onDone }: { backend: Backend; reserves: boolean; onClose: () => void; onDone: (msg: string) => void }) {
   const [rows, setRows] = useState<MenuRow[] | null>(null)
   const [price, setPrice] = useState<number | null>(null)
   const [qty, setQty] = useState<Record<string, string>>({})
@@ -149,7 +149,7 @@ export function OrderForm({ backend, onClose, onDone }: { backend: Backend; onCl
     backend.openMenu().then(setRows).catch(e => setErr(String(e?.message ?? e)))
     backend.myTerms().then(t => setPrice(t?.price_per_lb != null ? Number(t.price_per_lb) : null))
   }, [])
-  const canOrder = (r: MenuRow) => Math.floor(Number(r.my_left ?? 0) / 10) * 10 + Number(r.available)
+  const canOrder = (r: MenuRow) => (reserves ? Math.floor(Number(r.my_left ?? 0) / 10) * 10 : 0) + Number(r.available)
   const list = (rows ?? []).filter(r => canOrder(r) > 0 && (!q || r.strain.toLowerCase().includes(q.toLowerCase())))
     .sort((a, b) => Number(b.my_left ?? 0) - Number(a.my_left ?? 0) || a.strain.localeCompare(b.strain))
   const lines = Object.entries(qty).map(([strain, v]) => ({ strain, lbs: Number(v) })).filter(l => l.lbs > 0)
@@ -170,17 +170,17 @@ export function OrderForm({ backend, onClose, onDone }: { backend: Backend; onCl
     <div className="scrim" onClick={onClose}>
       <div className="sheet form wide" onClick={e => e.stopPropagation()}>
         <div className="sheet-h"><h2>New order</h2><button className="ghost" onClick={onClose}>✕</button></div>
-        <p className="muted">Fresh frozen, by the lb in steps of 10. You can order your reserve plus anything open on the menu.{price != null ? ` Your price: $${price.toFixed(2)}/lb.` : ''}</p>
+        <p className="muted">Fresh frozen, by the lb in steps of 10. You can order {reserves ? 'your reserve plus ' : ''}anything open on the menu.{price != null ? ` Your price: $${price.toFixed(2)}/lb.` : ''}</p>
         <input className="search" type="search" placeholder="Search strains" value={q} onChange={e => setQ(e.target.value)} />
         {!rows && !err && <p className="muted">Loading…</p>}
         <div className="picklist orderlist">
           <table className="restable">
-            <thead><tr><th>Strain</th><th className="num">Your reserve left</th><th className="num">Can order</th><th className="num">Lbs</th></tr></thead>
+            <thead><tr><th>Strain</th>{reserves && <th className="num">Your reserve left</th>}<th className="num">Can order</th><th className="num">Lbs</th></tr></thead>
             <tbody>
               {list.map(r => (
                 <tr key={r.strain} className={Number(qty[r.strain] || 0) > 0 ? 'picked' : ''}>
                   <td>{r.strain}</td>
-                  <td className="num">{r.my_left != null ? n0(r.my_left) : <span className="muted">-</span>}</td>
+                  {reserves && <td className="num">{r.my_left != null ? n0(r.my_left) : <span className="muted">-</span>}</td>}
                   <td className="num">{n0(canOrder(r))}</td>
                   <td className="num"><input className="qty" type="number" min="0" step="10" max={canOrder(r)} value={qty[r.strain] ?? ''} placeholder="0"
                     onChange={e => setQty({ ...qty, [r.strain]: e.target.value })} /></td>

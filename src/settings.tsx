@@ -7,7 +7,7 @@ import type { Customer, ListName, Me, ListRow, Settings, Strain, Vehicle } from 
 
 // ---------- column definitions per list ----------
 
-type Kind = 'text' | 'int' | 'num' | 'kind' | 'aliases' | 'color' | 'active'
+type Kind = 'text' | 'int' | 'num' | 'bool' | 'kind' | 'aliases' | 'color' | 'active'
 interface Col { key: string; label: string; kind: Kind; synonyms: string[]; hint?: string }
 
 const COLS: Record<ListName, Col[]> = {
@@ -27,6 +27,7 @@ const COLS: Record<ListName, Col[]> = {
     { key: 'license', label: 'License #', kind: 'text', synonyms: ['license', 'license #', 'license number', 'licence', 'state license'] },
     { key: 'address', label: 'Address', kind: 'text', synonyms: ['address', 'location', 'ship to'] },
     { key: 'contact', label: 'Contact', kind: 'text', synonyms: ['contact', 'phone', 'email', 'contact info'] },
+    { key: 'reserves_enabled', label: 'Reserves', kind: 'bool', synonyms: ['reserves', 'reserves enabled', 'has reserves'], hint: 'off: portal ordering from the open menu only' },
     { key: 'price_per_lb', label: 'Price $/lb', kind: 'num', synonyms: ['price', 'price per lb', 'price/lb', '$/lb', 'contract price'], hint: 'fresh frozen, used on portal orders' },
     { key: 'contract_lbs', label: 'Contract lbs', kind: 'num', synonyms: ['contract lbs', 'contract', 'contracted lbs'] },
     { key: 'monthly_min_lbs', label: 'Monthly minimum lbs', kind: 'num', synonyms: ['monthly min', 'monthly minimum', 'min lbs'] },
@@ -113,6 +114,7 @@ function buildPlan(list: ListName, grid: string[][], existing: ListRow[]): { pla
       if (c.key === 'name' || map[c.key] == null) continue
       const v = get(c.key)
       if (c.kind === 'text') { if (v) row[c.key] = v }
+      else if (c.kind === 'bool') { const b = parseActive(v); if (b !== undefined) row[c.key] = b }
       else if (c.kind === 'num') { if (v) { const n = Number(v.replace(/[$,]/g, '')); if (isNaN(n) || n < 0) bad = `"${v}" isn't a number for ${c.label}`; else row[c.key] = n } }
       else if (c.kind === 'int') { if (v) { const n = parseInt(v, 10); if (!(n > 0)) bad = `"${v}" isn't a whole number for ${c.label}`; else row[c.key] = n } }
       else if (c.kind === 'active') { const a = parseActive(v); if (a !== undefined) row.active = a }
@@ -261,7 +263,7 @@ export function SettingsView({ backend, inventoryStrains, onChanged, flash, me }
 
 function summary(list: ListName, r: ListRow, inv: Map<string, number>) {
   if (list === 'vehicles') { const v = r as Vehicle; return [v.spaces ? `${v.spaces} spaces (${v.across ?? 2} across)` : '', v.owner, v.kind, v.plate].filter(Boolean).join(' · ') }
-  if (list === 'customers') { const c = r as Customer; return [c.kind === 'internal' ? 'Internal' : 'External', c.price_per_lb != null ? `$${Number(c.price_per_lb).toFixed(2)}/lb` : '', c.license, c.contact].filter(Boolean).join(' · ') }
+  if (list === 'customers') { const c = r as Customer; return [c.kind === 'internal' ? 'Internal' : 'External', c.kind === 'external' ? (c.reserves_enabled ? 'Reserves on' : 'Menu only') : '', c.price_per_lb != null ? `$${Number(c.price_per_lb).toFixed(2)}/lb` : '', c.license, c.contact].filter(Boolean).join(' · ') }
   const s = r as Strain
   const n = [s.name, ...(s.aliases ?? [])].reduce((a, x) => a + (inv.get(x) ?? [...inv.entries()].find(([k]) => k.toLowerCase() === x.toLowerCase())?.[1] ?? 0), 0)
   return [n ? `${n} pallet${n === 1 ? "" : "s"} in inventory` : 'none in inventory', s.aliases?.length ? `also: ${s.aliases.join(', ')}` : ''].filter(Boolean).join(' · ')
@@ -302,6 +304,8 @@ function EditForm({ list, row, busy, onClose, onSave }: {
                 <input style={{ flex: 1 }} value={String(r.color ?? '')} placeholder="Auto" onChange={e => set('color', e.target.value)} />
                 {Boolean(r.color) && <button className="ghost small" onClick={() => set('color', null)}>Auto</button>}
               </div>
+            ) : c.kind === 'bool' ? (
+              <label className="check"><input type="checkbox" checked={!!r[c.key]} onChange={e => set(c.key, e.target.checked)} /> On</label>
             ) : c.kind === 'num' ? (
               <input type="number" min="0" step="any" value={String(r[c.key] ?? '')} onChange={e => set(c.key, e.target.value === '' ? null : Number(e.target.value))} />
             ) : c.kind === 'int' ? (

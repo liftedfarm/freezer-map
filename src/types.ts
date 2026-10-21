@@ -63,7 +63,7 @@ export interface InvEvent {
 }
 
 export interface Vehicle { id: number; name: string; plate: string | null; kind: string | null; notes: string | null; active: boolean; spaces: number; across: number; owner: string | null }
-export interface Customer { id: number; name: string; kind: 'internal' | 'external'; license: string | null; address: string | null; contact: string | null; notes: string | null; active: boolean; price_per_lb?: number | null; contract_lbs?: number | null; monthly_min_lbs?: number | null; deposit_usd?: number | null; storage_fee?: number | null }
+export interface Customer { id: number; name: string; kind: 'internal' | 'external'; license: string | null; address: string | null; contact: string | null; notes: string | null; active: boolean; price_per_lb?: number | null; contract_lbs?: number | null; monthly_min_lbs?: number | null; deposit_usd?: number | null; storage_fee?: number | null; reserves_enabled?: boolean }
 export interface Strain { id: number; name: string; aliases: string[]; color: string | null; notes: string | null; active: boolean }
 export type ListName = 'vehicles' | 'customers' | 'strains'
 export type ListRow = Vehicle | Customer | Strain
@@ -102,4 +102,4 @@ export interface MenuRow { strain: string; available: number; my_reserved: numbe
 export interface MenuNumbers { strain: string; on_hand: number; pending: number; reserved_left: number; held: number; free: number }
 export interface ReserveRequest { id: number; customer_id: number; strain: string; current_lbs: number; requested_lbs: number; note: string | null; status: 'pending' | 'approved' | 'declined' | 'cancelled'; requested_by: string; requested_at: string; decided_by: string | null; decided_at: string | null; decision_note: string | null }
 export interface OrderInput { strain: string; lbs: number }
-export interface Terms { name: string; price_per_lb: number | null; contract_lbs: number | null }
+export interface Terms { name: string; price_per_lb: number | null; contract_lbs: number | null; reserves_enabled?: boolean }

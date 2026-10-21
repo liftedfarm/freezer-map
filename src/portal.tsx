@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { Backend } from './api'
-import type { LinkInfo, Me } from './types'
+import type { LinkInfo, Me, Terms } from './types'
 import { MyOrders, MyReserves } from './reserves'
 import { OpenMenu, OrderForm } from './menu'
 
@@ -102,6 +102,9 @@ export function Portal({ backend, me, signOut }: { backend: Backend; me: Me; sig
   const [pw2, setPw2] = useState('')
   const [msg, setMsg] = useState<string | null>(null)
   const [ordering, setOrdering] = useState(false)
+  const [terms, setTerms] = useState<Terms | null | undefined>(undefined)
+  useEffect(() => { backend.myTerms().then(setTerms).catch(() => setTerms(null)) }, [])
+  const reserves = !!terms?.reserves_enabled
   const [rev, setRev] = useState(0)
   async function change(e: React.FormEvent) {
     e.preventDefault()
@@ -131,11 +134,11 @@ export function Portal({ backend, me, signOut }: { backend: Backend; me: Me; sig
         )}
         <div className="portal-soon" key={rev}>
           <h3>Orders</h3><MyOrders backend={backend} onChange={m => { setMsg(m); setRev(r => r + 1) }} />
-          <h3>Your reserves</h3><MyReserves backend={backend} />
-          <h3>Open menu</h3><OpenMenu backend={backend} />
+          {reserves && <><h3>Your reserves</h3><MyReserves backend={backend} /></>}
+          <h3>Open menu</h3>{terms !== undefined && <OpenMenu backend={backend} reserves={reserves} />}
         </div>
       </main>
-      {ordering && <OrderForm backend={backend} onClose={() => setOrdering(false)} onDone={m => { setOrdering(false); setMsg(m); setRev(r => r + 1) }} />}
+      {ordering && <OrderForm backend={backend} reserves={reserves} onClose={() => setOrdering(false)} onDone={m => { setOrdering(false); setMsg(m); setRev(r => r + 1) }} />}
     </div>
   )
 }
