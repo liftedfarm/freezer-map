@@ -3,6 +3,7 @@ import { Backend, CONFIG_MISSING, makeBackend } from './api'
 import { FREEZER_STATUSES } from './types'
 import { MergeForm, MergeHere, MixedBuilder, NewPalletChooser, PickMixed, SingleForm, SplitForm, TagForm, WeightForm, lbs } from './forms'
 import { SettingsView } from './settings'
+import { Sidebar } from './sidebar'
 import { LoadForm, LoadView, PickLoad, TransitView, stopColor } from './loads'
 import type { LoadCtx } from './loads'
 import type { Freezer, FreezerStatus, InvEvent, Load, LoadItem, LoadStop, Pallet, Site, Slot, Snapshot } from './types'
@@ -174,6 +175,8 @@ export default function App() {
   const [loadId, setLoadId] = useState<number | null>(null)
   const [loadForm, setLoadForm] = useState<{ load?: Load } | null>(null)
   const [pickLoad, setPickLoad] = useState<Pallet | null>(null)
+  const [side, setSide] = useState<boolean>(() => { try { return localStorage.getItem('fm.side') !== '0' && window.innerWidth >= 1000 } catch { return false } })
+  const toggleSide = (v: boolean) => { setSide(v); try { localStorage.setItem('fm.side', v ? '1' : '0') } catch { /* private mode */ } }
 
   const reload = useCallback(async () => { const s = await backend.load(); setStrainColors(s); setSnap(s) }, [])
   const flash = (text: string, bad = false) => { setToast({ text, bad }); setTimeout(() => setToast(null), bad ? 5000 : 2500) }
@@ -313,8 +316,28 @@ export default function App() {
     : placing ? { title: placing.title, sub: placing.sub, cancel: () => setPlacing(null) } : null
 
   return (
-    <div className={`app ${banner ? 'is-moving' : ''}`}>
+    <div className={`app ${banner ? 'is-moving' : ''} ${side ? 'with-side' : ''}`}>
+      {side && <div className="side-scrim" onClick={() => toggleSide(false)} />}
+      {side && (
+        <Sidebar ctx={{
+          snap, site, backend,
+          slotsOf: id => ix.slotsOf.get(id) ?? [], inSlot: id => ix.inSlot.get(id) ?? [], weight: p => weightOf(ix, p),
+          onLoad: p => ix.loadOf.has(p.id), slot: id => ix.slot.get(id),
+          freezerOf: id => { const sl = ix.slot.get(id); return sl ? ix.freezer.get(sl.freezer_id) : undefined },
+          describe: e => describe(ix, e),
+          reviewCounts: { spot: unplaced.length, tags: pendingTags.length, issues: review.length },
+          openFreezer: id => { const f = ix.freezer.get(id)!; setSite(f.site); openFreezer(id); if (window.innerWidth < 1000) toggleSide(false) },
+          openPallet: id => setPalletId(id),
+          openLoad: id => { setLoadId(id); setView('load'); if (window.innerWidth < 1000) toggleSide(false) },
+          goReview: () => { setView('review'); if (window.innerWidth < 1000) toggleSide(false) },
+          goActivity: () => { setView('activity'); if (window.innerWidth < 1000) toggleSide(false) },
+          goTransit: () => { setView('transit'); if (window.innerWidth < 1000) toggleSide(false) },
+          searchFor: q => { setQuery(q); setView('map'); if (window.innerWidth < 1000) toggleSide(false) },
+          close: () => toggleSide(false),
+        }} />
+      )}
       <header className="top">
+        <button className={`ghost small sidebtn ${side ? 'on-btn' : ''}`} title="Summary" onClick={() => toggleSide(!side)}>☰</button>
         <div className="brand" onClick={() => { setView('map'); setFreezerId(null) }}>
           <img className="logo-img" src="/logo.png" alt="Lifted Farms" /> <span className="app-name">Freezer Map</span> {backend.demo && <span className="demo">DEMO</span>}
         </div>
