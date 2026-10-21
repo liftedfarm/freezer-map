@@ -35,7 +35,7 @@ async function readRoshi(f: File): Promise<RoshiRow[]> {
       units: get('units') != null ? Number(String(get('units')).replace(/,/g, '')) : null,
       order_date: get('order_date'), shipped_date: get('shipped_date'), package_tag: get('package_tag'),
     }
-  }).filter(r => /FL26/.test(r.sku_name) && /fresh frozen/i.test(r.sku_name) && r.so_number)
+  }).filter(r => /FL2[56]/.test(r.sku_name) && /fresh frozen/i.test(r.sku_name) && r.so_number)
 }
 
 export function ReservesView({ backend, customers, strains, onHand, flash, role, initialMode }: {
@@ -46,6 +46,7 @@ export function ReservesView({ backend, customers, strains, onHand, flash, role,
   const [reqs, setReqs] = useState<ReserveRequest[]>([])
   const [nums, setNums] = useState<MenuNumbers[]>([])
   const [decideNote, setDecideNote] = useState<Record<number, string>>({})
+  const [year, setYear] = useState<number | null>(null)
   const [bal, setBal] = useState<Balance[] | null>(null)
   const [orders, setOrders] = useState<Order[]>([])
   const [err, setErr] = useState<string | null>(null)
@@ -79,12 +80,14 @@ export function ReservesView({ backend, customers, strains, onHand, flash, role,
     .filter(c => !ql || c.name.toLowerCase().includes(ql) || c.rs.some(r => r.strain.toLowerCase().includes(ql)))
     .sort((a, b) => sum(b.rs, 'reserved') - sum(a.rs, 'reserved'))
   // numbers come from the database (same math as the customer menu); fall back to local math before 011 is run
-  const byStrain = (nums.length ? nums.map(m => ({ s: m.strain, rs: bal.filter(r => r.strain.toLowerCase() === m.strain.toLowerCase()),
-      left: Number(m.reserved_left), have: Number(m.on_hand), pend: Number(m.pending), held: Number(m.held), free: Number(m.free) }))
+  const years = [...new Set(nums.map(m => m.crop_year))].sort((a, b) => b - a)
+  const yr = year ?? years[0]
+  const byStrain = (nums.length ? nums.filter(m => m.crop_year === yr).map(m => ({ s: m.strain, rs: bal.filter(r => r.strain.toLowerCase() === m.strain.toLowerCase()),
+      left: Number(m.reserved_left), have: Number(m.on_hand), pend: Number(m.pending), held: Number(m.held), free: Number(m.free), hidden: !m.on_menu }))
     : [...new Set([...bal.map(r => r.strain), ...[...onHand.keys()].map(k => strains.find(s => s.name.toLowerCase() === k)?.name ?? k)])].map(s => {
       const rs = bal.filter(r => r.strain.toLowerCase() === s.toLowerCase())
       const left = sum(rs, 'remaining'), have = onHandOf(s), pend = pendingByStrain.get(s.toLowerCase()) ?? 0
-      return { s, rs, left, have, pend, held: 0, free: have - pend - left }
+      return { s, rs, left, have, pend, held: 0, free: have - pend - left, hidden: false }
     })).filter(x => (x.have > 0 || x.left > 0) && (!ql || x.s.toLowerCase().includes(ql) || x.rs.some(r => cname(r.customer_id).toLowerCase().includes(ql))))
     .sort((a, b) => a.s.localeCompare(b.s))
   const submitted = orders.filter(o => o.status === 'submitted').length
@@ -161,12 +164,13 @@ export function ReservesView({ backend, customers, strains, onHand, flash, role,
 
       {mode === 'strain' && (
         <>
+          {years.length > 1 && <div className="seg yearseg">{years.map(y => <button key={y} className={y === yr ? 'on' : ''} onClick={() => setYear(y)}>{y} crop</button>)}</div>}
           <table className="restable wide">
             <thead><tr><th>Strain</th><th className="num">On hand</th><th className="num">Pending</th><th className="num">Res. left</th><th className="num">Free</th></tr></thead>
             <tbody>
               {byStrain.map(x => (
                 <tr key={x.s} title={x.rs.map(r => `${cname(r.customer_id)}: ${n0(Number(r.remaining))} left`).join('\n')}>
-                  <td>{x.s}{x.rs.length > 0 && <div className="muted small">{x.rs.length} customer{x.rs.length === 1 ? '' : 's'}</div>}</td>
+                  <td>{x.s}{x.hidden && <span className="pill old">hidden</span>}{x.rs.length > 0 && <div className="muted small">{x.rs.length} customer{x.rs.length === 1 ? '' : 's'}</div>}</td>
                   <td className="num">{n0(x.have)}</td><td className="num">{n0(x.pend)}</td><td className="num">{n0(x.left)}</td>
                   <td className={`num ${x.free < 0 ? 'warn-t' : ''}`}><b>{n0(x.free)}</b>{x.held > 0 && <div className="muted small">{n0(x.held)} held</div>}</td>
                 </tr>
@@ -225,7 +229,7 @@ export function ReservesView({ backend, customers, strains, onHand, flash, role,
               {open === -o.id && <OrderEditor backend={backend} o={o} strains={strains} flash={flash} onChanged={load} />}
             </div>
           ))}
-          <p className="muted">Import the Roshi sales order export (the same one the menu engine uses) any time. New orders are added and existing ones are updated. Only 2026 fresh frozen lines are used.</p>
+          <p className="muted">Import the Roshi sales order export (the same one the menu engine uses) any time. New orders are added and existing ones are updated. Only 2026 fresh frozen lines, plus open 2025 ones, are used.</p>
         </>
       )}
       {bal.length === 0 && mode !== 'orders' && <p className="muted">No reserves yet.</p>}
@@ -281,6 +285,7 @@ export function MyOrders({ backend, onChange }: { backend: Backend; onChange?: (
   useEffect(() => { backend.listOrders().then(setRows).catch(() => setRows([])) }, [])
   if (!rows) return <p className="muted">Loading…</p>
   if (!rows.length) return <p className="muted">No orders yet.</p>
+  const maxYear = Math.max(...rows.flatMap(o => o.order_lines.map(l => l.crop_year ?? 0)))
   return (
     <>
       {rows.map(o => (
@@ -293,7 +298,7 @@ export function MyOrders({ backend, onChange }: { backend: Backend; onChange?: (
           {open === o.id && (
             <table className="restable">
               <thead><tr><th>Strain</th><th className="num">Lbs</th><th className="num">$/lb</th></tr></thead>
-              <tbody>{o.order_lines.map(l => <tr key={l.id}><td>{l.strain}</td><td className="num">{n0(Number(l.lbs))}</td><td className="num">{l.price_per_lb != null ? `$${Number(l.price_per_lb).toFixed(2)}` : ''}</td></tr>)}</tbody>
+              <tbody>{o.order_lines.map(l => <tr key={l.id}><td>{l.strain}{l.crop_year && l.crop_year < maxYear ? <span className="pill old">{l.crop_year} crop</span> : null}</td><td className="num">{n0(Number(l.lbs))}</td><td className="num">{l.price_per_lb != null ? `$${Number(l.price_per_lb).toFixed(2)}` : ''}</td></tr>)}</tbody>
               {(o.po_number || o.notes || o.status === 'submitted') && <tfoot><tr><td colSpan={3}>
                 {o.po_number && <div className="muted">PO {o.po_number}</div>}{o.notes && <div className="muted">"{o.notes}"</div>}
                 {o.status === 'submitted' && <button className="ghost small" onClick={async () => {
@@ -330,7 +335,7 @@ function OrderEditor({ backend, o, strains, flash, onChanged }: {
           const e = edits[l.id]
           return (
             <tr key={l.id}>
-              <td>{l.strain}{l.farm && <span className="muted"> · {l.farm}</span>}{l.price_override && <div className="muted small">price overridden</div>}</td>
+              <td>{l.strain}<span className="muted">{l.farm ? ` · ${l.farm}` : ''}{l.crop_year ? ` · ${l.crop_year}` : ''}</span>{l.price_override && <div className="muted small">price overridden</div>}</td>
               {e ? <>
                 <td className="num"><input className="qty" type="number" step="10" min="0" value={e.lbs} onChange={x => setEdits({ ...edits, [l.id]: { ...e, lbs: x.target.value } })} /></td>
                 <td className="num"><input className="qty" type="number" step="0.5" min="0" value={e.price} onChange={x => setEdits({ ...edits, [l.id]: { ...e, price: x.target.value } })} /></td>

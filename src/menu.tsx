@@ -20,12 +20,16 @@ export function OpenMenu({ backend, reserves }: { backend: Backend; reserves: bo
 
   if (err) return <p className="muted">The menu isn't available right now.</p>
   if (!rows) return <p className="muted">Loading…</p>
-  const shown = rows.filter(r => (reserves || Number(r.available) > 0) && (!mine || r.my_reserved != null || r.request_id != null) && (!q || r.strain.toLowerCase().includes(q.toLowerCase())))
-  const totalAvail = rows.reduce((a, r) => a + Number(r.available), 0)
+  const cy = Math.max(...rows.map(r => r.crop_year), 0)
+  const older = rows.filter(r => r.crop_year < cy && Number(r.available) > 0 && (!q || r.strain.toLowerCase().includes(q.toLowerCase())))
+  const olderYears = [...new Set(older.map(r => r.crop_year))].sort((a, b) => b - a)
+  const cur = rows.filter(r => r.crop_year === cy)
+  const shown = cur.filter(r => (reserves || Number(r.available) > 0) && (!mine || r.my_reserved != null || r.request_id != null) && (!q || r.strain.toLowerCase().includes(q.toLowerCase())))
+  const totalAvail = cur.reduce((a, r) => a + Number(r.available), 0)
 
   return (
     <>
-      <p className="muted">{n0(totalAvail)} lbs of fresh frozen open right now, across {rows.filter(r => Number(r.available) > 0).length} strains. Numbers update live as orders and reserves change.</p>
+      <p className="muted">{cy} crop: {n0(totalAvail)} lbs of fresh frozen open right now, across {cur.filter(r => Number(r.available) > 0).length} strains.{olderYears.length > 0 && ` Older crop below.`} Numbers update live as orders and reserves change.</p>
       {msg && <div className="okbox">{msg} <a onClick={() => setMsg(null)}>Dismiss</a></div>}
       <div className="row toolbar">
         <input className="search" type="search" placeholder="Search strains" value={q} onChange={e => setQ(e.target.value)} />
@@ -52,6 +56,15 @@ export function OpenMenu({ backend, reserves }: { backend: Backend; reserves: bo
         </tbody>
       </table>
       {shown.length === 0 && <p className="muted">Nothing matches.</p>}
+      {olderYears.map(y => (
+        <div key={y}>
+          <h4 className="cropyear">{y} crop <span className="muted">{n0(older.filter(r => r.crop_year === y).reduce((a, r) => a + Number(r.available), 0))} lbs open</span></h4>
+          <table className="restable menu">
+            <thead><tr><th>Strain</th><th className="num">Open</th></tr></thead>
+            <tbody>{older.filter(r => r.crop_year === y).map(r => <tr key={r.strain}><td>{r.strain}</td><td className="num">{n0(r.available)}</td></tr>)}</tbody>
+          </table>
+        </div>
+      ))}
 
       {reserves && reqs.length > 0 && (
         <>
@@ -149,14 +162,17 @@ export function OrderForm({ backend, reserves, onClose, onDone }: { backend: Bac
     backend.openMenu().then(setRows).catch(e => setErr(String(e?.message ?? e)))
     backend.myTerms().then(t => setPrice(t?.price_per_lb != null ? Number(t.price_per_lb) : null))
   }, [])
-  const canOrder = (r: MenuRow) => (reserves ? Math.floor(Number(r.my_left ?? 0) / 10) * 10 : 0) + Number(r.available)
+  const key = (r: { strain: string; crop_year: number }) => `${r.strain}|${r.crop_year}`
+  const cy = Math.max(...(rows ?? []).map(r => r.crop_year), 0)
+  const canOrder = (r: MenuRow) => (reserves && r.crop_year === cy ? Math.floor(Number(r.my_left ?? 0) / 10) * 10 : 0) + Number(r.available)
   const list = (rows ?? []).filter(r => canOrder(r) > 0 && (!q || r.strain.toLowerCase().includes(q.toLowerCase())))
-    .sort((a, b) => Number(b.my_left ?? 0) - Number(a.my_left ?? 0) || a.strain.localeCompare(b.strain))
-  const lines = Object.entries(qty).map(([strain, v]) => ({ strain, lbs: Number(v) })).filter(l => l.lbs > 0)
+    .sort((a, b) => b.crop_year - a.crop_year || Number(b.my_left ?? 0) - Number(a.my_left ?? 0) || a.strain.localeCompare(b.strain))
+  const lines = Object.entries(qty).map(([k, v]) => { const [strain, y] = k.split('|'); return { strain, crop_year: Number(y), lbs: Number(v) } }).filter(l => l.lbs > 0)
   const problems = lines.map(l => {
-    const r = rows?.find(x => x.strain === l.strain)
-    if (l.lbs % 10 !== 0) return `${l.strain}: use multiples of 10 lbs`
-    if (r && l.lbs > canOrder(r)) return `${l.strain}: up to ${n0(canOrder(r))} lbs`
+    const r = rows?.find(x => x.strain === l.strain && x.crop_year === l.crop_year)
+    const nm = l.crop_year === cy ? l.strain : `${l.strain} (${l.crop_year})`
+    if (l.lbs % 10 !== 0) return `${nm}: use multiples of 10 lbs`
+    if (r && l.lbs > canOrder(r)) return `${nm}: up to ${n0(canOrder(r))} lbs`
     return null
   }).filter(Boolean) as string[]
   const total = lines.reduce((a, l) => a + l.lbs, 0)
@@ -178,12 +194,12 @@ export function OrderForm({ backend, reserves, onClose, onDone }: { backend: Bac
             <thead><tr><th>Strain</th>{reserves && <th className="num">Your reserve left</th>}<th className="num">Can order</th><th className="num">Lbs</th></tr></thead>
             <tbody>
               {list.map(r => (
-                <tr key={r.strain} className={Number(qty[r.strain] || 0) > 0 ? 'picked' : ''}>
-                  <td>{r.strain}</td>
+                <tr key={key(r)} className={Number(qty[key(r)] || 0) > 0 ? 'picked' : ''}>
+                  <td>{r.strain}{r.crop_year !== cy && <span className="pill old">{r.crop_year} crop</span>}</td>
                   {reserves && <td className="num">{r.my_left != null ? n0(r.my_left) : <span className="muted">-</span>}</td>}
                   <td className="num">{n0(canOrder(r))}</td>
-                  <td className="num"><input className="qty" type="number" min="0" step="10" max={canOrder(r)} value={qty[r.strain] ?? ''} placeholder="0"
-                    onChange={e => setQty({ ...qty, [r.strain]: e.target.value })} /></td>
+                  <td className="num"><input className="qty" type="number" min="0" step="10" max={canOrder(r)} value={qty[key(r)] ?? ''} placeholder="0"
+                    onChange={e => setQty({ ...qty, [key(r)]: e.target.value })} /></td>
                 </tr>
               ))}
             </tbody>

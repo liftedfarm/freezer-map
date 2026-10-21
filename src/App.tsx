@@ -9,7 +9,7 @@ import { Sidebar } from './sidebar'
 import { LoadForm, LoadView, PickLoad, TransitView, stopColor } from './loads'
 import type { LoadCtx } from './loads'
 import { canSales } from './types'
-import type { Freezer, Me, FreezerStatus, InvEvent, Load, LoadItem, LoadStop, Pallet, Site, Slot, Snapshot } from './types'
+import type { ShippedCheck, Freezer, Me, FreezerStatus, InvEvent, Load, LoadItem, LoadStop, Pallet, Site, Slot, Snapshot } from './types'
 
 const backend: Backend = makeBackend()
 
@@ -137,6 +137,7 @@ function describe(ix: Index, e: InvEvent, names?: Map<number, string>) {
     case 'load_cancelled': return `Load ${(e.details as { load?: string } | null)?.load} cancelled`
     case 'stop_delivered': { const d = e.details as { load?: string; customer?: string; seq?: number } | null
       return `${d?.load} stop ${d?.seq} delivered to ${d?.customer}` }
+    case 'shipped_out': return `${code} taken out of inventory: ${e.note ?? 'shipped'} (${lbs(e.lbs)})`
     case 'shipped': { const d = e.details as { load?: string; customer?: string } | null
       return `${code} delivered to ${d?.customer} on ${d?.load} (${lbs(e.lbs)})` }
     case 'received': { const d = e.details as { load?: string; customer?: string } | null
@@ -299,7 +300,8 @@ export default function App() {
   const unplaced = snap.pallets.filter(p => p.status === 'unslotted' && !p.container_id)
   const review = snap.pallets.filter(p => p.needs_review)
   const pendingTags = snap.pallets.filter(p => p.tag_pending)
-  const reviewCount = review.length + pendingTags.length + unplaced.length
+  const shippedChecks = (snap.shipped ?? []).filter(c => ix.pallet.has(c.pallet_id))
+  const reviewCount = review.length + pendingTags.length + unplaced.length + shippedChecks.length
   const selected = palletId != null ? (ix.pallet.get(palletId) ?? pool.find(p => p.id === palletId) ?? extra.find(p => p.id === palletId) ?? null) : null
   const where = (p: Pallet): string => {
     const m = p.container_id ? ix.pallet.get(p.container_id) : undefined
@@ -412,6 +414,11 @@ export default function App() {
             })} />
         )}
         {view === 'review' && (<>
+          {shippedChecks.length > 0 && <>
+            <ShippedReview checks={shippedChecks} ix={ix} where={where} busy={busy} onPallet={setPalletId}
+              run={(fn, ok) => act(fn, ok)} />
+            <div style={{ height: 18 }} />
+          </>}
           {unplaced.length > 0 && <>
             <ListView title={`Needs a spot (${unplaced.length})`} empty=""
               note="Pallets that aren't in a freezer slot, including ones just received from a load. Open one and tap Move to put it somewhere."
@@ -722,6 +729,47 @@ function FreezerView({ ix, freezer, query, moving, placing, siblings, onOpen, on
         })}
       </div>
       <div className="door">DOOR</div>
+    </div>
+  )
+}
+
+function ShippedReview({ checks, ix, where, busy, onPallet, run }: {
+  checks: ShippedCheck[]; ix: Index; where: (p: Pallet) => string; busy: boolean; onPallet: (id: number) => void
+  run: (fn: () => Promise<unknown>, ok: string) => void
+}) {
+  const [open, setOpen] = useState<ShippedCheck | null>(null)
+  const p = open ? ix.pallet.get(open.pallet_id) : undefined
+  const left = p ? Math.max(Number(p.current_weight ?? 0) - Number(open!.new_lbs), 0) : 0
+  return (
+    <div className="list">
+      <h2>Shipped in Roshi, still in a freezer ({checks.length})</h2>
+      <p className="muted">Roshi says these METRC tags shipped, but the pallet with that tag is still on the map. Take it out, fix its weight if only part shipped, or mark it handled.</p>
+      {checks.map(c => {
+        const q = ix.pallet.get(c.pallet_id)!
+        return (
+          <button key={c.package_tag} className="li" onClick={() => setOpen(c)}>
+            <div><b>{q.code}</b> {q.strain} <span className="muted">{lbs(Number(q.current_weight ?? 0))} on the map</span> · <span className="warn-t">{lbs(Number(c.new_lbs))} shipped</span></div>
+            <div className="muted">{where(q)} · {c.sos}{c.last_shipped ? ` · last ${c.last_shipped}` : ''}</div>
+          </button>
+        )
+      })}
+      {open && p && (
+        <div className="scrim" onClick={() => setOpen(null)}>
+          <div className="sheet form" onClick={e => e.stopPropagation()}>
+            <div className="sheet-h"><h2>{p.code} · {p.strain}</h2><button className="ghost" onClick={() => setOpen(null)}>✕</button></div>
+            <p>Roshi shipped <b>{lbs(Number(open.new_lbs))}</b> from tag {open.package_tag} ({open.sos}). The map still has <b>{lbs(Number(p.current_weight ?? 0))}</b> on this pallet at {where(p)}{p.og_weight != null && Number(p.og_weight) !== Number(p.current_weight) ? <> (it started at {lbs(Number(p.og_weight))}, so it may already be adjusted)</> : null}.</p>
+            <div className="choices col">
+              <button disabled={busy} onClick={() => { run(() => backend.markShipped(p.id, `Shipped in Roshi (${open.sos})`), `${p.code} taken out of inventory`); setOpen(null) }}>
+                <b>All of it shipped</b> <span className="muted">Take {p.code} out of inventory</span></button>
+              {left > 0 && <button disabled={busy} onClick={() => { run(async () => { await backend.adjustWeight(p.id, left, `Part shipped in Roshi (${open.sos})`); await backend.ackShipped(open.package_tag) }, `${p.code} now ${lbs(left)}`); setOpen(null) }}>
+                <b>Part of it shipped</b> <span className="muted">Set {p.code} to {lbs(left)}</span></button>}
+              <button disabled={busy} onClick={() => { run(() => backend.ackShipped(open.package_tag), 'Marked handled'); setOpen(null) }}>
+                <b>Already handled</b> <span className="muted">The map is right, clear this</span></button>
+              <button onClick={() => { onPallet(p.id); setOpen(null) }}><b>Open the pallet</b> <span className="muted">Split it or fix it by hand</span></button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -407,3 +407,6 @@ select { padding: 10px; border: 1px solid var(--line); border-radius: 10px; back
 .orderfields { gap: 10px; } .orderfields .field { flex: 1; }
 .ordered { padding: 0 2px 8px; }
 .pill.o-submitted { background: #dbeafe; color: #1e40af; }
+.pill.old { background: #e5e7eb; color: #374151; margin-left: 6px; font-size: 10px; }
+.cropyear { margin: 18px 0 4px; }
+.yearseg { margin: 4px 0 8px; }

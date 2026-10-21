@@ -1,5 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
-import type { OrderInput, Terms, MenuNumbers, MenuRow, ReserveRequest, Balance, ImportResult, Order, RoshiRow, Reserve, LinkInfo, AppUser, Customer, Me, Role, Freezer, FreezerStatus, InvEvent, ListName, ListRow, Load, LoadItem, LoadStop, MixLine, Pallet, Settings, SingleInput, Slot, Snapshot, StopInput, Strain, Vehicle } from './types'
+import type { ShippedCheck, OrderInput, Terms, MenuNumbers, MenuRow, ReserveRequest, Balance, ImportResult, Order, RoshiRow, Reserve, LinkInfo, AppUser, Customer, Me, Role, Freezer, FreezerStatus, InvEvent, ListName, ListRow, Load, LoadItem, LoadStop, MixLine, Pallet, Settings, SingleInput, Slot, Snapshot, StopInput, Strain, Vehicle } from './types'
 
 export interface Backend {
   demo: boolean
@@ -60,6 +60,8 @@ export interface Backend {
   mergePallets(ids: number[], tag: string | null, tagPending: boolean, destSlot: number | null, note?: string): Promise<Pallet>
   setTag(palletId: number, tag: string, note?: string): Promise<void>
   adjustWeight(palletId: number, weight: number, note?: string): Promise<void>
+  markShipped(palletId: number, note?: string): Promise<void>
+  ackShipped(tag: string): Promise<void>
   lineage(p: Pallet): Promise<Pallet[]>
   byIds(ids: number[]): Promise<Pallet[]>
   loadSettings(): Promise<Settings>
@@ -283,7 +285,8 @@ class SupaBackend implements Backend {
       const { data } = await this.sb.from('pallets').select('*').in('id', missing.slice(0, 500))
       pallets.push(...((data ?? []) as Pallet[]))
     }
-    return { freezers, slots, pallets, strains, vehicles, customers, loads, stops, items }
+    const shipped = await this.sb.rpc('shipped_in_freezer').then(r => (r.error ? [] : r.data) as ShippedCheck[], () => [] as ShippedCheck[])
+    return { freezers, slots, pallets, strains, vehicles, customers, loads, stops, items, shipped }
   }
   async movePallet(palletId: number, toSlot: number | null, combine: boolean, note?: string) {
     const { error } = await this.sb.rpc('move_pallet', {
@@ -369,6 +372,8 @@ class SupaBackend implements Backend {
     const { error } = await this.sb.rpc('set_tag', { p_pallet_id: palletId, p_tag: tag, p_note: note || null })
     fail(error)
   }
+  async markShipped(palletId: number, note?: string) { const { error } = await this.sb.rpc('mark_pallet_shipped', { p_pallet_id: palletId, p_note: note || null }); fail(error) }
+  async ackShipped(tag: string) { const { error } = await this.sb.rpc('ack_shipped_tag', { p_tag: tag }); fail(error) }
   async adjustWeight(palletId: number, weight: number, note?: string) {
     const { error } = await this.sb.rpc('adjust_weight', { p_pallet_id: palletId, p_weight: weight, p_note: note || null })
     fail(error)
@@ -669,6 +674,8 @@ class DemoBackend implements Backend {
     this.log({ type: 'tag_set', pallet_id: p.id, note: note || null, details: { from: p.package_tag, to: tag } })
     p.package_tag = tag; p.tag_pending = false
   }
+  async markShipped() {}
+  async ackShipped() {}
   async adjustWeight(palletId: number, weight: number, note?: string) {
     const p = this.snap!.pallets.find(x => x.id === palletId)!
     if (!(weight >= 0)) throw new Error('Enter a weight of 0 or more')
