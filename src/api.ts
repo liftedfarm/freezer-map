@@ -56,7 +56,7 @@ const URL_ = import.meta.env.VITE_SUPABASE_URL as string | undefined
 const KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
 
 // the customer portal's address (a second domain on the same Vercel project)
-export const PORTAL_ORIGIN = (import.meta.env.VITE_PORTAL_URL as string | undefined) ?? 'https://lifted-orders.vercel.app'
+export const PORTAL_ORIGIN = (import.meta.env.VITE_PORTAL_URL as string | undefined) ?? 'https://www.lifted-orders.app'
 export const portalUrl = (rest = '') => (import.meta.env.DEV ? location.origin + '/' : PORTAL_ORIGIN.replace(/\/$/, '') + '/') + rest
 export const IS_PORTAL = /order/i.test(location.hostname) || new URLSearchParams(location.search).has('portal')
 
