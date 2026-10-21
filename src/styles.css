@@ -413,3 +413,5 @@ select { padding: 10px; border: 1px solid var(--line); border-radius: 10px; back
 .reserves .seg.tabs { display: flex; overflow-x: auto; flex-wrap: nowrap; }
 .reserves .seg.tabs button { flex: 0 0 auto; padding-left: 12px; padding-right: 12px; }
 h2.tap { cursor: pointer; }
+.brand .app-name { white-space: nowrap; }
+@media (max-width: 480px) { .brand .app-name { font-size: 12px; line-height: 1.1; white-space: normal; max-width: 78px; } .brand .logo-img { height: 26px; } }

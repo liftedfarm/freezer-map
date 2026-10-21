@@ -35,7 +35,7 @@ export default async function handler(req, res) {
     html = wrap(`<p><b>${esc(q.customer)}</b> placed an order for ${lbs(total)} lbs.</p>
       <table style="border-collapse:collapse">${rows}</table>
       <p>Placed by ${esc(who)}${q.po ? `<br>PO: ${esc(q.po)}` : ''}${q.wanted ? `<br>Wanted by: ${esc(q.wanted)}` : ''}${q.note ? `<br>Note: "${esc(q.note)}"` : ''}</p>
-      <p><a href="${esc(app)}/?go=orders">Review and confirm in the Freezer Map</a> (Sales &gt; Orders).</p>`)
+      <p><a href="${esc(app)}/?go=orders">Review and confirm in Lifted Inventory Management</a> (Sales &gt; Orders).</p>`)
   } else {
     const up = Number(q.to) > Number(q.from)
     const what = Number(q.from) === 0 ? `add ${lbs(q.to)} lbs of ${q.strain}` : Number(q.to) === 0 ? `drop their ${lbs(q.from)} lbs of ${q.strain}`
@@ -43,7 +43,7 @@ export default async function handler(req, res) {
     subject = `Reserve request: ${q.customer} · ${q.strain} ${lbs(q.from)} → ${lbs(q.to)} lbs`
     html = wrap(`<p><b>${esc(q.customer)}</b> wants to ${esc(what)}.</p>
       <p>Requested by ${esc(who)}${q.note ? `<br>Note: "${esc(q.note)}"` : ''}</p>
-      <p><a href="${esc(app)}/?go=requests">Approve or decline in the Freezer Map</a> (Sales &gt; Requests). Only an Admin can approve.</p>`)
+      <p><a href="${esc(app)}/?go=requests">Approve or decline in Lifted Inventory Management</a> (Sales &gt; Requests). Only an Admin can approve.</p>`)
   }
   const send = await fetch('https://api.resend.com/emails', {
     method: 'POST', headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },

@@ -381,7 +381,7 @@ export default function App() {
       <header className="top">
         <button className={`ghost small sidebtn ${side ? 'on-btn' : ''}`} title="Summary" onClick={() => toggleSide(!side)}>☰</button>
         <div className="brand" onClick={() => { setView('map'); setFreezerId(null) }}>
-          <img className="logo-img" src="/logo.png" alt="Lifted Farms" /> <span className="app-name">Freezer Map</span> {backend.demo && <span className="demo">DEMO</span>}
+          <img className="logo-img" src="/logo.png" alt="Lifted Farms" /> <span className="app-name">Inventory Management</span> {backend.demo && <span className="demo">DEMO</span>}
         </div>
         <div className="seg">
           {(['OHR', 'GVR'] as Site[]).map(s => (
@@ -581,7 +581,7 @@ function NoAccess({ me, signOut }: { me: Me; signOut: () => void }) {
         ? <><h2>Hi{me.display_name ? ` ${me.display_name}` : ''}</h2><p className="muted">Your login is set up for {me.customer_name ?? 'your company'}. The order portal is coming soon.</p></>
         : IS_PORTAL
           ? <><h2>Login not set up</h2><p className="muted">{me.email} isn't connected to a customer account yet. Use the invite link from your Lifted contact.</p></>
-          : <><h2>No access yet</h2><p className="muted">{me.email} isn't set up for the Freezer Map. Ask an admin to add you in Settings &gt; Users.</p></>}
+          : <><h2>No access yet</h2><p className="muted">{me.email} isn't set up for Lifted Inventory Management. Ask an admin to add you in Settings &gt; Users.</p></>}
       <button className="ghost" onClick={signOut}>Sign out</button>
     </div>
   )
@@ -591,8 +591,8 @@ function Login() {
   return (
     <div className="center login">
       <img className="logo-login" src="/logo-big.png" alt="Lifted Farms" />
-      <h1>Freezer Map</h1>
-      <p className="muted">Lifted Farms freezer inventory</p>
+      <h1>Inventory Management</h1>
+      <p className="muted">Freezers, loads and sales</p>
       <button className="primary big" onClick={() => backend.signIn()}>Sign in with Microsoft</button>
       <p className="muted small-print">Customer? <a href={portalUrl('?portal')}>Sign in to the order portal</a></p>
     </div>

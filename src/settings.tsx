@@ -150,7 +150,7 @@ function downloadTemplate(list: ListName, rows: ListRow[]) {
   const lines = [cols.map(c => c.label), ...rows.map(r => cols.map(c => cell(r, c)))].map(l => l.map(esc).join(','))
   const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv' })
   const a = document.createElement('a')
-  a.href = URL.createObjectURL(blob); a.download = `${TITLES[list]} - Freezer Map.csv`; a.click()
+  a.href = URL.createObjectURL(blob); a.download = `${TITLES[list]} - Lifted Inventory.csv`; a.click()
   setTimeout(() => URL.revokeObjectURL(a.href), 1000)
 }
 
