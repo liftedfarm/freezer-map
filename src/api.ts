@@ -1,5 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
-import type { Freezer, FreezerStatus, InvEvent, ListName, ListRow, MixLine, Pallet, Settings, SingleInput, Slot, Snapshot, Strain } from './types'
+import type { Customer, Freezer, FreezerStatus, InvEvent, ListName, ListRow, Load, LoadItem, LoadStop, MixLine, Pallet, Settings, SingleInput, Slot, Snapshot, StopInput, Strain, Vehicle } from './types'
 
 export interface Backend {
   demo: boolean
@@ -16,6 +16,18 @@ export interface Backend {
   takeOffMixed(palletId: number, slotId: number, note?: string): Promise<void>
   breakMixed(mixedId: number, note?: string): Promise<void>
   createSingle(slotId: number, input: SingleInput): Promise<Pallet>
+  createLoad(vehicleId: number, date: string, stops: StopInput[], driver: string, notes: string): Promise<Load>
+  updateLoad(loadId: number, vehicleId: number, date: string, driver: string, notes: string): Promise<void>
+  setStops(loadId: number, stops: StopInput[]): Promise<void>
+  planPallet(loadId: number, stopId: number, palletId: number, position: number | null, share: boolean): Promise<void>
+  moveItem(itemId: number, position: number | null, stopId: number | null, share: boolean): Promise<void>
+  arrangeLoad(loadId: number): Promise<void>
+  removeItem(itemId: number): Promise<void>
+  loadPallet(itemId: number): Promise<void>
+  unloadPallet(itemId: number, slotId: number): Promise<void>
+  departLoad(loadId: number): Promise<void>
+  deliverStop(stopId: number): Promise<void>
+  cancelLoad(loadId: number): Promise<void>
   mergePallets(ids: number[], tag: string | null, tagPending: boolean, destSlot: number | null, note?: string): Promise<Pallet>
   setTag(palletId: number, tag: string, note?: string): Promise<void>
   adjustWeight(palletId: number, weight: number, note?: string): Promise<void>
@@ -75,15 +87,36 @@ class SupaBackend implements Backend {
     await this.sb.auth.signOut()
   }
   async load(): Promise<Snapshot> {
-    const [freezers, slots, pallets, strains] = await Promise.all([
+    const since = new Date(Date.now() - 14 * 864e5).toISOString()
+    const loadsQ = this.sb.from('loads').select('*').or(`status.in.(planning,loading,in_transit),closed_at.gte.${since}`).order('load_date', { ascending: false }).limit(300)
+    const [freezers, slots, pallets, strains, vehicles, customers, loadsRes] = await Promise.all([
       pageAll<Freezer>((a, b) => this.sb.from('freezers').select('*').order('id').range(a, b)),
       pageAll<Slot>((a, b) => this.sb.from('slots').select('*').order('id').range(a, b)),
       pageAll<Pallet>((a, b) =>
-        this.sb.from('pallets').select('*').in('status', ['in_freezer', 'unslotted']).order('id').range(a, b)),
-      // strains table arrives with migration 003; tolerate it missing
+        this.sb.from('pallets').select('*').in('status', ['in_freezer', 'unslotted', 'in_transit']).order('id').range(a, b)),
+      // later tables arrive with migrations; tolerate them missing
       pageAll<Strain>((a, b) => this.sb.from('strains').select('*').order('name').range(a, b)).catch(() => [] as Strain[]),
+      pageAll<Vehicle>((a, b) => this.sb.from('vehicles').select('*').order('name').range(a, b)).catch(() => [] as Vehicle[]),
+      pageAll<Customer>((a, b) => this.sb.from('customers').select('*').order('name').range(a, b)).catch(() => [] as Customer[]),
+      loadsQ.then(r => r, () => ({ data: null, error: null })),
     ])
-    return { freezers, slots, pallets, strains }
+    const loads = ((loadsRes as { data: Load[] | null }).data ?? []) as Load[]
+    let stops: LoadStop[] = [], items: LoadItem[] = []
+    if (loads.length) {
+      const ids = loads.map(l => l.id)
+      const [st, it] = await Promise.all([
+        this.sb.from('load_stops').select('*').in('load_id', ids).order('seq'),
+        this.sb.from('load_items').select('*').in('load_id', ids).order('position'),
+      ])
+      stops = (st.data ?? []) as LoadStop[]; items = (it.data ?? []) as LoadItem[]
+    }
+    // pallets on these loads that have already left inventory (shipped) still need names on the truck view
+    const missing = items.map(i => i.pallet_id).filter(id => !pallets.some(p => p.id === id))
+    if (missing.length) {
+      const { data } = await this.sb.from('pallets').select('*').in('id', missing.slice(0, 500))
+      pallets.push(...((data ?? []) as Pallet[]))
+    }
+    return { freezers, slots, pallets, strains, vehicles, customers, loads, stops, items }
   }
   async movePallet(palletId: number, toSlot: number | null, combine: boolean, note?: string) {
     const { error } = await this.sb.rpc('move_pallet', {
@@ -108,6 +141,31 @@ class SupaBackend implements Backend {
     fail(error)
     return data as Pallet
   }
+  private async rpc(fn: string, args: Record<string, unknown>) {
+    const { data, error } = await this.sb.rpc(fn, args)
+    fail(error)
+    return data
+  }
+  async createLoad(vehicleId: number, date: string, stops: StopInput[], driver: string, notes: string) {
+    return await this.rpc('create_load', { p_vehicle: vehicleId, p_date: date, p_stops: stops, p_driver: driver, p_notes: notes }) as Load
+  }
+  async updateLoad(loadId: number, vehicleId: number, date: string, driver: string, notes: string) {
+    await this.rpc('update_load', { p_load: loadId, p_vehicle: vehicleId, p_date: date, p_driver: driver, p_notes: notes })
+  }
+  async setStops(loadId: number, stops: StopInput[]) { await this.rpc('set_stops', { p_load: loadId, p_stops: stops }) }
+  async planPallet(loadId: number, stopId: number, palletId: number, position: number | null, share: boolean) {
+    await this.rpc('plan_pallet', { p_load: loadId, p_stop: stopId, p_pallet: palletId, p_position: position, p_share: share })
+  }
+  async moveItem(itemId: number, position: number | null, stopId: number | null, share: boolean) {
+    await this.rpc('move_item', { p_item: itemId, p_position: position, p_stop: stopId, p_share: share })
+  }
+  async arrangeLoad(loadId: number) { await this.rpc('arrange_load', { p_load: loadId }) }
+  async removeItem(itemId: number) { await this.rpc('remove_item', { p_item: itemId }) }
+  async loadPallet(itemId: number) { await this.rpc('load_pallet', { p_item: itemId }) }
+  async unloadPallet(itemId: number, slotId: number) { await this.rpc('unload_pallet', { p_item: itemId, p_slot: slotId, p_share: true }) }
+  async departLoad(loadId: number) { await this.rpc('depart_load', { p_load: loadId }) }
+  async deliverStop(stopId: number) { await this.rpc('deliver_stop', { p_stop: stopId }) }
+  async cancelLoad(loadId: number) { await this.rpc('cancel_load', { p_load: loadId }) }
   async createMixed(slotId: number, lines: MixLine[], note?: string) {
     const { data, error } = await this.sb.rpc('create_mixed_pallet', { p_slot: slotId, p_lines: lines, p_note: note || null })
     fail(error)
@@ -197,6 +255,9 @@ class SupaBackend implements Backend {
     const ch = this.sb.channel('inv')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'pallets' }, bump)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'freezers' }, bump)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'loads' }, bump)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'load_items' }, bump)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'load_stops' }, bump)
       .subscribe()
     return () => { this.sb.removeChannel(ch) }
   }
@@ -380,6 +441,19 @@ class DemoBackend implements Backend {
     this.log({ type: 'created', pallet_id: p.id, to_slot_id: slotId, lbs: i.lbs, note: i.note || null, details: { tag } })
     return structuredClone(p)
   }
+  private noLoads(): never { throw new Error('Loads only work with the live database') }
+  async createLoad(): Promise<Load> { this.noLoads() }
+  async updateLoad() { this.noLoads() }
+  async setStops() { this.noLoads() }
+  async planPallet() { this.noLoads() }
+  async moveItem() { this.noLoads() }
+  async arrangeLoad() { this.noLoads() }
+  async removeItem() { this.noLoads() }
+  async loadPallet() { this.noLoads() }
+  async unloadPallet() { this.noLoads() }
+  async departLoad() { this.noLoads() }
+  async deliverStop() { this.noLoads() }
+  async cancelLoad() { this.noLoads() }
   async setTag(palletId: number, tag: string, note?: string) {
     const p = this.snap!.pallets.find(x => x.id === palletId)!
     tag = tag.trim()
@@ -403,7 +477,7 @@ class DemoBackend implements Backend {
       const names = new Map<string, string>()
       for (const p of this.snap?.pallets ?? []) if (p.strain && !names.has(p.strain.toLowerCase())) names.set(p.strain.toLowerCase(), p.strain)
       this.settings = {
-        vehicles: [{ id: 1, name: 'Isuzu Reefer', plate: '8ABC123', kind: 'Reefer truck', notes: null, active: true }],
+        vehicles: [{ id: 1, name: "20' Freezer Truck", plate: null, kind: 'Freezer truck', notes: null, active: true, spaces: 8, across: 2, owner: 'Lifted' }],
         customers: [{ id: 1, name: 'OHR', kind: 'internal', license: null, address: null, contact: null, notes: 'Lifted site', active: true },
                     { id: 2, name: 'GVR', kind: 'internal', license: null, address: null, contact: null, notes: 'Lifted site', active: true }],
         strains: [...names.values()].sort().map((name, i) => ({ id: i + 1, name, aliases: [], color: null, notes: null, active: true })),

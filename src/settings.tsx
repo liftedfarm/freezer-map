@@ -5,14 +5,17 @@ import type { Customer, ListName, ListRow, Settings, Strain, Vehicle } from './t
 
 // ---------- column definitions per list ----------
 
-type Kind = 'text' | 'kind' | 'aliases' | 'color' | 'active'
+type Kind = 'text' | 'int' | 'kind' | 'aliases' | 'color' | 'active'
 interface Col { key: string; label: string; kind: Kind; synonyms: string[]; hint?: string }
 
 const COLS: Record<ListName, Col[]> = {
   vehicles: [
     { key: 'name', label: 'Name', kind: 'text', synonyms: ['name', 'vehicle', 'vehicle name', 'truck'] },
     { key: 'plate', label: 'Plate', kind: 'text', synonyms: ['plate', 'license plate', 'plate #', 'plate number', 'tag'] },
-    { key: 'kind', label: 'Type', kind: 'text', synonyms: ['type', 'kind', 'vehicle type'], hint: 'Reefer truck, box truck, van…' },
+    { key: 'kind', label: 'Type', kind: 'text', synonyms: ['type', 'kind', 'vehicle type'], hint: 'Freezer truck, trailer…' },
+    { key: 'spaces', label: 'Pallet spaces', kind: 'int', synonyms: ['spaces', 'pallet spaces', 'pallets', 'capacity'] },
+    { key: 'across', label: 'Pallets across', kind: 'int', synonyms: ['across', 'pallets across', 'width'], hint: 'usually 2' },
+    { key: 'owner', label: 'Owner / carrier', kind: 'text', synonyms: ['owner', 'carrier', 'company'], hint: 'Lifted, or the carrier name' },
     { key: 'notes', label: 'Notes', kind: 'text', synonyms: ['notes', 'note', 'comments'] },
     { key: 'active', label: 'Active', kind: 'active', synonyms: ['active', 'status'] },
   ],
@@ -103,6 +106,7 @@ function buildPlan(list: ListName, grid: string[][], existing: ListRow[]): { pla
       if (c.key === 'name' || map[c.key] == null) continue
       const v = get(c.key)
       if (c.kind === 'text') { if (v) row[c.key] = v }
+      else if (c.kind === 'int') { if (v) { const n = parseInt(v, 10); if (!(n > 0)) bad = `"${v}" isn't a whole number for ${c.label}`; else row[c.key] = n } }
       else if (c.kind === 'active') { const a = parseActive(v); if (a !== undefined) row.active = a }
       else if (c.kind === 'kind') { const k = parseKind(v); if (k) row.kind = k }
       else if (c.kind === 'color') { const col = parseColor(v); if (col === null) bad = `"${v}" isn't a color like #A1B2C3`; else if (col) row.color = col }
@@ -210,7 +214,7 @@ export function SettingsView({ backend, inventoryStrains, onChanged, flash }: {
       </div>
       <div className="row toolbar">
         <input className="search" type="search" placeholder={`Search ${TITLES[tab].toLowerCase()}`} value={q} onChange={e => setQ(e.target.value)} />
-        <button className="primary" onClick={() => setEdit(tab === 'customers' ? { kind: 'external', active: true } as Partial<Customer> : tab === 'strains' ? { aliases: [], active: true } as Partial<Strain> : { active: true })}>+ Add</button>
+        <button className="primary" onClick={() => setEdit(tab === 'customers' ? { kind: 'external', active: true } as Partial<Customer> : tab === 'strains' ? { aliases: [], active: true } as Partial<Strain> : { active: true, spaces: 8, across: 2 } as Partial<Vehicle>)}>+ Add</button>
       </div>
       <div className="row toolbar">
         <label className="ghost small filebtn">Import spreadsheet
@@ -243,7 +247,7 @@ export function SettingsView({ backend, inventoryStrains, onChanged, flash }: {
 }
 
 function summary(list: ListName, r: ListRow, inv: Map<string, number>) {
-  if (list === 'vehicles') { const v = r as Vehicle; return [v.kind, v.plate, v.notes].filter(Boolean).join(' · ') }
+  if (list === 'vehicles') { const v = r as Vehicle; return [v.spaces ? `${v.spaces} spaces (${v.across ?? 2} across)` : '', v.owner, v.kind, v.plate].filter(Boolean).join(' · ') }
   if (list === 'customers') { const c = r as Customer; return [c.kind === 'internal' ? 'Internal' : 'External', c.license, c.contact].filter(Boolean).join(' · ') }
   const s = r as Strain
   const n = [s.name, ...(s.aliases ?? [])].reduce((a, x) => a + (inv.get(x) ?? [...inv.entries()].find(([k]) => k.toLowerCase() === x.toLowerCase())?.[1] ?? 0), 0)
@@ -285,6 +289,8 @@ function EditForm({ list, row, busy, onClose, onSave }: {
                 <input style={{ flex: 1 }} value={String(r.color ?? '')} placeholder="Auto" onChange={e => set('color', e.target.value)} />
                 {Boolean(r.color) && <button className="ghost small" onClick={() => set('color', null)}>Auto</button>}
               </div>
+            ) : c.kind === 'int' ? (
+              <input type="number" min="1" step="1" value={String(r[c.key] ?? '')} onChange={e => set(c.key, e.target.value === '' ? null : parseInt(e.target.value, 10))} />
             ) : (
               <input value={String(r[c.key] ?? '')} disabled={locked && c.key === 'name'} autoFocus={c.key === 'name'} onChange={e => set(c.key, e.target.value)} />
             )}

@@ -19,7 +19,7 @@ export interface Slot {
   front_rank: number
 }
 
-export type PalletStatus = 'in_freezer' | 'unslotted' | 'shipped' | 'depleted' | 'archived' | 'merged'
+export type PalletStatus = 'in_freezer' | 'unslotted' | 'in_transit' | 'shipped' | 'depleted' | 'archived' | 'merged'
 
 export interface Pallet {
   id: number
@@ -41,6 +41,7 @@ export interface Pallet {
   tag_pending?: boolean
   kind?: 'package' | 'mixed'
   container_id?: number | null
+  received_site?: string | null
 }
 
 /** one line when building or adding to a mixed pallet: whole package (lbs null) or lbs split off with a new tag */
@@ -61,16 +62,27 @@ export interface InvEvent {
   details: Record<string, unknown> | null
 }
 
-export interface Vehicle { id: number; name: string; plate: string | null; kind: string | null; notes: string | null; active: boolean }
+export interface Vehicle { id: number; name: string; plate: string | null; kind: string | null; notes: string | null; active: boolean; spaces: number; across: number; owner: string | null }
 export interface Customer { id: number; name: string; kind: 'internal' | 'external'; license: string | null; address: string | null; contact: string | null; notes: string | null; active: boolean }
 export interface Strain { id: number; name: string; aliases: string[]; color: string | null; notes: string | null; active: boolean }
 export type ListName = 'vehicles' | 'customers' | 'strains'
 export type ListRow = Vehicle | Customer | Strain
 export interface Settings { vehicles: Vehicle[]; customers: Customer[]; strains: Strain[] }
 
+export type LoadStatus = 'planning' | 'loading' | 'in_transit' | 'delivered' | 'cancelled'
+export interface Load { id: number; code: string; load_date: string; vehicle_id: number; status: LoadStatus; driver: string | null; notes: string | null; created_by: string | null; created_at: string; departed_at: string | null; closed_at: string | null }
+export interface LoadStop { id: number; load_id: number; seq: number; customer_id: number; manifest: string | null; status: 'pending' | 'delivered'; delivered_at: string | null; delivered_by: string | null }
+export interface LoadItem { id: number; load_id: number; stop_id: number; pallet_id: number; position: number; loaded: boolean; from_slot: number | null }
+export interface StopInput { id?: number; customer_id: number; manifest: string }
+
 export interface Snapshot {
   freezers: Freezer[]
   slots: Slot[]
   pallets: Pallet[]
   strains?: Strain[]
+  vehicles?: Vehicle[]
+  customers?: Customer[]
+  loads?: Load[]
+  stops?: LoadStop[]
+  items?: LoadItem[]
 }

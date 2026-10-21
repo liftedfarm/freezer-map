@@ -3,11 +3,13 @@ import { Backend, CONFIG_MISSING, makeBackend } from './api'
 import { FREEZER_STATUSES } from './types'
 import { MergeForm, MixedBuilder, NewPalletChooser, PickMixed, SingleForm, SplitForm, TagForm, WeightForm, lbs } from './forms'
 import { SettingsView } from './settings'
-import type { Freezer, FreezerStatus, InvEvent, Pallet, Site, Slot, Snapshot } from './types'
+import { LoadForm, LoadView, PickLoad, TransitView, stopColor } from './loads'
+import type { LoadCtx } from './loads'
+import type { Freezer, FreezerStatus, InvEvent, Load, LoadItem, LoadStop, Pallet, Site, Slot, Snapshot } from './types'
 
 const backend: Backend = makeBackend()
 
-type View = 'map' | 'freezer' | 'review' | 'activity' | 'settings'
+type View = 'map' | 'freezer' | 'transit' | 'load' | 'review' | 'activity' | 'settings'
 
 // ---------- helpers ----------
 
@@ -45,6 +47,7 @@ interface Index {
   inSlot: Map<number, Pallet[]>      // top-level pallets in a slot (not the packages on a mixed pallet)
   contentsOf: Map<number, Pallet[]>  // packages on each mixed pallet
   pallet: Map<number, Pallet>
+  loadOf: Map<number, { item: LoadItem; load: Load; stop: LoadStop }>  // pallets on an open load
 }
 
 function buildIndex(s: Snapshot): Index {
@@ -58,7 +61,12 @@ function buildIndex(s: Snapshot): Index {
     if (p.container_id) (contentsOf.get(p.container_id) ?? contentsOf.set(p.container_id, []).get(p.container_id)!).push(p)
     else if (p.slot_id != null) (inSlot.get(p.slot_id) ?? inSlot.set(p.slot_id, []).get(p.slot_id)!).push(p)
   }
-  return { freezer, slot, slotsOf, inSlot, contentsOf, pallet: new Map(s.pallets.map(p => [p.id, p])) }
+  const loadOf = new Map<number, { item: LoadItem; load: Load; stop: LoadStop }>()
+  for (const it of s.items ?? []) {
+    const load = s.loads?.find(l => l.id === it.load_id), stop = s.stops?.find(x => x.id === it.stop_id)
+    if (load && stop && ['planning', 'loading', 'in_transit'].includes(load.status)) loadOf.set(it.pallet_id, { item: it, load, stop })
+  }
+  return { freezer, slot, slotsOf, inSlot, contentsOf, loadOf, pallet: new Map(s.pallets.map(p => [p.id, p])) }
 }
 
 /** weight of a pallet; a mixed pallet weighs what's on it */
@@ -111,6 +119,22 @@ function describe(ix: Index, e: InvEvent, names?: Map<number, string>) {
       const d = e.details as { from?: string; to?: string } | null
       return `${f ? `${f.site} Freezer ${f.number}` : 'Freezer'}: ${d?.from} to ${d?.to}`
     }
+    case 'load_created': return `Load ${(e.details as { load?: string } | null)?.load} created`
+    case 'load_updated': return `Load ${(e.details as { load?: string } | null)?.load} edited`
+    case 'load_planned': { const d = e.details as { load?: string; position?: number } | null
+      return `${code} planned on ${d?.load}, position ${d?.position}` }
+    case 'load_removed': return `${code} removed from ${(e.details as { load?: string } | null)?.load}`
+    case 'loaded': { const d = e.details as { load?: string; position?: number } | null
+      return `${code} pulled from ${whereIs(ix, e.from_slot_id)} onto ${d?.load}, position ${d?.position}` }
+    case 'unloaded': return `${code} taken off ${(e.details as { load?: string } | null)?.load}, back to ${whereIs(ix, e.to_slot_id)}`
+    case 'load_departed': return `Load ${(e.details as { load?: string } | null)?.load} departed`
+    case 'load_cancelled': return `Load ${(e.details as { load?: string } | null)?.load} cancelled`
+    case 'stop_delivered': { const d = e.details as { load?: string; customer?: string; seq?: number } | null
+      return `${d?.load} stop ${d?.seq} delivered to ${d?.customer}` }
+    case 'shipped': { const d = e.details as { load?: string; customer?: string } | null
+      return `${code} delivered to ${d?.customer} on ${d?.load} (${lbs(e.lbs)})` }
+    case 'received': { const d = e.details as { load?: string; customer?: string } | null
+      return `${code} received at ${d?.customer} from ${d?.load}, needs a spot` }
     case 'strain_renamed': { const d = e.details as { from?: string; to?: string } | null
       return `${code} strain renamed from ${d?.from} to ${d?.to}` }
     case 'settings': { const d = e.details as { list?: string; name?: string; active?: boolean } | null
@@ -145,6 +169,9 @@ export default function App() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [form, setForm] = useState<FormState | null>(null)
   const [pool, setPool] = useState<Pallet[]>([])
+  const [loadId, setLoadId] = useState<number | null>(null)
+  const [loadForm, setLoadForm] = useState<{ load?: Load } | null>(null)
+  const [pickLoad, setPickLoad] = useState<Pallet | null>(null)
 
   const reload = useCallback(async () => { const s = await backend.load(); setStrainColors(s); setSnap(s) }, [])
   const flash = (text: string, bad = false) => { setToast({ text, bad }); setTimeout(() => setToast(null), bad ? 5000 : 2500) }
@@ -235,11 +262,29 @@ export default function App() {
   const pendingTags = snap.pallets.filter(p => p.tag_pending)
   const reviewCount = review.length + pendingTags.length + unplaced.length
   const selected = palletId != null ? (ix.pallet.get(palletId) ?? pool.find(p => p.id === palletId) ?? extra.find(p => p.id === palletId) ?? null) : null
-  const where = (p: Pallet) => {
+  const where = (p: Pallet): string => {
     const m = p.container_id ? ix.pallet.get(p.container_id) : undefined
-    return m ? `on ${m.code} · ${whereIs(ix, m.slot_id)}` : whereIs(ix, p.slot_id)
+    if (m) return `on ${m.code} · ${where(m)}`
+    const lo = ix.loadOf.get(p.id)
+    if (p.status === 'in_transit' && lo) return `On truck ${lo.load.code} · position ${lo.item.position}`
+    if (p.status === 'unslotted' && p.received_site) return `Received at ${p.received_site}, needs a spot`
+    return whereIs(ix, p.slot_id)
   }
-  const looseList = snap.pallets.filter(loose)
+  const looseList = snap.pallets.filter(loose).filter(p => !ix.loadOf.has(p.id))
+  const openLoads = (snap.loads ?? []).filter(l => ['planning', 'loading', 'in_transit'].includes(l.status))
+  const ctx: LoadCtx = {
+    loads: snap.loads ?? [], stops: snap.stops ?? [], items: snap.items ?? [],
+    vehicles: snap.vehicles ?? [], customers: snap.customers ?? [],
+    pallet: id => ix.pallet.get(id), contents: id => ix.contentsOf.get(id) ?? [], weight: p => weightOf(ix, p), where,
+    freezerSpot: id => whereIs(ix, id),
+    available: snap.pallets.filter(p => !p.container_id && p.status === 'in_freezer' && !ix.loadOf.has(p.id)),
+    busy,
+    run: async (fn, ok) => { setBusy(true); try { await fn(); await reload(); flash(ok); return true } catch (e) { flash((e as Error).message, true); await reload().catch(() => {}); return false } finally { setBusy(false) } },
+    confirm: (text, ok, fn) => setConfirm({ text, ok, run: fn }),
+    openPallet: id => setPalletId(id),
+    putBack: (item, p) => { setView('map'); startPlacing({ title: `Putting ${p.code} back in a freezer`, sub: 'Open a freezer and tap the slot.', run: slot => act(() => backend.unloadPallet(item.id, slot.id), `${p.code} back in ${slot.code}`) }) },
+    api: backend,
+  }
   const byNearness = (p: Pallet) => (a: Pallet, b: Pallet) => {
     const fz = (x: Pallet) => ix.slot.get(x.slot_id ?? -1)?.freezer_id
     return Number(b.slot_id === p.slot_id) - Number(a.slot_id === p.slot_id)
@@ -309,7 +354,7 @@ export default function App() {
         {view === 'review' && (<>
           {unplaced.length > 0 && <>
             <ListView title={`Needs a spot (${unplaced.length})`} empty=""
-              note="Pallets that aren't in a freezer slot. Open one and tap Move to put it somewhere."
+              note="Pallets that aren't in a freezer slot, including ones just received from a load. Open one and tap Move to put it somewhere."
               items={unplaced} ix={ix} where={where} onPallet={setPalletId} />
             <div style={{ height: 18 }} />
           </>}
@@ -322,12 +367,15 @@ export default function App() {
             items={review} ix={ix} where={where} onPallet={setPalletId} showReason />
         </>)}
         {view === 'activity' && <ActivityView ix={ix} />}
+        {view === 'transit' && <TransitView ctx={ctx} onOpen={id => { setLoadId(id); setView('load'); window.scrollTo(0, 0) }} onNew={() => setLoadForm({})} />}
+        {view === 'load' && loadId != null && <LoadView ctx={ctx} loadId={loadId} onBack={() => setView('transit')} onEdit={() => setLoadForm({ load: (snap.loads ?? []).find(l => l.id === loadId) })} />}
         {view === 'settings' && <SettingsView backend={backend} flash={flash} onChanged={() => { reload() }}
           inventoryStrains={snap.pallets.reduce((m, p) => p.strain ? m.set(p.strain, (m.get(p.strain) ?? 0) + 1) : m, new Map<string, number>())} />}
       </main>
 
-      <nav className="bottom three">
+      <nav className="bottom">
         <button className={view === 'map' || view === 'freezer' ? 'on' : ''} onClick={() => setView(view !== 'map' && view !== 'freezer' && freezerId != null ? 'freezer' : 'map')}>Map</button>
+        <button className={view === 'transit' || view === 'load' ? 'on' : ''} onClick={() => setView('transit')}>Transit{openLoads.length > 0 && <span className="badge">{openLoads.length}</span>}</button>
         <button className={view === 'review' ? 'on' : ''} onClick={() => setView('review')}>Review{reviewCount > 0 && <span className="badge warn">{reviewCount}</span>}</button>
         <button className={view === 'activity' ? 'on' : ''} onClick={() => setView('activity')}>Activity</button>
       </nav>
@@ -354,8 +402,15 @@ export default function App() {
             text: `Break ${selected.code} apart? Each package stays in ${whereIs(ix, selected.slot_id)} as its own pallet, sharing the slot.`, ok: 'Break apart',
             run: async () => { await act(() => backend.breakMixed(selected.id), `${selected.code} broken apart`); setPalletId(null) },
           })}
-          onLineage={(ps) => setPool(ps)} />
+          onLineage={(ps) => setPool(ps)}
+          loadInfo={ix.loadOf.get(selected.id)}
+          customerName={id => (snap.customers ?? []).find(c => c.id === id)?.name ?? ''}
+          onOpenLoad={id => { setPalletId(null); setLoadId(id); setView('load') }}
+          onPutOnLoad={() => setPickLoad(selected)}
+          onPulled={() => { const lo = ix.loadOf.get(selected.id); if (lo) act(() => backend.loadPallet(lo.item.id), `${selected.code} on the truck`) }} />
       )}
+      {loadForm && <LoadForm ctx={ctx} load={loadForm.load} onClose={() => setLoadForm(null)} onSaved={id => { setLoadForm(null); setLoadId(id); setView('load') }} />}
+      {pickLoad && <PickLoad ctx={ctx} p={pickLoad} onClose={() => setPickLoad(null)} />}
 
       {form?.kind === 'split' && (
         <SplitForm p={form.p} where={form.p.slot_id != null ? where(form.p) : null} busy={busy} onClose={() => setForm(null)}
@@ -389,7 +444,7 @@ export default function App() {
       )}
       {form?.kind === 'newmixed' && (
         <MixedBuilder title="New mixed pallet" target={slotLabel(form.slot)} candidates={looseList} whereOf={where} busy={busy} onClose={() => setForm(null)}
-          onSubmit={(lines, note) => submit(() => backend.createMixed(form.slot.id, lines, note), m => `${m.code} created with ${lines.length} packages`, m => setPalletId(m.id))} />
+          onSubmit={(lines, note) => submit(() => backend.createMixed(form.slot.id, lines, note), m => `${m.code} created with ${lines.length} package${lines.length === 1 ? '' : 's'}`, m => setPalletId(m.id))} />
       )}
       {form?.kind === 'newsingle' && (
         <SingleForm where={slotLabel(form.slot)} strains={strainNames} busy={busy} onClose={() => setForm(null)}
@@ -400,9 +455,9 @@ export default function App() {
           onPick={m => setForm({ kind: 'addmixed', m, initial: [form.p] })} />
       )}
       {form?.kind === 'addmixed' && (
-        <MixedBuilder title={`Add to ${form.m.code}`} target={`${form.m.code} · ${whereIs(ix, form.m.slot_id)}`} candidates={looseList} initial={form.initial}
+        <MixedBuilder title={`Pull for ${form.m.code}`} target={`${form.m.code} · ${whereIs(ix, form.m.slot_id)}`} candidates={looseList} initial={form.initial}
           whereOf={where} busy={busy} onClose={() => setForm(null)}
-          onSubmit={(lines, note) => { const m = form.m; submit(() => backend.addToMixed(m.id, lines, note), () => `Added ${lines.length} to ${m.code}`, () => setPalletId(m.id)) }} />
+          onSubmit={(lines, note) => { const m = form.m; submit(() => backend.addToMixed(m.id, lines, note), () => `Pulled ${lines.length} for ${m.code}`, () => setPalletId(m.id)) }} />
       )}
 
       {confirm && (
@@ -556,7 +611,7 @@ function FreezerView({ ix, freezer, query, moving, placing, siblings, onOpen, on
                 const on = ix.contentsOf.get(p.id) ?? []
                 return (
                   <span key={p.id} className="p" onClick={e => { if (!choosing) { e.stopPropagation(); onPallet(p.id) } }}>
-                    <b>{p.code}{p.needs_review && <span className="flag" title={p.needs_review}>!</span>}{(p.tag_pending || on.some(c => c.tag_pending)) && <span className="flag tag" title="METRC tag pending">T</span>}</b>
+                    <b>{p.code}{p.needs_review && <span className="flag" title={p.needs_review}>!</span>}{(p.tag_pending || on.some(c => c.tag_pending)) && <span className="flag tag" title="METRC tag pending">T</span>}{ix.loadOf.has(p.id) && <span className="flag load" title={`Planned on ${ix.loadOf.get(p.id)!.load.code}`}>L</span>}</b>
                     <span className="strain">{p.kind === 'mixed' ? `Mixed · ${on.length} pkg${on.length === 1 ? '' : 's'}: ${[...new Set(on.map(c => c.strain))].join(', ')}` : p.strain ?? p.label ?? 'No strain'}</span>
                     <span className="w">{lbs(weightOf(ix, p))}</span>
                   </span>
@@ -616,10 +671,12 @@ function ActivityView({ ix }: { ix: Index }) {
 
 type SheetAction = 'split' | 'merge' | 'tag' | 'weight' | 'addto' | 'addmixed'
 
-function PalletSheet({ ix, p, others, busy, where, onClose, onGo, onMove, onClear, onPick, onForm, onTakeOff, onBreak, onLineage }: {
+function PalletSheet({ ix, p, others, busy, where, onClose, onGo, onMove, onClear, onPick, onForm, onTakeOff, onBreak, onLineage, loadInfo, customerName, onOpenLoad, onPutOnLoad, onPulled }: {
   ix: Index; p: Pallet; others: Pallet[]; busy: boolean; where: (p: Pallet) => string
   onClose: () => void; onGo: () => void; onMove: () => void; onClear: () => void; onPick: (id: number) => void
   onForm: (kind: SheetAction) => void; onTakeOff: () => void; onBreak: () => void; onLineage: (ps: Pallet[]) => void
+  loadInfo?: { item: LoadItem; load: Load; stop: LoadStop }; customerName: (id: number) => string
+  onOpenLoad: (id: number) => void; onPutOnLoad: () => void; onPulled: () => void
 }) {
   const [hist, setHist] = useState<InvEvent[] | null>(null)
   const [kin, setKin] = useState<Pallet[]>([])
@@ -630,7 +687,9 @@ function PalletSheet({ ix, p, others, busy, where, onClose, onGo, onMove, onClea
     backend.lineage(p).then(ps => { setKin(ps); onLineage(ps) }).catch(() => setKin([]))
   }, [p.id, p.parent_id, p.merged_into, hist])
   const live = p.status === 'in_freezer' || p.status === 'unslotted'
+  const inFreezer = p.status === 'in_freezer'
   const isMixed = p.kind === 'mixed'
+  const loadEditable = loadInfo && ['planning', 'loading'].includes(loadInfo.load.status)
   const container = p.container_id ? ix.pallet.get(p.container_id) : undefined
   const parent = kin.find(k => k.id === p.parent_id)
   const children = kin.filter(k => k.parent_id === p.id)
@@ -638,7 +697,7 @@ function PalletSheet({ ix, p, others, busy, where, onClose, onGo, onMove, onClea
   const sources = kin.filter(k => k.merged_into === p.id)
   const link = (k: Pallet) => <a key={k.id} onClick={() => onPick(k.id)}>{k.code}</a>
   const join = (ks: Pallet[]) => ks.map((k, i) => <span key={k.id}>{i > 0 && ', '}{link(k)}</span>)
-  const statusText: Record<string, string> = { merged: 'Merged (closed out)', shipped: 'Shipped', depleted: isMixed ? 'Broken apart' : 'Depleted', archived: 'Not in a freezer (old record)' }
+  const statusText: Record<string, string> = { merged: 'Merged (closed out)', shipped: 'Delivered (left inventory)', depleted: isMixed ? 'Broken apart' : 'Depleted', archived: 'Not in a freezer (old record)', in_transit: where(p) }
   return (
     <div className="scrim" onClick={onClose}>
       <div className="sheet" onClick={e => e.stopPropagation()}>
@@ -652,8 +711,15 @@ function PalletSheet({ ix, p, others, busy, where, onClose, onGo, onMove, onClea
         {p.needs_review && <div className="warnbox">{p.needs_review}</div>}
         {p.tag_pending && live && <div className="warnbox">METRC tag pending. <a onClick={() => onForm('tag')}>Enter tag</a></div>}
         {container && <div className="infobox">On mixed pallet {link(container)}. It moves with {container.code}.</div>}
+        {loadInfo && (
+          <div className="infobox load" style={{ ['--sc' as string]: stopColor(loadInfo.stop.seq) }}>
+            {loadInfo.item.loaded ? 'On the truck: ' : 'Planned on '}<a onClick={() => onOpenLoad(loadInfo.load.id)}>{loadInfo.load.code}</a>
+            {' '}· stop {loadInfo.stop.seq} {customerName(loadInfo.stop.customer_id)} · position {loadInfo.item.position}
+            {loadEditable && !loadInfo.item.loaded && <div className="row" style={{ marginTop: 6 }}><button className="primary small" disabled={busy} onClick={onPulled}>Pulled onto truck</button></div>}
+          </div>
+        )}
         <dl>
-          <dt>Location</dt><dd>{live ? <a onClick={onGo}>{container ? whereIs(ix, container.slot_id) : whereIs(ix, p.slot_id)}</a> : statusText[p.status] ?? p.status}</dd>
+          <dt>Location</dt><dd>{live && (p.slot_id != null || container) ? <a onClick={onGo}>{container ? whereIs(ix, container.slot_id) : whereIs(ix, p.slot_id)}</a> : live ? where(p) : statusText[p.status] ?? p.status}</dd>
           <dt>Weight</dt><dd>{lbs(weightOf(ix, p)) || 'unknown'}{!isMixed && p.og_weight && p.og_weight !== p.current_weight ? <span className="muted"> (started at {lbs(p.og_weight)})</span> : null}</dd>
           {!isMixed && <>
             <dt>METRC tag</dt><dd className="mono">{p.package_tag ?? (p.tag_pending ? 'pending' : 'none')}</dd>
@@ -679,13 +745,14 @@ function PalletSheet({ ix, p, others, busy, where, onClose, onGo, onMove, onClea
         )}
         {others.length > 0 && <div className="muted">Shares the slot with {join(others)}</div>}
 
-        {live && isMixed && (
+        {live && isMixed && (<>
           <div className="row actions">
             <button className="primary big" disabled={busy} onClick={onMove}>Move</button>
-            <button className="ghost big" disabled={busy} onClick={() => onForm('addmixed')}>Add packages</button>
-            <button className="ghost big" disabled={busy} onClick={onBreak}>Break apart</button>
+            <button className="ghost big" disabled={busy || !!loadInfo} onClick={() => onForm('addmixed')}>Pull packages</button>
+            <button className="ghost big" disabled={busy || !!loadInfo} onClick={onBreak}>Break apart</button>
           </div>
-        )}
+          {inFreezer && !loadInfo && <div className="row"><button className="ghost small" disabled={busy} onClick={onPutOnLoad}>Put on a load</button></div>}
+        </>)}
         {live && container && (<>
           <div className="row actions">
             <button className="primary big" disabled={busy} onClick={onTakeOff}>Take off {container.code}</button>
@@ -702,7 +769,8 @@ function PalletSheet({ ix, p, others, busy, where, onClose, onGo, onMove, onClea
             <button className="ghost big" disabled={busy || !p.strain} onClick={() => onForm('merge')}>Merge</button>
           </div>
           <div className="row">
-            <button className="ghost small" disabled={busy} onClick={() => onForm('addto')}>Add to mixed pallet</button>
+            <button className="ghost small" disabled={busy || !!loadInfo} onClick={() => onForm('addto')}>Pull for mixed pallet</button>
+            {inFreezer && !loadInfo && <button className="ghost small" disabled={busy} onClick={onPutOnLoad}>Put on a load</button>}
             <button className="ghost small" disabled={busy} onClick={() => onForm('weight')}>Adjust weight</button>
             <button className="ghost small" disabled={busy} onClick={() => onForm('tag')}>{p.package_tag ? 'Edit tag' : 'Enter tag'}</button>
             {p.needs_review && <button className="ghost small" disabled={busy} onClick={onClear}>Clear flag</button>}

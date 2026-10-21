@@ -21,6 +21,10 @@ This is for inventory tracking only. BC and METRC stay the systems of record.
 - Review list: problems found in the spreadsheet during import (duplicates, items not in the pallet list, missing strain or weight)
 - Live updates: when someone moves a pallet, everyone sees it
 
+## Database updates (run in order in the Supabase SQL Editor)
+
+`supabase/schema.sql`, `seed.sql`, then `002_split_merge.sql`, `003_settings.sql`, `004_strain_cleanup.sql`, `005_mixed_pallets.sql`, `006_loads.sql`. Each is safe to re-run.
+
 ## One-time setup
 
 ### 1. Database (Supabase SQL Editor)

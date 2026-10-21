@@ -2,3 +2,5 @@ node_modules
 dist
 .env.local
 demo/
+vite.test.config.ts
+.env.test.local

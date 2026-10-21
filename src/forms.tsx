@@ -281,7 +281,7 @@ export function SingleForm({ where, strains, busy, onClose, onSubmit }: {
 
 export function PickMixed({ mixed, whereOf, onClose, onPick }: { mixed: { p: Pallet; n: number; w: number }[]; whereOf: (p: Pallet) => string; onClose: () => void; onPick: (p: Pallet) => void }) {
   return (
-    <Dialog title="Add to which mixed pallet?" onClose={onClose}>
+    <Dialog title="Pull for which mixed pallet?" onClose={onClose}>
       {mixed.length === 0 && <p className="muted">No mixed pallets yet. Tap an empty slot on the map and choose New pallet, Mixed.</p>}
       <div className="picklist">
         {mixed.map(m => (
