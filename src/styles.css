@@ -383,3 +383,17 @@ select { padding: 10px; border: 1px solid var(--line); border-radius: 10px; back
   .restable th, .restable td { padding: 6px 3px; }
   .restable th { font-size: 10px; letter-spacing: 0; }
 }
+.reqnote { font-size: 12px; color: #92400e; margin-top: 2px; }
+.reqcard { display: flex; margin-bottom: 6px; cursor: default; }
+.reqcard.pending { border-color: #f59e0b; }
+.reqcard .up { color: #166534; } .reqcard .down { color: #991b1b; }
+.reqact { margin-top: 8px; gap: 6px; flex-wrap: wrap; }
+.reqact input { flex: 1; min-width: 140px; }
+.pill.r-pending { background: #fef3c7; color: #92400e; }
+.pill.r-approved { background: #dcfce7; color: #166534; }
+.pill.r-declined, .pill.r-cancelled { background: #f3f4f6; color: #4b5563; }
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 4px 0 12px; }
+.stats > div { display: flex; flex-direction: column; background: var(--empty, #f3f3f3); border-radius: 10px; padding: 8px 10px; font-size: 13px; }
+.stats b { font-size: 16px; }
+.stepper input { flex: 1; text-align: center; font-size: 18px; }
+.portal .portal-soon h3 { margin-top: 22px; }

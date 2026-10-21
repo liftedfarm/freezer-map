@@ -1,5 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
-import type { Balance, ImportResult, Order, RoshiRow, Reserve, LinkInfo, AppUser, Customer, Me, Role, Freezer, FreezerStatus, InvEvent, ListName, ListRow, Load, LoadItem, LoadStop, MixLine, Pallet, Settings, SingleInput, Slot, Snapshot, StopInput, Strain, Vehicle } from './types'
+import type { MenuNumbers, MenuRow, ReserveRequest, Balance, ImportResult, Order, RoshiRow, Reserve, LinkInfo, AppUser, Customer, Me, Role, Freezer, FreezerStatus, InvEvent, ListName, ListRow, Load, LoadItem, LoadStop, MixLine, Pallet, Settings, SingleInput, Slot, Snapshot, StopInput, Strain, Vehicle } from './types'
 
 export interface Backend {
   demo: boolean
@@ -19,6 +19,12 @@ export interface Backend {
   changePassword(password: string): Promise<void>
   listReserves(): Promise<Reserve[]>
   listBalances(): Promise<Balance[]>
+  openMenu(): Promise<MenuRow[]>
+  menuNumbers(): Promise<MenuNumbers[]>
+  listRequests(): Promise<ReserveRequest[]>
+  requestReserve(strain: string, lbs: number, note: string): Promise<void>
+  cancelRequest(id: number): Promise<void>
+  decideRequest(id: number, approve: boolean, note: string): Promise<void>
   listOrders(): Promise<Order[]>
   importRoshi(rows: RoshiRow[]): Promise<ImportResult>
   setReserve(customerId: number, strain: string, lbs: number, note?: string): Promise<void>
@@ -178,6 +184,29 @@ class SupaBackend implements Backend {
   }
   async listBalances() {
     return pageAll<Balance>((a, b) => this.sb.from('reserve_balances').select('*').order('strain').range(a, b))
+  }
+  async openMenu() {
+    const { data, error } = await this.sb.rpc('open_menu'); fail(error); return (data ?? []) as MenuRow[]
+  }
+  async menuNumbers() {
+    const { data, error } = await this.sb.rpc('menu_numbers'); fail(error); return (data ?? []) as MenuNumbers[]
+  }
+  async listRequests() {
+    const { data, error } = await this.sb.from('reserve_requests').select('*').order('requested_at', { ascending: false }).limit(500)
+    fail(error); return (data ?? []) as ReserveRequest[]
+  }
+  async requestReserve(strain: string, lbs: number, note: string) {
+    const { data, error } = await this.sb.rpc('request_reserve_change', { p_strain: strain, p_lbs: lbs, p_note: note || null })
+    fail(error)
+    // email the admins (best effort; the request is saved either way)
+    const { data: s } = await this.sb.auth.getSession()
+    fetch('/api/notify-request', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${s.session?.access_token ?? ''}` }, body: JSON.stringify({ id: data }) }).catch(() => {})
+  }
+  async cancelRequest(id: number) {
+    const { error } = await this.sb.rpc('cancel_reserve_request', { p_id: id }); fail(error)
+  }
+  async decideRequest(id: number, approve: boolean, note: string) {
+    const { error } = await this.sb.rpc('decide_reserve_request', { p_id: id, p_approve: approve, p_note: note || null }); fail(error)
   }
   async listOrders() {
     return pageAll<Order>((a, b) => this.sb.from('orders').select('*, order_lines(*)').order('order_date', { ascending: false }).order('id', { ascending: false }).range(a, b))
@@ -405,6 +434,12 @@ class DemoBackend implements Backend {
   async changePassword() {}
   async listBalances() { return this.reserves.map(r => ({ id: r.id, customer_id: r.customer_id, strain: r.strain, reserved: r.lbs, shipped: 0, pending: 0, remaining: r.lbs })) }
   async listOrders() { return [] }
+  async openMenu() { return [] }
+  async menuNumbers() { return [] }
+  async listRequests() { return [] }
+  async requestReserve() { throw new Error('Not in demo') }
+  async cancelRequest() {}
+  async decideRequest() {}
   async importRoshi(): Promise<ImportResult> { throw new Error('Not in demo') }
   private reserves: Reserve[] = []
   async listReserves() { return [...this.reserves] }

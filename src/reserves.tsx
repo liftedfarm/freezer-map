@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { Backend } from './api'
 import { readSheet } from 'read-excel-file/browser'
 import { parseCsv } from './settings'
-import type { Balance, Customer, ImportResult, Order, RoshiRow, Strain } from './types'
+import type { MenuNumbers, ReserveRequest, Role, Balance, Customer, ImportResult, Order, RoshiRow, Strain } from './types'
 
 const n0 = (x: number) => Math.round(x).toLocaleString()
 
@@ -38,21 +38,26 @@ async function readRoshi(f: File): Promise<RoshiRow[]> {
   }).filter(r => /FL26/.test(r.sku_name) && /fresh frozen/i.test(r.sku_name) && r.so_number)
 }
 
-export function ReservesView({ backend, customers, strains, onHand, flash }: {
+export function ReservesView({ backend, customers, strains, onHand, flash, role, initialMode }: {
   backend: Backend; customers: Customer[]; strains: Strain[]; onHand: Map<string, number>
-  flash: (t: string, bad?: boolean) => void
+  flash: (t: string, bad?: boolean) => void; role: Role; initialMode?: 'requests'
 }) {
+  const isAdmin = role === 'admin'
+  const [reqs, setReqs] = useState<ReserveRequest[]>([])
+  const [nums, setNums] = useState<MenuNumbers[]>([])
+  const [decideNote, setDecideNote] = useState<Record<number, string>>({})
   const [bal, setBal] = useState<Balance[] | null>(null)
   const [orders, setOrders] = useState<Order[]>([])
   const [err, setErr] = useState<string | null>(null)
-  const [mode, setMode] = useState<'customer' | 'strain' | 'orders'>('customer')
+  const [mode, setMode] = useState<'customer' | 'strain' | 'orders' | 'requests'>(initialMode ?? 'customer')
   const [open, setOpen] = useState<number | null>(null)
   const [edit, setEdit] = useState<{ customer_id: number | null; strain: string; lbs: string; isNew: boolean } | null>(null)
   const [q, setQ] = useState('')
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<ImportResult | null>(null)
-  const load = () => Promise.all([backend.listBalances(), backend.listOrders().catch(() => [] as Order[])])
-    .then(([b, o]) => { setBal(b); setOrders(o); setErr(null) }).catch(e => setErr(String(e?.message ?? e)))
+  const load = () => Promise.all([backend.listBalances(), backend.listOrders().catch(() => [] as Order[]),
+      backend.listRequests().catch(() => [] as ReserveRequest[]), backend.menuNumbers().catch(() => [] as MenuNumbers[])])
+    .then(([b, o, r, m]) => { setBal(b); setOrders(o); setReqs(r); setNums(m); setErr(null) }).catch(e => setErr(String(e?.message ?? e)))
   useEffect(() => { load() }, [])
 
   const cust = useMemo(() => new Map(customers.map(c => [c.id, c])), [customers])
@@ -73,12 +78,14 @@ export function ReservesView({ backend, customers, strains, onHand, flash }: {
     .map(([id, rs]) => ({ id, name: cname(id), rs }))
     .filter(c => !ql || c.name.toLowerCase().includes(ql) || c.rs.some(r => r.strain.toLowerCase().includes(ql)))
     .sort((a, b) => sum(b.rs, 'reserved') - sum(a.rs, 'reserved'))
-  const strainNames = [...new Set([...bal.map(r => r.strain), ...[...onHand.keys()].map(k => strains.find(s => s.name.toLowerCase() === k)?.name ?? k)])]
-  const byStrain = strainNames.map(s => {
-    const rs = bal.filter(r => r.strain.toLowerCase() === s.toLowerCase())
-    const left = sum(rs, 'remaining'), have = onHandOf(s), pend = pendingByStrain.get(s.toLowerCase()) ?? 0
-    return { s, rs, left, have, pend, free: have - pend - left }
-  }).filter(x => (x.have > 0 || x.left > 0) && (!ql || x.s.toLowerCase().includes(ql) || x.rs.some(r => cname(r.customer_id).toLowerCase().includes(ql))))
+  // numbers come from the database (same math as the customer menu); fall back to local math before 011 is run
+  const byStrain = (nums.length ? nums.map(m => ({ s: m.strain, rs: bal.filter(r => r.strain.toLowerCase() === m.strain.toLowerCase()),
+      left: Number(m.reserved_left), have: Number(m.on_hand), pend: Number(m.pending), held: Number(m.held), free: Number(m.free) }))
+    : [...new Set([...bal.map(r => r.strain), ...[...onHand.keys()].map(k => strains.find(s => s.name.toLowerCase() === k)?.name ?? k)])].map(s => {
+      const rs = bal.filter(r => r.strain.toLowerCase() === s.toLowerCase())
+      const left = sum(rs, 'remaining'), have = onHandOf(s), pend = pendingByStrain.get(s.toLowerCase()) ?? 0
+      return { s, rs, left, have, pend, held: 0, free: have - pend - left }
+    })).filter(x => (x.have > 0 || x.left > 0) && (!ql || x.s.toLowerCase().includes(ql) || x.rs.some(r => cname(r.customer_id).toLowerCase().includes(ql))))
     .sort((a, b) => a.s.localeCompare(b.s))
   const shownOrders = orders.filter(o => !ql || cname(o.customer_id).toLowerCase().includes(ql) || (o.so_number ?? '').toLowerCase().includes(ql) || o.order_lines.some(l => l.strain.toLowerCase().includes(ql)))
 
@@ -87,6 +94,11 @@ export function ReservesView({ backend, customers, strains, onHand, flash }: {
     const lbs = Number(edit.lbs)
     try { await backend.setReserve(edit.customer_id, edit.strain, lbs); await load(); setOpen(edit.customer_id); setEdit(null); flash(lbs === 0 ? 'Reserve removed' : 'Reserve saved') }
     catch (e) { flash(String((e as Error).message ?? e), true) }
+  }
+  async function decide(id: number, approve: boolean) {
+    setBusy(true)
+    try { await backend.decideRequest(id, approve, decideNote[id] ?? ''); await load(); flash(approve ? 'Approved. Reserve updated.' : 'Declined') }
+    catch (e) { flash(String((e as Error).message ?? e), true) } finally { setBusy(false) }
   }
   async function importFile(f: File) {
     setBusy(true); setResult(null)
@@ -104,13 +116,14 @@ export function ReservesView({ backend, customers, strains, onHand, flash }: {
         <button className={mode === 'customer' ? 'on' : ''} onClick={() => setMode('customer')}>By customer</button>
         <button className={mode === 'strain' ? 'on' : ''} onClick={() => setMode('strain')}>By strain</button>
         <button className={mode === 'orders' ? 'on' : ''} onClick={() => setMode('orders')}>Orders <span className="muted">{orders.length}</span></button>
+        <button className={mode === 'requests' ? 'on' : ''} onClick={() => setMode('requests')}>Requests {reqs.some(r => r.status === 'pending') ? <span className="badge warn">{reqs.filter(r => r.status === 'pending').length}</span> : <span className="muted">0</span>}</button>
       </div>
       <div className="row toolbar">
         <input className="search" type="search" placeholder="Search customer, strain or SO #" value={q} onChange={e => setQ(e.target.value)} />
         {mode === 'orders'
           ? <label className={`primary filebtn ${busy ? 'disabled' : ''}`}>{busy ? 'Importing…' : 'Import Roshi orders'}
               <input type="file" accept=".xlsx,.csv" disabled={busy} onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) importFile(f) }} /></label>
-          : <button className="primary" onClick={() => setEdit({ customer_id: null, strain: '', lbs: '', isNew: true })}>+ Add reserve</button>}
+          : isAdmin && mode !== 'requests' && <button className="primary" onClick={() => setEdit({ customer_id: null, strain: '', lbs: '', isNew: true })}>+ Add reserve</button>}
       </div>
       {result && (
         <div className="okbox">
@@ -133,13 +146,13 @@ export function ReservesView({ backend, customers, strains, onHand, flash }: {
               <thead><tr><th>Strain</th><th className="num">Reserved</th><th className="num">Shipped</th><th className="num">Pending</th><th className="num">Left</th></tr></thead>
               <tbody>
                 {c.rs.map(r => (
-                  <tr key={r.id} className="tap" onClick={() => setEdit({ customer_id: c.id, strain: r.strain, lbs: String(r.reserved), isNew: false })}>
+                  <tr key={r.id} className={isAdmin ? 'tap' : ''} onClick={() => isAdmin && setEdit({ customer_id: c.id, strain: r.strain, lbs: String(r.reserved), isNew: false })}>
                     <td>{r.strain}</td><td className="num">{n0(Number(r.reserved))}</td><td className="num">{n0(Number(r.shipped))}</td>
                     <td className="num">{n0(Number(r.pending))}</td><td className="num"><b>{n0(Number(r.remaining))}</b></td>
                   </tr>
                 ))}
               </tbody>
-              <tfoot><tr><td colSpan={5}><span className="muted">Tap a strain to change it. </span><button className="ghost small" onClick={() => setEdit({ customer_id: c.id, strain: '', lbs: '', isNew: true })}>+ Add strain for {c.name}</button></td></tr></tfoot>
+              {isAdmin && <tfoot><tr><td colSpan={5}><span className="muted">Tap a strain to change it. </span><button className="ghost small" onClick={() => setEdit({ customer_id: c.id, strain: '', lbs: '', isNew: true })}>+ Add strain for {c.name}</button></td></tr></tfoot>}
             </table>
           )}
         </div>
@@ -154,14 +167,49 @@ export function ReservesView({ backend, customers, strains, onHand, flash }: {
                 <tr key={x.s} title={x.rs.map(r => `${cname(r.customer_id)}: ${n0(Number(r.remaining))} left`).join('\n')}>
                   <td>{x.s}{x.rs.length > 0 && <div className="muted small">{x.rs.length} customer{x.rs.length === 1 ? '' : 's'}</div>}</td>
                   <td className="num">{n0(x.have)}</td><td className="num">{n0(x.pend)}</td><td className="num">{n0(x.left)}</td>
-                  <td className={`num ${x.free < 0 ? 'warn-t' : ''}`}><b>{n0(x.free)}</b></td>
+                  <td className={`num ${x.free < 0 ? 'warn-t' : ''}`}><b>{n0(x.free)}</b>{x.held > 0 && <div className="muted small">{n0(x.held)} held</div>}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-          <p className="muted">Free = on hand − pending orders − reserves not yet shipped. On hand is what's in the freezers in this app. Negative means more is promised than is in the freezers.</p>
+          <p className="muted">Free = on hand − pending orders − reserves not yet shipped − increases customers have requested (held until approved or declined). Customers see Free rounded down to 10 lbs. On hand is what's in the freezers in this app. Negative means more is promised than is in the freezers.</p>
         </>
       )}
+
+      {mode === 'requests' && (() => {
+        const shown = reqs.filter(r => !ql || cname(r.customer_id).toLowerCase().includes(ql) || r.strain.toLowerCase().includes(ql))
+        const open_ = shown.filter(r => r.status === 'pending'), done = shown.filter(r => r.status !== 'pending').slice(0, 60)
+        const card = (r: ReserveRequest) => {
+          const d = Number(r.requested_lbs) - Number(r.current_lbs)
+          const m = nums.find(x => x.strain.toLowerCase() === r.strain.toLowerCase())
+          return (
+            <div key={r.id} className={`li reqcard ${r.status}`}>
+              <div className="grow">
+                <div><b>{cname(r.customer_id)}</b> · {r.strain} <span className={`pill r-${r.status}`}>{r.status}</span></div>
+                <div>{n0(Number(r.current_lbs))} → <b>{n0(Number(r.requested_lbs))} lbs</b> <span className={d > 0 ? 'up' : 'down'}>({d > 0 ? '+' : ''}{n0(d)})</span></div>
+                <div className="muted">{r.requested_by} · {new Date(r.requested_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}{r.note && <> · "{r.note}"</>}</div>
+                {r.status === 'pending' && m && <div className="muted">Free now {n0(Number(m.free))} lbs (this request already held)</div>}
+                {r.status !== 'pending' && r.decided_by && <div className="muted">{r.status} by {r.decided_by}{r.decision_note && <> · "{r.decision_note}"</>}</div>}
+                {r.status === 'pending' && isAdmin && (
+                  <div className="row reqact">
+                    <input placeholder="Note (optional)" value={decideNote[r.id] ?? ''} onChange={e => setDecideNote({ ...decideNote, [r.id]: e.target.value })} />
+                    <button className="ghost small" disabled={busy} onClick={() => decide(r.id, false)}>Decline</button>
+                    <button className="primary small" disabled={busy} onClick={() => decide(r.id, true)}>Approve</button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )
+        }
+        return (
+          <>
+            {!isAdmin && <p className="muted">Only an Admin can approve reserve changes.</p>}
+            {open_.length === 0 && <p className="muted">No requests waiting.</p>}
+            {open_.map(card)}
+            {done.length > 0 && <><h3 className="grouph">Decided</h3>{done.map(card)}</>}
+          </>
+        )
+      })()}
 
       {mode === 'orders' && (
         <>

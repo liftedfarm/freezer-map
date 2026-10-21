@@ -151,6 +151,10 @@ function describe(ix: Index, e: InvEvent, names?: Map<number, string>) {
       return d?.lbs === 0 ? `Reserve removed: ${d?.customer} · ${d?.strain}` : `Reserve ${d?.was != null ? `changed ${lbs(Number(d.was))} →` : 'set:'} ${d?.customer} · ${d?.strain} ${lbs(Number(d?.lbs ?? 0))}` }
     case 'reserve_import': { const d = e.details as { rows?: number; lbs?: number; customers?: number } | null
       return `Reserves loaded from ${e.note ?? 'a file'}: ${d?.rows} reserves, ${d?.customers} customers, ${lbs(Number(d?.lbs ?? 0))}` }
+    case 'reserve_request': { const d = e.details as { customer?: string; strain?: string; from?: number; to?: number } | null
+      return `Reserve request: ${d?.customer} · ${d?.strain} ${lbs(Number(d?.from ?? 0))} → ${lbs(Number(d?.to ?? 0))}` }
+    case 'reserve_approved': case 'reserve_declined': { const d = e.details as { customer?: string; strain?: string; from?: number; to?: number } | null
+      return `Reserve request ${e.type === 'reserve_approved' ? 'approved' : 'declined'}: ${d?.customer} · ${d?.strain} ${lbs(Number(d?.from ?? 0))} → ${lbs(Number(d?.to ?? 0))}` }
     case 'user_removed': return `${e.note} removed from users`
     default: return `${e.type} ${code}`
   }
@@ -165,12 +169,17 @@ type FormState =
   | { kind: 'pickmixed'; p: Pallet }
 interface Placing { title: string; sub: string; run: (slot: Slot) => Promise<void> }
 
+// opened from a request email: go straight to Reserves > Requests
+const GO_REQUESTS = new URLSearchParams(location.search).get('go') === 'requests'
+
 export default function App() {
   const [user, setUser] = useState<string | null | undefined>(undefined)
   const [me, setMe] = useState<Me | null>(null)
   const [snap, setSnap] = useState<Snapshot | null>(null)
   const [site, setSite] = useState<Site>('OHR')
-  const [view, setView] = useState<View>('map')
+  const goRequests = GO_REQUESTS
+  useEffect(() => { if (GO_REQUESTS) history.replaceState(null, '', location.pathname) }, [])
+  const [view, setView] = useState<View>(goRequests ? 'reserves' : 'map')
   const [freezerId, setFreezerId] = useState<number | null>(null)
   const [palletId, setPalletId] = useState<number | null>(null)
   const [moving, setMoving] = useState<Pallet | null>(null)
@@ -416,7 +425,7 @@ export default function App() {
             items={review} ix={ix} where={where} onPallet={setPalletId} showReason />
         </>)}
         {view === 'activity' && <ActivityView ix={ix} />}
-        {view === 'reserves' && canSales(me?.role) && <ReservesView backend={backend} flash={flash} customers={snap.customers ?? []} strains={snap.strains ?? []}
+        {view === 'reserves' && canSales(me?.role) && <ReservesView backend={backend} flash={flash} role={me!.role} initialMode={goRequests ? 'requests' : undefined} customers={snap.customers ?? []} strains={snap.strains ?? []}
           onHand={snap.pallets.reduce((m, p) => (p.kind !== 'mixed' && p.strain && (p.status === 'in_freezer' || p.status === 'unslotted'))
             ? m.set(p.strain.toLowerCase(), (m.get(p.strain.toLowerCase()) ?? 0) + Number(p.current_weight ?? 0)) : m, new Map<string, number>())} />}
         {view === 'transit' && <TransitView ctx={ctx} onOpen={id => { setLoadId(id); setView('load'); window.scrollTo(0, 0) }} onNew={() => setLoadForm({})} />}
