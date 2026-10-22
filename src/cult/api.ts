@@ -120,6 +120,20 @@ export class CultApi {
     fail(error)
   }
 
+  async removeMany(table: CultTable, ids: number[]) {
+    for (let i = 0; i < ids.length; i += 200) {
+      const { error } = await this.sb.from(table).delete().in('id', ids.slice(i, i + 200))
+      fail(error)
+    }
+  }
+
+  async updateMany(table: CultTable, ids: number[], patch: object) {
+    for (let i = 0; i < ids.length; i += 200) {
+      const { error } = await this.sb.from(table).update(patch).in('id', ids.slice(i, i + 200))
+      fail(error)
+    }
+  }
+
   async remove(table: CultTable, id: number) {
     const { error } = await this.sb.from(table).delete().eq('id', id)
     fail(error)

@@ -3,12 +3,15 @@ import type { CultApi } from './api'
 import { KIND_LABEL, KIND_SHORT, addDays, calcHarvest, fieldName, fmtD, isBiomass, monday, n0, n1, n2, pct, sum, today } from './calc'
 import type { Ctx } from './calc'
 import type { CultData, Harvest, HarvestKind, HarvestStatus } from './types'
-import { Choices, DateIn, F, NumIn, Pick, SaveBar, Sheet, StrainList, TextIn, errText } from './ui'
+import { Choices, DateIn, F, NumIn, Pick, SaveBar, SelAll, SelBar, SelBox, SelButton, Sheet, StrainList, TextIn, errText, useSel } from './ui'
 import type { Flash } from './ui'
 
 type Mode = 'upcoming' | 'all' | 'done'
 
-export function ScheduleTab({ d, c, site, q, onOpen }: { d: CultData; c: Ctx; site: string | null; q: string; onOpen: (h: Partial<Harvest>) => void }) {
+export function ScheduleTab({ d, c, site, q, onOpen, api, flash, onSaved }: { d: CultData; c: Ctx; site: string | null; q: string; onOpen: (h: Partial<Harvest>) => void
+  api: CultApi; flash: Flash; onSaved: (m: string) => Promise<void> }) {
+  const sel = useSel()
+  const bulk = (f: () => Promise<unknown>, m: string) => async () => { try { await f(); await onSaved(m) } catch (e) { flash(errText(e), true) } }
   const [mode, setMode] = useState<Mode>(d.year === d.currentYear ? 'upcoming' : 'all')
   const [kind, setKind] = useState<'all' | 'flower' | 'biomass'>('all')
   const now = today()
@@ -31,6 +34,7 @@ export function ScheduleTab({ d, c, site, q, onOpen }: { d: CultData; c: Ctx; si
           {(['upcoming', 'all', 'done'] as Mode[]).map(m => <button key={m} className={mode === m ? 'on' : ''} onClick={() => setMode(m)}>{m === 'upcoming' ? 'Coming up' : m === 'all' ? 'All' : 'Harvested'}</button>)}
         </div>
         <Pick value={kind} onChange={v => setKind(v ?? 'all')} options={[{ v: 'all', l: 'Flower + biomass' }, { v: 'flower', l: 'Flower only' }, { v: 'biomass', l: 'Biomass only' }]} />
+        <SelButton sel={sel} />
         <button className="primary" onClick={() => onOpen({ crop_year: d.year, site: site ?? 'OHR', kind: 'ff', status: 'planned', raw_bins: [] })}>+ Add harvest</button>
       </div>
       {late.length > 0 && mode !== 'done' && <p className="cnote">{late.length} harvest{late.length === 1 ? ' is' : 's are'} past {late.length === 1 ? 'its' : 'their'} date and not logged yet. Open {late.length === 1 ? 'it' : 'them'} to log what came in, move the date or cancel.</p>}
@@ -38,13 +42,13 @@ export function ScheduleTab({ d, c, site, q, onOpen }: { d: CultData; c: Ctx; si
       {rows.length > 0 && (
         <div className="cwrap fit">
           <table className="ctable">
-            <thead><tr><th>Date</th><th>Strain</th><th className="hide-s">Field</th><th className="hide-s">Type</th><th className="num">Plants</th><th className="num">Lbs</th>
+            <thead><tr><SelAll sel={sel} ids={rows.map(h => h.id)} /><th>Date</th><th>Strain</th><th className="hide-s">Field</th><th className="hide-s">Type</th><th className="num">Plants</th><th className="num">Lbs</th>
               <th className="num hide-s">Deleaf</th><th className="num hide-s">Buck</th><th className="num hide-s">Dry ice</th><th>Status</th></tr></thead>
             <tbody>
               {[...weeks.entries()].map(([w, hs]) => {
                 const ks = hs.map(h => calcHarvest(c, h))
                 return [
-                  <tr key={w} className="wk"><td colSpan={2}>{w === 'none' ? 'No date yet' : `Week of ${fmtD(w)}`}</td><td className="hide-s" /><td className="hide-s" />
+                  <tr key={w} className="wk"><td colSpan={sel.on ? 3 : 2}>{w === 'none' ? 'No date yet' : `Week of ${fmtD(w)}`}</td><td className="hide-s" /><td className="hide-s" />
                     <td className="num">{n0(sum(hs.filter(h => !isBiomass(h.kind)).map(h => h.plants)))}</td>
                     <td className="num">{n0(sum(ks.map((k, i) => hs[i].kind === 'ff' ? (k.actFF ?? k.estFF) : null)))}</td>
                     <td className="num hide-s" /><td className="num hide-s" /><td className="num hide-s">{n0(sum(ks.map(k => k.dryIce)))}</td><td /></tr>,
@@ -54,7 +58,8 @@ export function ScheduleTab({ d, c, site, q, onOpen }: { d: CultData; c: Ctx; si
                       : h.kind === 'dry' ? (k.actRaw != null ? <><b>{n0(k.actRaw)}</b> <span className="muted">raw ✓</span></> : k.estRaw != null ? <span title="raw lbs">{n0(k.estRaw)} raw</span> : '')
                       : k.estBiomass != null ? `${n0(k.estBiomass)} dry` : h.acres ? `${n1(h.acres)} ac` : ''
                     return (
-                      <tr key={h.id} className={`tap ${h.status}`} onClick={() => onOpen(h)}>
+                      <tr key={h.id} className={`tap ${h.status}`} onClick={() => sel.on ? sel.toggle(h.id) : onOpen(h)}>
+                        <SelBox sel={sel} id={h.id} />
                         <td className="nowrap">{fmtD(h.planned_on, true)}{h.status === 'done' && h.harvested_on && h.harvested_on !== h.planned_on && <div className="muted small">cut {fmtD(h.harvested_on)}</div>}</td>
                         <td>{h.strain}<div className="show-s"><span className="fpill">{h.site} {fieldName(c, h.field_id)}</span><span className={`kpill k-${h.kind}`}>{KIND_SHORT[h.kind]}</span></div>
                           {h.notes && <div className="muted small">{h.notes.length > 60 ? h.notes.slice(0, 60) + '…' : h.notes}</div>}</td>
@@ -75,6 +80,10 @@ export function ScheduleTab({ d, c, site, q, onOpen }: { d: CultData; c: Ctx; si
           </table>
         </div>
       )}
+      <SelBar sel={sel} noun="harvest" actions={[
+        { label: 'Cancel harvests', run: async ids => bulk(() => api.updateMany('cult_harvests', ids, { status: 'cancelled' }), `${ids.length} cancelled`)() },
+        { label: 'Back to planned', run: async ids => bulk(() => api.updateMany('cult_harvests', ids, { status: 'planned' }), `${ids.length} back to planned`)() },
+        { label: 'Delete', danger: true, run: async ids => bulk(() => api.removeMany('cult_harvests', ids), `Deleted ${ids.length} harvests`)() }]} />
       <p className="cnote">Lbs are fresh frozen estimates (plants × lbs/plant) until a harvest is logged, then what came in (✓). People = man-hours ÷ the site's work day. Dry ice is for fresh frozen, ordered the Wednesday the week before.</p>
     </>
   )

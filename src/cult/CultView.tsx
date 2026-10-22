@@ -63,7 +63,7 @@ export default function CultView({ backend, flash, onPalletsChanged }: { backend
       {['schedule', 'avail', 'plantings', 'yields', 'plan'].includes(tab) &&
         <div className="row toolbar"><input className="search" type="search" placeholder="Search strain, field, notes" value={q} onChange={e => setQ(e.target.value)} /></div>}
 
-      {tab === 'schedule' && <ScheduleTab d={d} c={c} site={site} q={q} onOpen={setOpen} />}
+      {tab === 'schedule' && <ScheduleTab d={d} c={c} site={site} q={q} onOpen={setOpen} api={api} flash={flash} onSaved={saved} />}
       {tab === 'week' && <WeekTab d={d} c={c} site={site} onOpen={setOpen} />}
       {tab === 'testing' && <TestingTab d={d} c={c} site={site} api={api} flash={flash} onSaved={saved} />}
       {tab === 'avail' && <AvailabilityTab d={d} c={c} site={site} q={q} api={api} flash={flash} onSaved={saved} />}

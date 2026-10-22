@@ -3,7 +3,7 @@ import type { CultApi } from './api'
 import { daysBetween, fmtD, n0, n1, n2, plantingAcres, sum, today } from './calc'
 import type { Ctx } from './calc'
 import type { CField, CultData, Planting, Receipt, Source } from './types'
-import { Choices, DateIn, F, NumIn, Pick, SaveBar, Sheet, StrainList, TextIn, errText } from './ui'
+import { Choices, DateIn, F, NumIn, Pick, SaveBar, SelAll, SelBar, SelBox, SelButton, Sheet, StrainList, TextIn, errText, useSel } from './ui'
 import type { Flash } from './ui'
 
 const SOURCES: { v: Source; l: string }[] = [{ v: 'clone', l: 'Clone' }, { v: 'seed', l: 'Seed' }, { v: 'auto', l: 'Auto (seed)' }]
@@ -12,6 +12,7 @@ export function PlantingsTab({ d, c, site, q, api, flash, onSaved }: { d: CultDa
   const [edit, setEdit] = useState<Partial<Planting> | null>(null)
   const [rEdit, setREdit] = useState<Partial<Receipt> | null>(null)
   const [view, setView] = useState<'fields' | 'receiving'>('fields')
+  const sel = useSel()
   const ql = q.trim().toLowerCase()
   const ps = d.plantings.filter(p => (!site || p.site === site) && (!ql || `${p.strain} ${p.nursery ?? ''} ${p.notes ?? ''}`.toLowerCase().includes(ql)))
   const groups = new Map<string, Planting[]>()
@@ -32,7 +33,7 @@ export function PlantingsTab({ d, c, site, q, api, flash, onSaved }: { d: CultDa
         <div className="seg"><button className={view === 'fields' ? 'on' : ''} onClick={() => setView('fields')}>By field</button>
           <button className={view === 'receiving' ? 'on' : ''} onClick={() => setView('receiving')}>Plants received</button></div>
         {view === 'fields'
-          ? <button className="primary" onClick={() => setEdit({ crop_year: d.year, site: site ?? 'OHR', source: 'clone', batch: 1 })}>+ Add planting</button>
+          ? <><SelButton sel={sel} /><button className="primary" onClick={() => setEdit({ crop_year: d.year, site: site ?? 'OHR', source: 'clone', batch: 1 })}>+ Add planting</button></>
           : <button className="primary" onClick={() => setREdit({ crop_year: d.year, site: site ?? 'OHR', source: 'clone', batch: 1, received: 0, rejected: 0, received_on: now })}>+ Plants received</button>}
       </div>
 
@@ -52,12 +53,13 @@ export function PlantingsTab({ d, c, site, q, api, flash, onSaved }: { d: CultDa
             <div key={k}>
               <h3 className="csec">{s} {f ? `${f.code}` : '(no field)'} <span className="muted">{f?.name} · {n0(sum(list.map(p => p.plants)))} plants · {n2(ac)} ac{f?.acres ? ` of ${n2(f.acres)}` : ''}</span></h3>
               <div className="cwrap"><table className="ctable">
-                <thead><tr><th>Strain</th><th>Planted</th><th className="num">Plants</th><th className="num hide-s">Spacing</th><th className="num">Acres</th><th className="hide-s">Nursery</th>
+                <thead><tr><SelAll sel={sel} ids={list.map(p => p.id)} /><th>Strain</th><th>Planted</th><th className="num">Plants</th><th className="num hide-s">Spacing</th><th className="num">Acres</th><th className="hide-s">Nursery</th>
                   <th className="num">Est. lbs/pl</th><th className="hide-s">First flower</th><th>Harvested</th></tr></thead>
                 <tbody>{list.map(p => {
                   const hs = harvestedOf(p)
                   return (
-                    <tr key={p.id} className="tap" onClick={() => setEdit(p)}>
+                    <tr key={p.id} className="tap" onClick={() => sel.on ? sel.toggle(p.id) : setEdit(p)}>
+                      <SelBox sel={sel} id={p.id} />
                       <td>{p.strain}{p.batch && p.batch > 1 ? <span className="muted"> · batch {p.batch}</span> : null}{p.source !== 'clone' && <span className="muted"> · {p.source}</span>}</td>
                       <td className="nowrap">{fmtD(p.planted_on)}</td><td className="num">{n0(p.plants)}</td><td className="num hide-s">{p.spacing_in ? `${p.spacing_in}"` : ''}</td>
                       <td className="num">{n2(plantingAcres(p, c.site.get(p.site)))}</td><td className="hide-s">{p.nursery ?? ''}</td><td className="num">{n2(p.est_lbs_per_plant)}</td>
@@ -92,6 +94,8 @@ export function PlantingsTab({ d, c, site, q, api, flash, onSaved }: { d: CultDa
         <p className="cnote">Planted counts plants in the field plus counted losses for the same strain and batch. Negative left over usually means a batch number doesn't match between receiving and planting.</p>
       </>}
 
+      <SelBar sel={sel} noun="planting" actions={[{ label: 'Delete', danger: true, run: async ids => {
+        try { await api.removeMany('cult_plantings', ids); await onSaved(`Deleted ${ids.length} plantings`) } catch (e) { flash(errText(e), true) } } }]} />
       {edit && <PlantingSheet d={d} c={c} p={edit} api={api} flash={flash} onClose={() => setEdit(null)} onSaved={async m => { setEdit(null); await onSaved(m) }} />}
       {rEdit && <ReceiptSheet d={d} r={rEdit} api={api} flash={flash} onClose={() => setREdit(null)} onSaved={async m => { setREdit(null); await onSaved(m) }} />}
     </>

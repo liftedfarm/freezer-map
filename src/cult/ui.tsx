@@ -77,4 +77,54 @@ export function Kpis({ items }: { items: [ReactNode, ReactNode][] }) {
   return <div className="ckpis">{items.map(([v, l], i) => <div key={i}><b>{v}</b><span>{l}</span></div>)}</div>
 }
 
+// ---------- pick several rows ----------
+export interface Sel { on: boolean; ids: Set<number>; start: () => void; stop: () => void; toggle: (id: number) => void; setAll: (ids: number[], v: boolean) => void }
+export function useSel(): Sel {
+  const [on, setOn] = useState(false)
+  const [ids, setIds] = useState<Set<number>>(new Set())
+  return {
+    on, ids,
+    start: () => setOn(true),
+    stop: () => { setOn(false); setIds(new Set()) },
+    toggle: id => setIds(s => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n }),
+    setAll: (list, v) => setIds(s => { const n = new Set(s); for (const id of list) { if (v) n.add(id); else n.delete(id) } return n }),
+  }
+}
+/** checkbox header cell: ticks every row shown */
+export function SelAll({ sel, ids }: { sel: Sel; ids: number[] }) {
+  if (!sel.on) return null
+  const all = ids.length > 0 && ids.every(id => sel.ids.has(id))
+  return <th className="selcol"><input type="checkbox" checked={all} onChange={() => sel.setAll(ids, !all)} /></th>
+}
+export function SelBox({ sel, id }: { sel: Sel; id: number | null | undefined }) {
+  if (!sel.on) return null
+  return <td className="selcol" onClick={e => e.stopPropagation()}>{id != null && <input type="checkbox" checked={sel.ids.has(id)} onChange={() => sel.toggle(id)} />}</td>
+}
+export function SelButton({ sel, label = 'Select' }: { sel: Sel; label?: string }) {
+  return sel.on ? <button className="ghost small" onClick={sel.stop}>Done selecting</button> : <button className="ghost small" onClick={sel.start}>{label}</button>
+}
+export interface SelAction { label: string; run: (ids: number[]) => Promise<void>; danger?: boolean }
+/** bar that sticks to the bottom while rows are picked */
+export function SelBar({ sel, noun, actions }: { sel: Sel; noun: string; actions: SelAction[] }) {
+  const [sure, setSure] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  if (!sel.on || !sel.ids.size) return null
+  const ids = [...sel.ids]
+  const go = async (a: SelAction) => {
+    if (a.danger && sure !== a.label) { setSure(a.label); return }
+    setBusy(true)
+    try { await a.run(ids); sel.stop() } finally { setBusy(false); setSure(null) }
+  }
+  return (
+    <div className="selbar">
+      <b>{ids.length} {noun}{ids.length === 1 ? '' : 's'} picked</b>
+      <div className="row">
+        {actions.map(a => <button key={a.label} disabled={busy} className={a.danger ? (sure === a.label ? 'primary dangerbg' : 'ghost danger') : 'ghost'} onClick={() => go(a)}>
+          {a.danger && sure === a.label ? `Yes, ${a.label.toLowerCase()} ${ids.length}` : a.label}</button>)}
+        <button className="ghost" onClick={sel.stop}>Cancel</button>
+      </div>
+    </div>
+  )
+}
+
 export const errText = (e: unknown) => String((e as Error)?.message ?? e)

@@ -88,3 +88,9 @@
 .csheet .row input { width: auto; flex: 1; }
 .csheet input[type=checkbox] { width: auto; }
 @media (max-width: 600px) { .kpill.s-planned, .kpill.s-done, .kpill.s-cancelled { white-space: normal; } }
+
+.selcol { width: 30px; text-align: center !important; }
+.selcol input { width: 18px; height: 18px; }
+.selbar { position: fixed; left: 50%; transform: translateX(-50%); bottom: 72px; z-index: 9; background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+  box-shadow: 0 6px 24px rgb(0 0 0 / .18); padding: 10px 14px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; max-width: calc(100vw - 32px); }
+.primary.dangerbg { background: var(--bad); color: #fff; }

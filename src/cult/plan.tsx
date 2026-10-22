@@ -3,7 +3,7 @@ import type { CultApi } from './api'
 import { acresFor, addDays, fmtD, n0, n1, n2, sum } from './calc'
 import type { Ctx } from './calc'
 import type { CultData, Demand, NurseryOrder, PlanData, PlanRow, Source } from './types'
-import { Choices, DateIn, F, Kpis, NumIn, Pick, SaveBar, Sheet, StrainList, TextIn, errText } from './ui'
+import { Choices, DateIn, F, Kpis, NumIn, Pick, SaveBar, SelAll, SelBar, SelBox, SelButton, Sheet, StrainList, TextIn, errText, useSel } from './ui'
 import type { Flash } from './ui'
 
 const STATUSES: NurseryOrder['status'][] = ['planned', 'ordered', 'confirmed', 'received', 'cancelled']
@@ -17,6 +17,7 @@ export function PlanTab({ d, c, api, flash, q }: { d: CultData; c: Ctx; api: Cul
   const [pEdit, setPEdit] = useState<Partial<PlanRow> | null>(null)
   const [oEdit, setOEdit] = useState<Partial<NurseryOrder> | null>(null)
   const [busy, setBusy] = useState(false)
+  const selD = useSel(), selP = useSel(), selO = useSel()
   const load = useCallback(() => api.loadPlan(year).then(x => { setP(x); setErr(null) }).catch(e => setErr(errText(e))), [api, year])
   useEffect(() => { setP(null); load() }, [load])
   const saved = async (m: string) => { setDEdit(null); setPEdit(null); setOEdit(null); await load(); flash(m) }
@@ -60,6 +61,7 @@ export function PlanTab({ d, c, api, flash, q }: { d: CultData; c: Ctx; api: Cul
     return { s, plants: sum(pl.map(x => Math.ceil(x.plants * (1 + x.overage_pct / 100)))), acres, avail }
   })
 
+  const bulk = (f: () => Promise<unknown>, m: string) => async () => { try { await f(); await saved(m) } catch (e) { flash(errText(e), true) } }
   async function copyReserves() {
     if (!p?.reserves) return
     setBusy(true)
@@ -96,13 +98,13 @@ export function PlanTab({ d, c, api, flash, q }: { d: CultData; c: Ctx; api: Cul
       ]} />
 
       <div className="row between"><h3 className="csec">By strain <span className="muted">what to grow for, and whether the plan covers it</span></h3>
-        <button className="primary small" onClick={() => setDEdit({ crop_year: year, strain: '', lbs: 0 })}>+ Strain</button></div>
+        <div className="row"><SelButton sel={selD} /><button className="primary small" onClick={() => setDEdit({ crop_year: year, strain: '', lbs: 0 })}>+ Strain</button></div></div>
       <div className="cwrap"><table className="ctable">
-        <thead><tr><th>Strain</th><th className="num">Lbs needed</th><th className="num">Lbs / plant</th><th className="num">Plants needed</th><th className="num">Planned</th>
+        <thead><tr><SelAll sel={selD} ids={rows.map(r => r.dem?.id).filter((x): x is number => x != null)} /><th>Strain</th><th className="num">Lbs needed</th><th className="num">Lbs / plant</th><th className="num">Plants needed</th><th className="num">Planned</th>
           <th className="num">Projected lbs</th><th className="num">Short / over</th>{p.reserves && <th className="num hide-s">{d.currentYear} reserves</th>}<th /></tr></thead>
         <tbody>{rows.map(r => (
-          <tr key={r.s} className="tap" onClick={() => setDEdit(r.dem ?? { crop_year: year, strain: r.s, lbs: 0 })}>
-            <td>{r.s}</td><td className="num">{r.need ? n0(r.need) : ''}</td>
+          <tr key={r.s} className="tap" onClick={() => selD.on ? r.dem && selD.toggle(r.dem.id) : setDEdit(r.dem ?? { crop_year: year, strain: r.s, lbs: 0 })}>
+            <SelBox sel={selD} id={r.dem?.id} /><td>{r.s}</td><td className="num">{r.need ? n0(r.need) : ''}</td>
             <td className="num" title={r.h ? `${[...r.h.years].sort().join(' + ')}: ${n0(r.h.lbs)} lbs from ${n0(r.h.plants)} plants` : 'no history'}>{n2(r.lpp)}{!r.lpp && <span className="warn-t">?</span>}</td>
             <td className="num">{n0(r.plantsNeeded)}</td><td className="num">{n0(r.planned) || ''}</td><td className="num">{n0(r.projected) || ''}</td>
             <td className={`num ${r.delta < 0 ? 'neg' : 'pos'}`}>{r.need || r.projected ? (r.delta > 0 ? '+' : '') + n0(r.delta) : ''}</td>
@@ -110,26 +112,26 @@ export function PlanTab({ d, c, api, flash, q }: { d: CultData; c: Ctx; api: Cul
             <td onClick={e => e.stopPropagation()}>{r.plantsNeeded && r.planned < r.plantsNeeded / 1.03 &&
               <button className="ghost small" onClick={() => setPEdit({ crop_year: year, site: 'OHR', strain: r.s, plants: Math.ceil((r.plantsNeeded! / 1.03) - r.planned), overage_pct: 3, source: 'clone', trial: false, est_lbs_per_plant: null })}>Plan it</button>}</td>
           </tr>))}
-        {!rows.length && <tr><td colSpan={9} className="muted">Nothing yet. Add strains with the lbs you want to grow for, or start from current reserves.</td></tr>}</tbody>
-        {rows.length > 0 && <tfoot><tr className="tot"><td>Total</td><td className="num">{n0(sum(rows.map(r => r.need)))}</td><td /><td className="num">{n0(sum(rows.map(r => r.plantsNeeded)))}</td>
+        {!rows.length && <tr><td colSpan={10} className="muted">Nothing yet. Add strains with the lbs you want to grow for, or start from current reserves.</td></tr>}</tbody>
+        {rows.length > 0 && <tfoot><tr className="tot">{selD.on && <td />}<td>Total</td><td className="num">{n0(sum(rows.map(r => r.need)))}</td><td /><td className="num">{n0(sum(rows.map(r => r.plantsNeeded)))}</td>
           <td className="num">{n0(sum(rows.map(r => r.planned)))}</td><td className="num">{n0(sum(rows.map(r => r.projected)))}</td><td className="num">{n0(sum(rows.map(r => r.delta)))}</td>{p.reserves && <td className="hide-s" />}<td /></tr></tfoot>}
       </table></div>
       <p className="cnote">Lbs / plant: what's set on the plan, otherwise the average from the last two seasons (hover for the numbers). Plants needed includes 3% overage.</p>
 
       <div className="row between"><h3 className="csec">Crop plan <span className="muted">{p.plan.length} rows</span></h3>
-        <button className="primary small" onClick={() => setPEdit({ crop_year: year, site: 'OHR', strain: '', plants: 0, overage_pct: 3, source: 'clone', trial: false })}>+ Add to plan</button></div>
+        <div className="row"><SelButton sel={selP} /><button className="primary small" onClick={() => setPEdit({ crop_year: year, site: 'OHR', strain: '', plants: 0, overage_pct: 3, source: 'clone', trial: false })}>+ Add to plan</button></div></div>
       {d.sites.map(s => {
         const pl = p.plan.filter(x => x.site === s.code && (!ql || lc(x.strain).includes(ql))).sort((a, b) => Number(a.trial) - Number(b.trial) || a.strain.localeCompare(b.strain))
         if (!pl.length) return null
         return (
           <div key={s.code} className="cwrap"><table className="ctable">
-            <thead><tr><th>{s.code}</th><th>Nursery</th><th className="num">Plants</th><th className="num">To order</th><th className="num hide-s">Spacing</th><th className="num">Acres</th>
+            <thead><tr><SelAll sel={selP} ids={pl.map(x => x.id)} /><th>{s.code}</th><th>Nursery</th><th className="num">Plants</th><th className="num">To order</th><th className="num hide-s">Spacing</th><th className="num">Acres</th>
               <th className="num">Lbs / pl</th><th className="num">Projected</th><th className="hide-s">Deliveries</th></tr></thead>
             <tbody>{pl.map(x => {
               const os = p.orders.filter(o => o.plan_id === x.id && o.status !== 'cancelled')
               return (
-                <tr key={x.id} className="tap" onClick={() => setPEdit(x)}>
-                  <td>{x.strain}{x.trial && <span className="kpill s-planned"> trial</span>}{x.field_id && <span className="fpill" style={{ marginLeft: 4 }}>{c.field.get(x.field_id)?.code}</span>}</td>
+                <tr key={x.id} className="tap" onClick={() => selP.on ? selP.toggle(x.id) : setPEdit(x)}>
+                  <SelBox sel={selP} id={x.id} /><td>{x.strain}{x.trial && <span className="kpill s-planned"> trial</span>}{x.field_id && <span className="fpill" style={{ marginLeft: 4 }}>{c.field.get(x.field_id)?.code}</span>}</td>
                   <td>{x.nursery ?? ''}{x.source !== 'clone' ? ` · ${x.source}` : ''}</td><td className="num">{n0(x.plants)}</td>
                   <td className="num">{n0(Math.ceil(x.plants * (1 + x.overage_pct / 100)))}</td><td className="num hide-s">{x.spacing_in ? `${x.spacing_in}"` : ''}</td>
                   <td className="num">{n2(acresFor(x.plants, x.spacing_in, s))}</td><td className="num">{n2(planLpp(x))}</td><td className="num">{n0(x.plants * (planLpp(x) ?? 0)) || ''}</td>
@@ -137,23 +139,28 @@ export function PlanTab({ d, c, api, flash, q }: { d: CultData; c: Ctx; api: Cul
                 </tr>
               )
             })}</tbody>
-            <tfoot><tr className="tot"><td colSpan={2}>Total</td><td className="num">{n0(sum(pl.map(x => x.plants)))}</td><td className="num">{n0(sum(pl.map(x => Math.ceil(x.plants * (1 + x.overage_pct / 100)))))}</td>
+            <tfoot><tr className="tot"><td colSpan={selP.on ? 3 : 2}>Total</td><td className="num">{n0(sum(pl.map(x => x.plants)))}</td><td className="num">{n0(sum(pl.map(x => Math.ceil(x.plants * (1 + x.overage_pct / 100)))))}</td>
               <td className="hide-s" /><td className="num">{n1(sum(pl.map(x => acresFor(x.plants, x.spacing_in, s))))}</td><td /><td className="num">{n0(sum(pl.map(x => x.plants * (planLpp(x) ?? 0))))}</td><td className="hide-s" /></tr></tfoot>
           </table></div>
         )
       })}
 
       <div className="row between"><h3 className="csec">Nursery deliveries <span className="muted">{p.orders.filter(o => o.status !== 'cancelled').length} · {n0(sum(p.orders.filter(o => o.status !== 'cancelled').map(o => o.plants)))} plants</span></h3>
-        <button className="primary small" onClick={() => setOEdit({ crop_year: year, site: 'OHR', strain: '', plants: 0, status: 'planned' })}>+ Delivery</button></div>
+        <div className="row"><SelButton sel={selO} /><button className="primary small" onClick={() => setOEdit({ crop_year: year, site: 'OHR', strain: '', plants: 0, status: 'planned' })}>+ Delivery</button></div></div>
       <div className="cwrap"><table className="ctable">
-        <thead><tr><th>Delivery</th><th>Plant</th><th>Strain</th><th>Site</th><th>Nursery</th><th className="num">Plants</th><th>Status</th></tr></thead>
+        <thead><tr><SelAll sel={selO} ids={p.orders.filter(o => !ql || lc(o.strain).includes(ql)).map(o => o.id)} /><th>Delivery</th><th>Plant</th><th>Strain</th><th>Site</th><th>Nursery</th><th className="num">Plants</th><th>Status</th></tr></thead>
         <tbody>{p.orders.filter(o => !ql || lc(o.strain).includes(ql)).map(o => (
-          <tr key={o.id} className={`tap ${o.status === 'cancelled' ? 'cancelled' : ''}`} onClick={() => setOEdit(o)}>
-            <td className="nowrap">{fmtD(o.deliver_on, true)}</td><td className="nowrap">{fmtD(o.plant_on, true)}</td><td>{o.strain}</td><td>{o.site}</td><td>{o.nursery ?? ''}</td>
+          <tr key={o.id} className={`tap ${o.status === 'cancelled' ? 'cancelled' : ''}`} onClick={() => selO.on ? selO.toggle(o.id) : setOEdit(o)}>
+            <SelBox sel={selO} id={o.id} /><td className="nowrap">{fmtD(o.deliver_on, true)}</td><td className="nowrap">{fmtD(o.plant_on, true)}</td><td>{o.strain}</td><td>{o.site}</td><td>{o.nursery ?? ''}</td>
             <td className="num">{n0(o.plants)}</td><td><span className={`kpill ${o.status === 'received' ? 's-done' : 's-planned'}`}>{o.status}</span></td></tr>))}
         {!p.orders.length && <tr><td colSpan={7} className="muted">No deliveries yet. Open a plan row to add its deliveries.</td></tr>}</tbody>
       </table></div>
 
+      <SelBar sel={selD} noun="strain" actions={[{ label: 'Delete', danger: true, run: async ids => bulk(() => api.removeMany('cult_demand', ids), `Removed ${ids.length} from lbs needed`)() }]} />
+      <SelBar sel={selP} noun="plan row" actions={[{ label: 'Delete', danger: true, run: async ids => bulk(() => api.removeMany('cult_plan', ids), `Removed ${ids.length} plan rows`)() }]} />
+      <SelBar sel={selO} noun="delivery" actions={[
+        ...(['ordered', 'confirmed', 'received'] as const).map(st => ({ label: `Mark ${st}`, run: async (ids: number[]) => bulk(() => api.updateMany('cult_nursery_orders', ids, { status: st }), `${ids.length} marked ${st}`)() })),
+        { label: 'Delete', danger: true, run: async ids => bulk(() => api.removeMany('cult_nursery_orders', ids), `Removed ${ids.length} deliveries`)() }]} />
       {dEdit && <DemandSheet d={d} x={dEdit} hist={dEdit.strain ? lppHist.get(lc(dEdit.strain)) : undefined} reserve={dEdit.strain ? p.reserves?.get(dEdit.strain) ?? null : null}
         api={api} flash={flash} onClose={() => setDEdit(null)} onSaved={saved} />}
       {pEdit && <PlanSheet d={d} c={c} x={pEdit} lpp={planLpp({ ...pEdit, est_lbs_per_plant: null })} orders={p.orders.filter(o => pEdit.id != null && o.plan_id === pEdit.id)}
