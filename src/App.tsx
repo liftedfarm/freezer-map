@@ -416,21 +416,21 @@ export default function App() {
   const linkParams = new URLSearchParams(location.search)
   const link = linkParams.get('invite') ? { kind: 'invite' as const, code: linkParams.get('invite')! } : linkParams.get('reset') ? { kind: 'reset' as const, code: linkParams.get('reset')! } : null
   if (link) return <PortalLink backend={backend} kind={link.kind} code={link.code} onDone={refreshUser} />
-  if (user === undefined) return <div className="center muted">Loading…</div>
+  if (user === undefined) return <Splash />
   if (!user) return IS_PORTAL ? <PortalLogin backend={backend} onDone={refreshUser} /> : <Login />
-  if (user && !me && !loadError) return <div className="center muted">Loading…</div>
+  if (user && !me && !loadError) return <Splash />
   const viewBar = me?.viewing_as ? <ViewAsBar me={me} stop={() => backend.stopViewAs().then(() => location.reload())} /> : null
   if (me?.role === 'customer') return <>{viewBar}<Portal backend={backend} me={me} signOut={() => backend.signOut().then(() => setUser(null))} /></>
   if (me && !staff) return <>{viewBar}<NoAccess me={me} signOut={() => backend.signOut().then(() => setUser(null))} /></>
   if (loadError && !snap) return (
-    <div className="center"><h2>Couldn't load freezers</h2>
+    <div className="center"><h2>Couldn't load the app</h2>
       <p className="muted">{loadError}</p>
       <div className="row" style={{ justifyContent: 'center' }}>
         <button className="primary" onClick={() => { setLoadError(null); reload().catch(e => setLoadError(String(e?.message ?? e))) }}>Try again</button>
         <button className="ghost" onClick={() => backend.signOut().then(() => setUser(null))}>Sign out</button>
       </div></div>
   )
-  if (!snap || !ix) return <div className="center muted">Loading freezers…</div>
+  if (!snap || !ix) return <Splash />
 
   const siteFreezers = snap.freezers.filter(f => f.site === site && f.kind !== 'staging').sort((a, b) => a.number - b.number)
   const unplaced = snap.pallets.filter(p => p.status === 'unslotted' && !p.container_id)
@@ -1168,6 +1168,11 @@ const CULT_TBL: Record<string, string> = { cult_harvests: 'Harvest', cult_planti
 interface Line { id: string; at: string; who: string | null; text: ReactNode; note?: string | null; mod: 'distribution' | 'sales' | 'admin' | 'cultivation' }
 
 /** Activity: each module shows its own; Admin shows everything with a filter */
+/** loading screen: the logo and a quiet spinner, same for every module */
+function Splash() {
+  return <div className="center splash"><img className="logo-login" src="/logo.png" alt="Lifted Farms" /><div className="spin" aria-label="Loading" /></div>
+}
+
 function ActivityView({ ix, module }: { ix: Index; module: 'distribution' | 'sales' | 'all' }) {
   const [events, setEvents] = useState<InvEvent[] | null>(null)
   const [cult, setCult] = useState<Line[]>([])

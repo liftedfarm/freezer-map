@@ -639,3 +639,6 @@ body.dragging { user-select: none; -webkit-user-select: none; cursor: grabbing; 
 .row.wrap { flex-wrap: wrap; }
 .grow { flex: 1; }
 .fulfill > .ghost.small:first-child { justify-self: start; }
+.splash { gap: 18px; }
+.spin { width: 28px; height: 28px; border-radius: 50%; border: 3px solid var(--line); border-top-color: var(--brand); animation: spin .8s linear infinite; margin: 0 auto; }
+@keyframes spin { to { transform: rotate(360deg); } }
