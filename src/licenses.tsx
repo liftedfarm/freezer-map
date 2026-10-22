@@ -43,13 +43,19 @@ export function TagRanges({ sb, license, kind, ranges, used, canEdit, flash, onC
   return (
     <div className="tagranges">
       {!mine.length && <p className="muted small">No METRC tag ranges for this license yet.</p>}
-      {mine.map(r => (
-        <div key={r.id} className={`drow ${r.active ? '' : 'off'}`}>
-          <span className="grow"><b>{PURPOSE_LABEL[r.purpose] ?? r.purpose}</b><span className="muted"> · {tag(r, r.first_n).slice(-10)} to {tag(r, r.last_n).slice(-10)} · {(r.last_n - r.first_n + 1).toLocaleString()} tags
-            {used ? ` · ${used(r).toLocaleString()} used` : ''}{r.active ? '' : ' · off'}</span></span>
-          {canEdit && <button className="ghost small" disabled={busy} onClick={() => go({ id: r.id, active: !r.active }, r.active ? 'Range off' : 'Range on')}>{r.active ? 'Turn off' : 'Turn on'}</button>}
-        </div>
-      ))}
+      {[...new Set(mine.map(r => r.purpose))].map(pu => {
+        const rs = mine.filter(r => r.purpose === pu), on = rs.filter(r => r.active)
+        const n = (xs: Range[]) => xs.reduce((a, r) => a + r.last_n - r.first_n + 1, 0)
+        const row = (r: Range) => (
+          <div key={r.id} className={`drow ${r.active ? '' : 'off'}`}>
+            <span className="grow"><span className="mono">{tag(r, r.first_n).slice(-10)}{r.last_n > r.first_n ? ` to ${tag(r, r.last_n).slice(-10)}` : ''}</span><span className="muted"> · {(r.last_n - r.first_n + 1).toLocaleString()} {r.last_n > r.first_n ? 'tags' : 'tag'}
+              {used ? ` · ${used(r).toLocaleString()} used` : ''}{r.active ? '' : ' · off'}</span></span>
+            {canEdit && <button className="ghost small" disabled={busy} onClick={() => go({ id: r.id, active: !r.active }, r.active ? 'Range off' : 'Range on')}>{r.active ? 'Turn off' : 'Turn on'}</button>}
+          </div>)
+        return rs.length === 1 ? <div key={pu}><b className="small">{PURPOSE_LABEL[pu] ?? pu}</b>{row(rs[0])}</div> : (
+          <details key={pu} className="tagset"><summary><b>{PURPOSE_LABEL[pu] ?? pu}</b><span className="muted"> · {n(on).toLocaleString()} tags in {on.length} ranges{on.length < rs.length ? ` (${rs.length - on.length} off)` : ''}</span></summary>
+            {rs.map(row)}</details>)
+      })}
       {canEdit && <div className="row wrap tagadd">
         <select value={purpose} onChange={e => setPurpose(e.target.value)}>{Object.entries(PURPOSE_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
         <input value={first} onChange={e => setFirst(e.target.value.toUpperCase())} placeholder="First tag" />

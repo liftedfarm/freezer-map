@@ -14,3 +14,6 @@
 .licenses .licfz select { padding: 5px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); font-size: 13px; }
 .nset { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0 10px; }
 .nursery .csheet textarea { font-family: ui-monospace, monospace; font-size: 13px; }
+.tagset { margin: 6px 0; }
+.tagset summary { cursor: pointer; padding: 6px 0; font-size: 14px; }
+.tagranges .mono { font-family: ui-monospace, monospace; font-size: 13px; }
