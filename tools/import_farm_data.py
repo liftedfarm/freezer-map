@@ -216,7 +216,7 @@ delete from nursery_batches where notes like '{TAG_N}%';
         if cut and cuts:
             s.append(f"insert into nursery_batches (site, strain, name, gen, season, cut_on, cuttings, lost, stage, room_id, sort1_on, s1_vigorous, moved_out_on, notes) values "
                      f"('1PN', {q(str(x['Strain']).strip())}, {q(gen + ' ' + str(x['Strain']).strip())}, {g}, {season}, {q(cut)}, {cuts}, {max(0, cuts - int(rooted or 0))}, 'done', "
-                     f"(select id from nursery_rooms where site = '1PN' and kind = 'trailer' order by sort limit 1), {q(day(x.get('1st Plant Date')))}, {q(int(rooted) if rooted is not None else None)}, "
+                     f"(select id from nursery_rooms where site = '1PN' and name = 'Trailer 4'), {q(day(x.get('1st Plant Date')))}, {q(int(rooted) if rooted is not None else None)}, "
                      f"{q(day(x.get('1st Plant Date')))}, {q(notes)});")
             bvar = "(select max(id) from nursery_batches)"
         s.append(f"insert into nursery_mothers (site, room_id, strain, plant_tag, started_on, qty, gen, season, bed, pot, cuts_per_plant, source, batch_id, notes) values "
