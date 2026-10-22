@@ -6,6 +6,7 @@ export interface Freezer {
   id: number
   site: Site
   number: number
+  kind?: 'freezer' | 'staging'
   status: FreezerStatus
   notes?: string | null
 }

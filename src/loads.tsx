@@ -372,12 +372,13 @@ function PalletPicker({ ctx, load, stops, initialStop, position, free, onClose }
 }
 
 /** From a pallet card: choose an open load and stop */
-export function PickLoad({ ctx, p, onClose }: { ctx: LoadCtx; p: Pallet; onClose: () => void }) {
+export function PickLoad({ ctx, ps, onClose }: { ctx: LoadCtx; ps: Pallet[]; onClose: () => void }) {
+  const label = ps.length === 1 ? ps[0].code : `${ps.length} pallets`
   const open = ctx.loads.filter(editable)
   return (
     <div className="scrim" onClick={onClose}>
       <div className="sheet form" onClick={e => e.stopPropagation()}>
-        <div className="sheet-h"><h2>Put {p.code} on a load</h2><button className="ghost" onClick={onClose}>✕</button></div>
+        <div className="sheet-h"><h2>Put {label} on a load</h2><button className="ghost" onClick={onClose}>✕</button></div>
         {open.length === 0 && <p className="muted">No loads being planned. Create one in Transit first.</p>}
         {open.map(l => {
           const v = ctx.vehicles.find(x => x.id === l.vehicle_id)
@@ -387,7 +388,7 @@ export function PickLoad({ ctx, p, onClose }: { ctx: LoadCtx; p: Pallet; onClose
               <div className="choices">
                 {ctx.stops.filter(s => s.load_id === l.id && s.status === 'pending').sort((a, b) => a.seq - b.seq).map(s => (
                   <button key={s.id} style={{ ['--sc' as string]: stopColor(s.seq) }} disabled={ctx.busy}
-                    onClick={async () => { if (await ctx.run(async () => { await ctx.api.planPallet(l.id, s.id, p.id, null, false); await ctx.api.arrangeLoad(l.id) }, `${p.code} planned on ${l.code}`)) onClose() }}>
+                    onClick={async () => { if (await ctx.run(async () => { for (const p of ps) await ctx.api.planPallet(l.id, s.id, p.id, null, false); await ctx.api.arrangeLoad(l.id) }, `${label} planned on ${l.code}`)) onClose() }}>
                     <span className="stopnum">{s.seq}</span> {ctx.customers.find(c => c.id === s.customer_id)?.name}
                   </button>
                 ))}

@@ -415,3 +415,46 @@ select { padding: 10px; border: 1px solid var(--line); border-radius: 10px; back
 h2.tap { cursor: pointer; }
 .brand .app-name { white-space: nowrap; }
 @media (max-width: 480px) { .brand .app-name { font-size: 12px; line-height: 1.1; white-space: normal; max-width: 78px; } .brand .logo-img { height: 26px; } }
+/* ---------- plan, tray, drag ---------- */
+.planbar { position: fixed; left: 0; right: 0; bottom: calc(50px + env(safe-area-inset-bottom)); z-index: 6; background: var(--panel);
+  border-top: 2px solid var(--brand); box-shadow: 0 -6px 20px rgb(0 0 0 / .12); padding: 10px 14px; max-height: 45vh; overflow: auto; }
+.app.with-side .planbar { left: 340px; }
+.planbar.select { border-top-color: #7c3aed; }
+.planbar .pb-top { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
+.planbar .pb-actions { margin-top: 8px; gap: 8px; }
+.planbar .small { font-size: 12px; }
+.planbar.drop-over { background: color-mix(in srgb, var(--brand) 14%, var(--panel)); }
+.chips.tray { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; align-items: center; }
+.chip { display: inline-flex; gap: 6px; align-items: center; padding: 5px 10px; border-radius: 99px; border: 1px solid var(--line); background: var(--empty); font-weight: 600; font-size: 13px; cursor: pointer; user-select: none; }
+.chip.cur { background: var(--brand); color: var(--brand-ink); border-color: var(--brand); }
+.chip a { opacity: .6; font-weight: 400; }
+.shuffle { margin-top: 8px; padding: 8px 10px; border-radius: 10px; background: #fef3c7; color: #713f12; font-size: 13px; }
+.shuffle .row { margin-top: 6px; gap: 6px; flex-wrap: wrap; }
+.undo-pill { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(118px + env(safe-area-inset-bottom)); z-index: 6;
+  display: flex; gap: 10px; align-items: center; background: #1f2937; color: #fff; padding: 6px 8px 6px 14px; border-radius: 99px; font-size: 14px; box-shadow: 0 4px 14px rgb(0 0 0 / .25); }
+.undo-pill .ghost { color: #fff; border-color: #6b7280; }
+.undo-pill a { color: #9ca3af; padding: 0 6px; }
+.app:has(.planbar) main { padding-bottom: 220px; }
+.tile .p { -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; }
+.tile .p.r-incoming { outline: 2px dashed currentColor; outline-offset: 1px; border-radius: 6px; opacity: .95; }
+.tile .p.r-leaving { opacity: .35; text-decoration: line-through; }
+.tile .p.picked { outline: 3px solid #7c3aed; border-radius: 6px; }
+.tile .pnote { font-style: normal; font-weight: 600; font-size: 12px; }
+.tile.vacating { background: var(--empty) !important; color: var(--ink); }
+.tile.arriving { box-shadow: inset 0 0 0 2px var(--brand); }
+.tile.drop-over { outline: 3px solid var(--brand); outline-offset: 1px; }
+.tick { display: inline-grid; place-items: center; width: 16px; height: 16px; margin-right: 5px; border-radius: 4px; border: 2px solid currentColor; font-size: 11px; vertical-align: -2px; }
+.tick.on { background: #7c3aed; border-color: #7c3aed; color: #fff; }
+.drag-ghost { position: fixed; z-index: 50; pointer-events: none; transform: translate(-50%, -130%); background: var(--brand); color: var(--brand-ink);
+  padding: 6px 12px; border-radius: 10px; font-weight: 700; font-size: 14px; box-shadow: 0 6px 16px rgb(0 0 0 / .3); white-space: nowrap; }
+body.dragging { user-select: none; -webkit-user-select: none; cursor: grabbing; }
+.fz-tools .row { gap: 6px; }
+.center-t { text-align: center; }
+.stage-grid { grid-template-columns: 1fr 1fr; }
+.freezer.staging .tile { min-height: 54px; }
+.stagecard { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; width: 100%; text-align: left; margin: 8px 0 4px; padding: 10px 12px;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+.stagecard .stage-strip { display: flex; gap: 2px; flex-basis: 100%; min-height: 10px; }
+.stagecard .stage-strip i { width: 12px; height: 10px; border-radius: 2px; background: hsl(var(--h, 0) var(--tile-s) var(--tile-l)); }
+.danger { color: #b91c1c; border-color: #fca5a5; }
+.danger-bg { background: #b91c1c !important; border-color: #b91c1c !important; color: #fff !important; }

@@ -77,7 +77,7 @@ export function Sidebar({ ctx }: { ctx: SideCtx }) {
 function Overview({ ctx }: { ctx: SideCtx }) {
   const stats = useMemo(() => {
     const calc = (sites: Site[]) => {
-      const fz = ctx.snap.freezers.filter(f => sites.includes(f.site))
+      const fz = ctx.snap.freezers.filter(f => sites.includes(f.site) && f.kind !== 'staging')
       let open = 0, withOpen = 0, pallets = 0, w = 0
       for (const f of fz) {
         const slots = ctx.slotsOf(f.id)
@@ -232,7 +232,7 @@ function Activity({ ctx }: { ctx: SideCtx }) {
 // ---------- Freezer Status (workbook B17:G73) ----------
 
 function FreezerStatus({ ctx }: { ctx: SideCtx }) {
-  const fz = ctx.snap.freezers.filter(f => f.site === ctx.site).sort((a, b) => a.number - b.number)
+  const fz = ctx.snap.freezers.filter(f => f.site === ctx.site && f.kind !== 'staging').sort((a, b) => a.number - b.number)
   return (
     <table className="side-table status-t">
       <thead><tr><th>{ctx.site}</th><th>Status</th><th>Open</th><th>Pallets</th><th>Lbs</th></tr></thead>

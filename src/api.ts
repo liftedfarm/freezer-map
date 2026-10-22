@@ -61,6 +61,9 @@ export interface Backend {
   mergePallets(ids: number[], tag: string | null, tagPending: boolean, destSlot: number | null, note?: string): Promise<Pallet>
   setTag(palletId: number, tag: string, note?: string): Promise<void>
   adjustWeight(palletId: number, weight: number, note?: string): Promise<void>
+  applyMoves(moves: { pallet_id: number; from_slot: number | null; to_slot: number; kind: string }[], note?: string): Promise<string>
+  undoBatch(batch: string): Promise<number>
+  removePallet(id: number, reason: string, note: string): Promise<void>
   markShipped(palletId: number, note?: string): Promise<void>
   ackShipped(tag: string): Promise<void>
   dismissTag(tag: string): Promise<void>
@@ -382,6 +385,11 @@ class SupaBackend implements Backend {
     const { error } = await this.sb.rpc('set_tag', { p_pallet_id: palletId, p_tag: tag, p_note: note || null })
     fail(error)
   }
+  async applyMoves(moves: { pallet_id: number; from_slot: number | null; to_slot: number; kind: string }[], note?: string) {
+    const { data, error } = await this.sb.rpc('apply_moves', { p_moves: moves, p_note: note || null }); fail(error); return data as string
+  }
+  async undoBatch(batch: string) { const { data, error } = await this.sb.rpc('undo_batch', { p_batch: batch }); fail(error); return data as number }
+  async removePallet(id: number, reason: string, note: string) { const { error } = await this.sb.rpc('remove_pallet', { p_pallet_id: id, p_reason: reason, p_note: note || null }); fail(error) }
   async markShipped(palletId: number, note?: string) { const { error } = await this.sb.rpc('mark_pallet_shipped', { p_pallet_id: palletId, p_note: note || null }); fail(error) }
   async dismissTag(tag: string) { const { error } = await this.sb.rpc('dismiss_unmatched_tag', { p_tag: tag }); fail(error) }
   async ackShipped(tag: string) { const { error } = await this.sb.rpc('ack_shipped_tag', { p_tag: tag }); fail(error) }
@@ -686,6 +694,12 @@ class DemoBackend implements Backend {
     this.log({ type: 'tag_set', pallet_id: p.id, note: note || null, details: { from: p.package_tag, to: tag } })
     p.package_tag = tag; p.tag_pending = false
   }
+  async applyMoves(moves: { pallet_id: number; from_slot: number | null; to_slot: number; kind: string }[]) {
+    for (const m of moves) await this.movePallet(m.pallet_id, m.to_slot, true)
+    return 'demo'
+  }
+  async undoBatch(): Promise<number> { throw new Error('Not in demo') }
+  async removePallet(): Promise<void> { throw new Error('Not in demo') }
   async markShipped() {}
   async ackShipped() {}
   async dismissTag() {}
