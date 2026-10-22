@@ -75,6 +75,7 @@ export interface Backend {
   markShipped(palletId: number, note?: string): Promise<void>
   ackShipped(tag: string): Promise<void>
   dismissTag(tag: string): Promise<void>
+  nextTags(site: string, purpose: string, n: number): Promise<string[]>
   lineage(p: Pallet): Promise<Pallet[]>
   byIds(ids: number[]): Promise<Pallet[]>
   loadSettings(): Promise<Settings>
@@ -440,6 +441,7 @@ class SupaBackend implements Backend {
   async undoBatch(batch: string) { const { data, error } = await this.sb.rpc('undo_batch', { p_batch: batch }); fail(error); return data as number }
   async removePallet(id: number, reason: string, note: string) { const { error } = await this.sb.rpc('remove_pallet', { p_pallet_id: id, p_reason: reason, p_note: note || null }); fail(error) }
   async markShipped(palletId: number, note?: string) { const { error } = await this.sb.rpc('mark_pallet_shipped', { p_pallet_id: palletId, p_note: note || null }); fail(error) }
+  async nextTags(site: string, purpose: string, n: number) { const { data, error } = await this.sb.rpc('next_tags', { p_site: site, p_purpose: purpose, p_count: n }); return error ? [] : (data as string[]) }
   async dismissTag(tag: string) { const { error } = await this.sb.rpc('dismiss_unmatched_tag', { p_tag: tag }); fail(error) }
   async ackShipped(tag: string) { const { error } = await this.sb.rpc('ack_shipped_tag', { p_tag: tag }); fail(error) }
   async adjustWeight(palletId: number, weight: number, note?: string) {
@@ -768,6 +770,7 @@ class DemoBackend implements Backend {
   async markShipped() {}
   async ackShipped() {}
   async dismissTag() {}
+  async nextTags() { return [] as string[] }
   async adjustWeight(palletId: number, weight: number, note?: string) {
     const p = this.snap!.pallets.find(x => x.id === palletId)!
     if (!(weight >= 0)) throw new Error('Enter a weight of 0 or more')

@@ -557,3 +557,10 @@ body.dragging { user-select: none; -webkit-user-select: none; cursor: grabbing; 
   .dcards { grid-template-columns: 1fr; }
   .dhead h2 { font-size: 21px; }
 }
+.tagrow { gap: 6px; align-items: center; flex-wrap: nowrap; }
+.scanbtn { white-space: nowrap; }
+.scanner { align-items: center; justify-content: center; display: flex; }
+.scanbox { background: var(--panel); border-radius: 16px; padding: 14px; width: min(94vw, 480px); }
+.scanview { position: relative; margin-top: 10px; border-radius: 12px; overflow: hidden; background: #000; aspect-ratio: 4 / 3; }
+.scanview video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.scanline { position: absolute; left: 8%; right: 8%; top: 50%; height: 2px; background: #ef4444; box-shadow: 0 0 8px #ef4444; }

@@ -217,6 +217,7 @@ export default function App() {
   const [removeP, setRemoveP] = useState<Pallet | null>(null)
   const [lastBatch, setLastBatch] = useState<{ id: string; n: number; at: number } | null>(null)
   const [pickLoadMany, setPickLoadMany] = useState<Pallet[] | null>(null)
+  const [tagPool, setTagPool] = useState<string[]>([])
   const [placing, setPlacing] = useState<Placing | null>(null)
   const [confirm, setConfirm] = useState<{ text: string; ok: string; run: () => Promise<void> } | null>(null)
   const [toast, setToast] = useState<{ text: string; bad?: boolean } | null>(null)
@@ -275,6 +276,14 @@ export default function App() {
   }, [query])
 
   const ix = useMemo(() => snap && buildIndex(snap), [snap])
+  // new mixed pallets: next tags from the site's range
+  useEffect(() => {
+    setTagPool([])
+    if (!ix || !form || (form.kind !== 'newmixed' && form.kind !== 'addmixed')) return
+    const slotId = form.kind === 'addmixed' ? form.m.slot_id : 'slot' in form ? form.slot.id : null
+    const f = slotId != null ? ix.freezer.get(ix.slot.get(slotId)?.freezer_id ?? -1) : undefined
+    if (f) backend.nextTags(f.site, 'mixed', 30).then(setTagPool).catch(() => {})
+  }, [form?.kind, ix])
   const L: Layout | null = useMemo(() => ix && {
     inSlot: id => ix.inSlot.get(id) ?? [], pallet: id => ix.pallet.get(id), slot: id => ix.slot.get(id),
     slotsOf: id => ix.slotsOf.get(id) ?? [], freezer: id => ix.freezer.get(id),
@@ -726,7 +735,7 @@ export default function App() {
           onPick={k => setForm({ kind: k === 'mixed' ? 'newmixed' : k === 'merged' ? 'newmerged' : 'newsingle', slot: form.slot })} />
       )}
       {form?.kind === 'newmixed' && (
-        <MixedBuilder title="New mixed pallet" target={slotLabel(form.slot)} candidates={looseList} whereOf={where} busy={busy} onClose={() => setForm(null)}
+        <MixedBuilder title="New mixed pallet" autoTags={tagPool} target={slotLabel(form.slot)} candidates={looseList} whereOf={where} busy={busy} onClose={() => setForm(null)}
           onSubmit={(lines, note) => submit(() => backend.createMixed(form.slot.id, lines, note), m => `${m.code} created with ${lines.length} package${lines.length === 1 ? '' : 's'}`, m => setPalletId(m.id))} />
       )}
       {form?.kind === 'newmerged' && (
@@ -742,7 +751,7 @@ export default function App() {
           onPick={m => setForm({ kind: 'addmixed', m, initial: [form.p] })} />
       )}
       {form?.kind === 'addmixed' && (
-        <MixedBuilder title={`Pull for ${form.m.code}`} target={`${form.m.code} · ${whereIs(ix, form.m.slot_id)}`} candidates={looseList} initial={form.initial}
+        <MixedBuilder title={`Pull for ${form.m.code}`} autoTags={tagPool} target={`${form.m.code} · ${whereIs(ix, form.m.slot_id)}`} candidates={looseList} initial={form.initial}
           whereOf={where} busy={busy} onClose={() => setForm(null)}
           onSubmit={(lines, note) => { const m = form.m; submit(() => backend.addToMixed(m.id, lines, note), () => `Pulled ${lines.length} for ${m.code}`, () => setPalletId(m.id)) }} />
       )}

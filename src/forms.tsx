@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { ScanButton } from './scan'
 import type { MixLine, Pallet, SingleInput } from './types'
 
 // Small shared pieces for the action dialogs (split, merge, tag, weight).
@@ -22,8 +23,11 @@ function TagField({ tag, setTag, pending, setPending, label = 'New METRC tag' }:
   return (
     <div className="field">
       <label>{label}</label>
-      <input className="mono-in" value={tag} disabled={pending} placeholder="1A40603000…"
-        onChange={e => setTag(e.target.value.toUpperCase().replace(/\s/g, ''))} />
+      <div className="row tagrow">
+        <input className="mono-in grow-in" value={tag} disabled={pending} placeholder="1A40603000…"
+          onChange={e => setTag(e.target.value.toUpperCase().replace(/\s/g, ''))} />
+        <ScanButton disabled={pending} onScan={setTag} />
+      </div>
       <label className="check"><input type="checkbox" checked={pending} onChange={e => setPending(e.target.checked)} /> Tag pending, I'll add it later</label>
     </div>
   )
@@ -122,7 +126,10 @@ export function TagForm({ p, busy, onClose, onSubmit }: { p: Pallet; busy: boole
     <Dialog title={`METRC tag for ${p.code}`} onClose={onClose}>
       <div className="field">
         <label>Tag</label>
-        <input className="mono-in" value={tag} autoFocus onChange={e => setTag(e.target.value.toUpperCase().replace(/\s/g, ''))} />
+        <div className="row tagrow">
+          <input className="mono-in grow-in" value={tag} autoFocus onChange={e => setTag(e.target.value.toUpperCase().replace(/\s/g, ''))} />
+          <ScanButton onScan={setTag} />
+        </div>
       </div>
       <div className="row end">
         <button className="ghost" onClick={onClose}>Cancel</button>
@@ -171,10 +178,10 @@ export function NewPalletChooser({ where, onClose, onPick }: { where: string; on
   )
 }
 
-interface Line { p: Pallet; whole: boolean; lbs: string; tag: string; pending: boolean }
+interface Line { p: Pallet; whole: boolean; lbs: string; tag: string; pending: boolean; auto?: boolean }
 
-export function MixedBuilder({ title, target, candidates, initial, whereOf, busy, onClose, onSubmit }: {
-  title: string; target: string; candidates: Pallet[]; initial?: Pallet[]; whereOf: (p: Pallet) => string; busy: boolean
+export function MixedBuilder({ title, target, candidates, initial, whereOf, busy, onClose, onSubmit, autoTags = [] }: {
+  title: string; target: string; candidates: Pallet[]; initial?: Pallet[]; whereOf: (p: Pallet) => string; busy: boolean; autoTags?: string[]
   onClose: () => void; onSubmit: (lines: MixLine[], note: string) => void
 }) {
   const [q, setQ] = useState('')
@@ -184,7 +191,14 @@ export function MixedBuilder({ title, target, candidates, initial, whereOf, busy
   const results = q.trim().length < 1 ? [] : candidates
     .filter(c => !picked.has(c.id) && [c.code, c.strain, c.package_tag].some(v => v?.toLowerCase().includes(q.trim().toLowerCase())))
     .slice(0, 12)
-  const upd = (i: number, ch: Partial<Line>) => setLines(ls => ls.map((l, j) => j === i ? { ...l, ...ch } : l))
+  // next tag from the site's range that no other line is using
+  const nextAuto = (ls: Line[]) => autoTags.find(t => !ls.some(l => l.tag === t)) ?? ''
+  const withAuto = (ls: Line[]) => ls.map((l, i) => {
+    if (l.whole && l.auto) return { ...l, tag: '', auto: false }
+    if (!l.whole && !l.pending && !l.tag) { const t = nextAuto(ls.slice(0, i).concat(ls.slice(i + 1))); return t ? { ...l, tag: t, auto: true } : l }
+    return l
+  })
+  const upd = (i: number, ch: Partial<Line>) => setLines(ls => withAuto(ls.map((l, j) => j === i ? { ...l, ...ch, ...('tag' in ch ? { auto: false } : {}) } : l)))
   const lineLbs = (l: Line) => l.whole ? (l.p.current_weight ?? 0) : (parseFloat(l.lbs) || 0)
   const lineErr = (l: Line) => {
     if (l.whole) return ''
@@ -205,7 +219,7 @@ export function MixedBuilder({ title, target, candidates, initial, whereOf, busy
         {results.length > 0 && (
           <div className="picklist">
             {results.map(c => (
-              <button key={c.id} className="pick addrow" onClick={() => { setLines(ls => [...ls, { p: c, whole: false, lbs: '', tag: '', pending: false }]); setQ('') }}>
+              <button key={c.id} className="pick addrow" onClick={() => { setLines(ls => withAuto([...ls, { p: c, whole: false, lbs: '', tag: '', pending: false }])); setQ('') }}>
                 <b>{c.code}</b><span>{c.strain}</span><span className="muted">{lbs(c.current_weight)} · {whereOf(c)}</span>
               </button>
             ))}
@@ -230,8 +244,10 @@ export function MixedBuilder({ title, target, candidates, initial, whereOf, busy
             : <div className="row">
                 <input className="mono-in grow-in" placeholder="New METRC tag" disabled={l.pending} value={l.tag}
                   onChange={e => upd(i, { tag: e.target.value.toUpperCase().replace(/\s/g, '') })} />
-                <label className="check"><input type="checkbox" checked={l.pending} onChange={e => upd(i, { pending: e.target.checked })} /> Pending</label>
+                <ScanButton disabled={l.pending} onScan={t => upd(i, { tag: t })} />
+                <label className="check"><input type="checkbox" checked={l.pending} onChange={e => upd(i, { pending: e.target.checked, ...(e.target.checked && l.auto ? { tag: '' } : {}) })} /> Pending</label>
               </div>}
+          {!l.whole && l.auto && <div className="muted small-note">Next tag in the range (ends <b>{l.tag.slice(-6)}</b>), filled in for you. Scan or type over it if you're using a different one.</div>}
           {lineErr(l) && <div className="warn-t small-note">{lineErr(l)}</div>}
         </div>
       ))}
