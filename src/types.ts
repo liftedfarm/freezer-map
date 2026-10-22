@@ -67,7 +67,7 @@ export interface InvEvent {
 }
 
 export interface Vehicle { id: number; name: string; plate: string | null; kind: string | null; notes: string | null; active: boolean; spaces: number; across: number; owner: string | null }
-export interface Customer { id: number; name: string; kind: 'internal' | 'external'; license: string | null; address: string | null; contact: string | null; notes: string | null; active: boolean; price_per_lb?: number | null; contract_lbs?: number | null; monthly_min_lbs?: number | null; deposit_usd?: number | null; storage_fee?: number | null; reserves_enabled?: boolean }
+export interface Customer { id: number; name: string; kind: 'internal' | 'external'; license: string | null; address: string | null; contact: string | null; notes: string | null; active: boolean; price_per_lb?: number | null; contract_lbs?: number | null; monthly_min_lbs?: number | null; deposit_usd?: number | null; storage_fee?: number | null; reserves_enabled?: boolean; legal_name?: string | null; payment_terms?: string | null; billing_address?: string | null; billing_contact?: string | null; billing_email?: string | null; billing_phone?: string | null; ship_to_name?: string | null; ship_to_address?: string | null; receiving_contact?: string | null }
 export interface Strain { id: number; name: string; aliases: string[]; color: string | null; notes: string | null; active: boolean; show_on_menu?: boolean }
 export type ListName = 'vehicles' | 'customers' | 'strains'
 export type ListRow = Vehicle | Customer | Strain
@@ -146,3 +146,13 @@ export interface FOrder {
   stop: { id: number; load_id: number; load: string; load_status: string; load_date: string; stop_status: string } | null
   lines: FLine[]
 }
+
+/** Sales documents (027) */
+export interface PaymentTerm { code: string; label: string; schedule: { pct: number; days: number }[]; cod: boolean; sort: number; active: boolean }
+export interface Invoice {
+  id: number; inv_number: string; order_id: number | null; customer_id: number; invoice_date: string; terms_code: string | null; terms_label: string | null
+  schedule: { pct: number; amount: number; due: string }[]; due_date: string | null; total: number; status: 'open' | 'paid' | 'void'; po_number: string | null
+  notes: string | null; share_token: string; sent_at: string | null; acct_status: 'pending' | 'sent' | 'error' | 'skip'; acct_ref: string | null; acct_error: string | null
+  paid_at: string | null; created_at: string
+}
+export interface NewOrderLine { strain: string; lbs: number; price?: number | null; crop_year?: number }

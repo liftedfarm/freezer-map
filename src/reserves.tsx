@@ -45,10 +45,11 @@ export type SalesMode = 'customer' | 'strain' | 'orders' | 'requests' | 'menu'
 export const SALES_TITLES: Record<SalesMode, string> = { menu: 'Open menu', orders: 'Orders', requests: 'Requests', customer: 'Reserves by customer', strain: 'Reserves by strain' }
 
 /** Sales screens. The Sales module menu picks the screen (mode); isAdmin = Sales Admin (approvals, reserves, deadlines). */
-export function ReservesView({ backend, customers, strains, onHand, flash, isAdmin, mode, onCounts, fulfil, onFulfil }: {
+export function ReservesView({ backend, customers, strains, onHand, flash, isAdmin, mode, onCounts, fulfil, onFulfil, onNewOrder, onDoc, onInvoice }: {
   backend: Backend; customers: Customer[]; strains: Strain[]; onHand: Map<string, number>
   flash: (t: string, bad?: boolean) => void; isAdmin: boolean; mode: SalesMode; onCounts?: () => void
   fulfil?: Map<number, FOrder>; onFulfil?: () => Promise<void>
+  onNewOrder?: () => void; onDoc?: (kind: 'invoice' | 'so', id: number) => void; onInvoice?: (orderId: number) => void
 }) {
   const [reqs, setReqs] = useState<ReserveRequest[]>([])
   const [nums, setNums] = useState<MenuNumbers[]>([])
@@ -140,8 +141,9 @@ export function ReservesView({ backend, customers, strains, onHand, flash, isAdm
       <div className="row toolbar">
         <input className="search" type="search" placeholder="Search customer, strain or SO #" value={q} onChange={e => setQ(e.target.value)} />
         {mode === 'orders'
-          ? <label className={`primary filebtn ${busy ? 'disabled' : ''}`}>{busy ? 'Importing…' : 'Import Roshi orders'}
-              <input type="file" accept=".xlsx,.csv" disabled={busy} onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) importFile(f) }} /></label>
+          ? <>{onNewOrder && <button className="primary" onClick={onNewOrder}>+ New order</button>}
+            <label className={`ghost filebtn ${busy ? 'disabled' : ''}`}>{busy ? 'Importing…' : 'Import Roshi orders'}
+              <input type="file" accept=".xlsx,.csv" disabled={busy} onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) importFile(f) }} /></label></>
           : isAdmin && mode !== 'requests' && mode !== 'menu' && <button className="primary" onClick={() => setEdit({ customer_id: null, strain: '', lbs: '', isNew: true })}>+ Add reserve</button>}
       </div>
       {result && (
@@ -235,6 +237,9 @@ export function ReservesView({ backend, customers, strains, onHand, flash, isAdm
                 <b className="num">{n0(orderLbs(o))} lbs</b>
               </button>
               {open === -o.id && fulfil?.get(o.id)?.state === 'needs_ok' && <FillOk f={fulfil.get(o.id)!} backend={backend} flash={flash} onDone={async () => { await load(); await onFulfil?.() }} />}
+              {open === -o.id && (o.status === 'pending' || o.status === 'shipped') && onDoc && <div className="row wrap orderdocs">
+                <button className="ghost small" onClick={() => onDoc('so', o.id)}>Sales order PDF</button>
+                {onInvoice && <button className="ghost small" onClick={() => onInvoice(o.id)}>{o.status === 'shipped' ? 'Invoice' : 'Make invoice now'}</button>}</div>}
               {open === -o.id && <OrderEditor backend={backend} o={o} strains={strains} flash={flash} onChanged={load} />}
             </div>
           ))}

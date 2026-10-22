@@ -1,6 +1,7 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { accessFromRole } from './types'
-import type { FOrder, Prefs, ModKey, Level, ReserveYears, CustomerTerms, UnmatchedTag, ShippedCheck, OrderInput, Terms, MenuNumbers, MenuRow, ReserveRequest, Balance, ImportResult, Order, RoshiRow, Reserve, LinkInfo, AppUser, Customer, Me, Role, Freezer, FreezerStatus, InvEvent, ListName, ListRow, Load, LoadItem, LoadStop, MixLine, Pallet, Settings, SingleInput, Slot, Snapshot, StopInput, Strain, Vehicle } from './types'
+import type { SalesDoc } from './docs'
+import type { Invoice, NewOrderLine, PaymentTerm, FOrder, Prefs, ModKey, Level, ReserveYears, CustomerTerms, UnmatchedTag, ShippedCheck, OrderInput, Terms, MenuNumbers, MenuRow, ReserveRequest, Balance, ImportResult, Order, RoshiRow, Reserve, LinkInfo, AppUser, Customer, Me, Role, Freezer, FreezerStatus, InvEvent, ListName, ListRow, Load, LoadItem, LoadStop, MixLine, Pallet, Settings, SingleInput, Slot, Snapshot, StopInput, Strain, Vehicle } from './types'
 
 export interface SaveUser { email: string; name: string; kind: 'staff' | 'customer' | 'none'; customerId: number | null; access: Partial<Record<ModKey, Level>>; owner?: boolean }
 export interface Overview {
@@ -111,6 +112,21 @@ export interface Backend {
   approveFill(orderId: number, note?: string): Promise<number>
   orderToLoad(orderId: number, loadId: number): Promise<void>
   orderOffLoad(orderId: number): Promise<void>
+  /** Sales orders and invoices (027) */
+  getDoc(kind: 'invoice' | 'so', id: number): Promise<SalesDoc>
+  sharedDoc(token: string): Promise<SalesDoc | null>
+  paymentTerms(): Promise<PaymentTerm[]>
+  setPaymentTerm(t: { code: string; label: string; schedule: { pct: number; days: number }[]; cod: boolean; active: boolean }): Promise<void>
+  createOrder(customerId: number, lines: NewOrderLine[], po: string, wanted: string | null, notes: string, terms: string | null): Promise<{ id: number; so_number: string }>
+  setOrderTerms(orderId: number, terms: string | null): Promise<void>
+  makeInvoice(orderId: number): Promise<Invoice>
+  listInvoices(): Promise<Invoice[]>
+  setInvoiceTerms(id: number, terms: string): Promise<void>
+  setInvoiceInfo(id: number, date: string | null, po: string, notes: string): Promise<void>
+  setInvoiceLine(id: number, lineId: number | null, description: string, qty: number | null, price: number | null, uom?: string): Promise<void>
+  removeInvoiceLine(id: number, lineId: number): Promise<void>
+  setInvoiceStatus(id: number, status: 'open' | 'paid' | 'void', note?: string): Promise<void>
+  markInvoiceSent(id: number, to: string): Promise<void>
   /** Admin module */
   adminOverview(): Promise<Overview>
   appSettings(): Promise<Record<string, string>>
@@ -217,6 +233,40 @@ class SupaBackend implements Backend {
   async approveFill(orderId: number, note?: string) { const { data, error } = await this.sb.rpc('approve_fill', { p_order: orderId, p_note: note ?? null }); fail(error); return Number(data ?? 0) }
   async orderToLoad(orderId: number, loadId: number) { const { error } = await this.sb.rpc('order_to_load', { p_order: orderId, p_load: loadId }); fail(error) }
   async orderOffLoad(orderId: number) { const { error } = await this.sb.rpc('order_off_load', { p_order: orderId }); fail(error) }
+  async getDoc(kind: 'invoice' | 'so', id: number) {
+    const { data, error } = await this.sb.rpc('get_doc', { p_kind: kind, p_id: id })
+    if (error && /get_doc/.test(error.message)) throw new Error('Run 027_sales_docs.sql in Supabase first')
+    fail(error); return data as SalesDoc
+  }
+  async sharedDoc(token: string) { const { data, error } = await this.sb.rpc('get_shared_doc', { p_token: token }); fail(error); return (data ?? null) as SalesDoc | null }
+  async paymentTerms() {
+    const { data, error } = await this.sb.from('payment_terms').select('*').order('sort')
+    if (error) return [] as PaymentTerm[]   // before 027
+    return (data ?? []) as PaymentTerm[]
+  }
+  async setPaymentTerm(t: { code: string; label: string; schedule: { pct: number; days: number }[]; cod: boolean; active: boolean }) {
+    const { error } = await this.sb.rpc('set_payment_term', { p_code: t.code, p_label: t.label, p_schedule: t.schedule, p_cod: t.cod, p_active: t.active }); fail(error)
+  }
+  async createOrder(customerId: number, lines: NewOrderLine[], po: string, wanted: string | null, notes: string, terms: string | null) {
+    const { data, error } = await this.sb.rpc('create_order', { p_customer: customerId, p_lines: lines, p_po: po || null, p_wanted: wanted, p_notes: notes || null, p_terms: terms, p_confirm: true })
+    if (error && /create_order/.test(error.message)) throw new Error('Run 027_sales_docs.sql in Supabase first')
+    fail(error); return data as { id: number; so_number: string }
+  }
+  async setOrderTerms(orderId: number, terms: string | null) { const { error } = await this.sb.rpc('set_order_terms', { p_order: orderId, p_terms: terms }); fail(error) }
+  async makeInvoice(orderId: number) { const { data, error } = await this.sb.rpc('make_invoice', { p_order: orderId }); fail(error); return data as Invoice }
+  async listInvoices() {
+    const { data, error } = await this.sb.from('invoices').select('*').order('invoice_date', { ascending: false }).order('id', { ascending: false }).limit(500)
+    if (error && /invoices/.test(error.message)) throw new Error('Invoices aren\'t set up in the database yet. Run 027_sales_docs.sql in Supabase, then refresh.')
+    fail(error); return ((data ?? []) as Invoice[]).map(i => ({ ...i, total: Number(i.total) }))
+  }
+  async setInvoiceTerms(id: number, terms: string) { const { error } = await this.sb.rpc('set_invoice_terms', { p_inv: id, p_terms: terms }); fail(error) }
+  async setInvoiceInfo(id: number, date: string | null, po: string, notes: string) { const { error } = await this.sb.rpc('set_invoice_info', { p_inv: id, p_date: date, p_po: po, p_notes: notes }); fail(error) }
+  async setInvoiceLine(id: number, lineId: number | null, description: string, qty: number | null, price: number | null, uom = 'ea') {
+    const { error } = await this.sb.rpc('set_invoice_line', { p_inv: id, p_line: lineId, p_description: description, p_qty: qty, p_price: price, p_uom: uom }); fail(error)
+  }
+  async removeInvoiceLine(id: number, lineId: number) { const { error } = await this.sb.rpc('remove_invoice_line', { p_inv: id, p_line: lineId }); fail(error) }
+  async setInvoiceStatus(id: number, status: 'open' | 'paid' | 'void', note?: string) { const { error } = await this.sb.rpc('set_invoice_status', { p_inv: id, p_status: status, p_note: note ?? null }); fail(error) }
+  async markInvoiceSent(id: number, to: string) { const { error } = await this.sb.rpc('mark_invoice_sent', { p_inv: id, p_to: to }); fail(error) }
   async setMyName(name: string) { const { error } = await this.sb.rpc('set_my_name', { p_name: name }); fail(error) }
   async adminOverview() {
     const { data, error } = await this.sb.rpc('admin_overview')
@@ -880,6 +930,20 @@ class DemoBackend implements Backend {
   async saveUser(u: SaveUser) { const x = this.users.find(y => y.email === u.email); if (x) x.access = u.access }
   async setMyPrefs(p: Prefs) { return p }
   async setMyName() {}
+  async getDoc(): Promise<SalesDoc> { throw new Error('Not in demo') }
+  async sharedDoc() { return null }
+  async paymentTerms() { return [] as PaymentTerm[] }
+  async setPaymentTerm() {}
+  async createOrder(): Promise<{ id: number; so_number: string }> { throw new Error('Not in demo') }
+  async setOrderTerms() {}
+  async makeInvoice(): Promise<Invoice> { throw new Error('Not in demo') }
+  async listInvoices() { return [] as Invoice[] }
+  async setInvoiceTerms() {}
+  async setInvoiceInfo() {}
+  async setInvoiceLine() {}
+  async removeInvoiceLine() {}
+  async setInvoiceStatus() {}
+  async markInvoiceSent() {}
   async fulfillmentOrders() { return [] as FOrder[] }
   async pickPallet() { throw new Error('Not in demo') }
   async pickPart() { throw new Error('Not in demo') }

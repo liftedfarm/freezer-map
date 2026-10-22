@@ -642,3 +642,23 @@ body.dragging { user-select: none; -webkit-user-select: none; cursor: grabbing; 
 .splash { gap: 18px; }
 .spin { width: 28px; height: 28px; border-radius: 50%; border: 3px solid var(--line); border-top-color: var(--brand); animation: spin .8s linear infinite; margin: 0 auto; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* Sales orders and invoices */
+.docsheet { max-width: 920px; width: min(96vw, 920px); }
+.docmeta { gap: 8px; align-items: center; margin-bottom: 8px; }
+.docact { gap: 8px; margin: 6px 0; }
+a.btn { display: inline-flex; align-items: center; text-decoration: none; color: var(--ink); }
+.docframe { width: 100%; height: 70vh; border: 1px solid var(--line); border-radius: 10px; background: #fff; margin-top: 8px; }
+.docframe.big { height: 82vh; }
+.invedit { border: 1px dashed var(--line); border-radius: 10px; padding: 10px; display: grid; gap: 8px; margin: 8px 0; }
+.invedit .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.invedit label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+.invedit input, .invedit select, .invcharge input, .noline input { padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); min-width: 0; }
+.invcharge { gap: 6px; } .invcharge input:first-child { flex: 2; } .invcharge input { flex: 1; }
+.noline { gap: 6px; margin-bottom: 6px; align-items: center; } .noline input:first-child { flex: 3; } .noline input { flex: 1; width: 70px; }
+.orderdocs { gap: 6px; padding: 6px 12px 0; }
+.pill.inv-open { background: #dbeafe; color: #1e40af; } .pill.inv-paid { background: #dcfce7; color: #166534; } .pill.inv-void { background: #f3f4f6; color: #6b7280; }
+.pill.inv-overdue { background: #fee2e2; color: #991b1b; }
+.pill.acct-pending { background: var(--empty); color: var(--muted); } .pill.acct-sent { background: #dcfce7; color: #166534; } .pill.acct-error { background: #fee2e2; color: #991b1b; }
+.shareddoc { max-width: 960px; margin: 0 auto; padding: 16px; display: grid; gap: 8px; }
+@media (max-width: 600px) { .invedit .grid2 { grid-template-columns: 1fr; } .docframe { height: 60vh; } }

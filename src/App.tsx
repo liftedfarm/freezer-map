@@ -9,6 +9,7 @@ import { AdminDashboard, AdminReview, AppSettingsPanel } from './admin'
 import type { Jump } from './admin'
 import { DeadlinesPanel, SalesDashboard, SalesReview } from './salesdash'
 import { MySettings } from './mine'
+import { DocSheet, InvoicesView, NewOrderSheet, SharedDocPage, TermsPanel } from './invoices'
 import { FulfillView, STATE_LABEL } from './fulfill'
 import { applyTheme } from './theme'
 import { EMPTY, active, addMoves, addToTray, backToTray, dropFromPlan, fillStaging, laneShuffle, occupants, place, slotView, suggestions, toSave } from './plan'
@@ -36,7 +37,7 @@ const MOD_KEY: Record<Mod, ModKey> = { dist: 'distribution', sales: 'sales', cul
 const KEY_MOD: Record<ModKey, Mod> = { distribution: 'dist', sales: 'sales', cultivation: 'cult', admin: 'admin' }
 const MOD_LABEL: Record<Mod, string> = { dist: 'Distribution', sales: 'Sales', cult: 'Production', admin: 'Admin' }
 const MOD_WHAT: Record<Mod, string> = { dist: 'Freezer map · transit · review', sales: 'Reserves · menu · orders', cult: 'Harvests · fields · plan', admin: 'Company · users · app settings' }
-type SalesTab = 'dash' | SalesMode | 'review' | 'activity' | 'settings'
+type SalesTab = 'dash' | SalesMode | 'invoices' | 'review' | 'activity' | 'settings'
 type AdminTab = 'dash' | 'review' | 'activity' | 'settings'
 interface NavItem { k: string; l: ReactNode; on: boolean; go: () => void }
 const MOD_ICON: Record<Mod, ReactNode> = {
@@ -313,6 +314,9 @@ export default function App() {
   const [forders, setForders] = useState<FOrder[] | null>(null)
   const canFulfill = !!lv.distribution || !!lv.sales
   const [fErr, setFErr] = useState<string | null>(null)
+  const [doc, setDoc] = useState<{ kind: 'invoice' | 'so'; id: number } | null>(null)
+  const [newOrder, setNewOrder] = useState(false)
+  const [ordersKey, setOrdersKey] = useState(0)
   const refreshF = useCallback(async () => {
     if (!canFulfill) return
     try { setForders(await backend.fulfillmentOrders()); setFErr(null) } catch (e) { setForders([]); setFErr(String((e as Error).message ?? e)) }
@@ -415,6 +419,8 @@ export default function App() {
   const refreshUser = () => backend.getUser().then(setUser)
   const linkParams = new URLSearchParams(location.search)
   const link = linkParams.get('invite') ? { kind: 'invite' as const, code: linkParams.get('invite')! } : linkParams.get('reset') ? { kind: 'reset' as const, code: linkParams.get('reset')! } : null
+  const docToken = linkParams.get('doc')
+  if (docToken) return <SharedDocPage backend={backend} token={docToken} />
   if (link) return <PortalLink backend={backend} kind={link.kind} code={link.code} onDone={refreshUser} />
   if (user === undefined) return <Splash />
   if (!user) return IS_PORTAL ? <PortalLogin backend={backend} onDone={refreshUser} /> : <Login />
@@ -525,7 +531,7 @@ export default function App() {
     ...(isAdminOf('dist') ? [{ k: 'settings', l: 'Settings', on: view === 'settings', go: () => go('settings') }] : []),
   ]
   const sItem = (t: SalesTab, l: ReactNode): NavItem => ({ k: t, l, on: view === 'sales' && salesTab === t, go: () => setSalesTab(t) })
-  const salesMain: NavItem[] = [sItem('dash', 'Dashboard'), sItem('menu', SALES_TITLES.menu), sItem('orders', <>Orders{badge(counts.orders, true)}</>),
+  const salesMain: NavItem[] = [sItem('dash', 'Dashboard'), sItem('menu', SALES_TITLES.menu), sItem('orders', <>Orders{badge(counts.orders, true)}</>), sItem('invoices', 'Invoices'),
     sItem('requests', <>Requests{badge(counts.requests, salesAdmin)}</>), sItem('customer', 'Reserves'), sItem('strain', 'By strain')]
   const fillsToOk = (forders ?? []).filter(o => o.state === 'needs_ok').length
   const salesTail: NavItem[] = [sItem('review', <>Review{badge(salesBadge + fillsToOk, true)}</>), sItem('activity', 'Activity'), ...(isAdminOf('sales') ? [sItem('settings', 'Settings')] : [])]
@@ -689,9 +695,13 @@ export default function App() {
           if (salesTab === 'dash') return <SalesDashboard backend={backend} customers={snap.customers ?? []} isAdmin={salesAdmin} go={goS} />
           if (salesTab === 'review') return <SalesReview backend={backend} customers={snap.customers ?? []} isAdmin={salesAdmin} go={goS} fulfil={forders} onFulfil={refreshF} flash={flash} />
           if (salesTab === 'activity') return <ActivityView ix={ix} module="sales" />
+          if (salesTab === 'invoices') return <InvoicesView backend={backend} customers={snap.customers ?? []} flash={flash} isAdmin={salesAdmin} sender={me?.display_name} />
           if (salesTab === 'settings') return <SettingsView backend={backend} flash={flash} onChanged={() => { reload() }} inventoryStrains={invStrains} title="Sales settings"
-            lists={['customers', 'strains']} canTerms={salesAdmin} extra={[{ k: 'deadlines', l: 'Reserve deadlines', node: <DeadlinesPanel backend={backend} flash={flash} /> }]} />
-          return <ReservesView backend={backend} flash={flash} isAdmin={salesAdmin} mode={salesTab} onCounts={refreshCounts} fulfil={new Map((forders ?? []).map(f => [f.id, f]))} onFulfil={refreshF} customers={snap.customers ?? []} strains={snap.strains ?? []}
+            lists={['customers', 'strains']} canTerms={salesAdmin} extra={[{ k: 'terms', l: 'Payment terms', node: <TermsPanel backend={backend} flash={flash} canEdit={salesAdmin} /> },
+              { k: 'deadlines', l: 'Reserve deadlines', node: <DeadlinesPanel backend={backend} flash={flash} /> }]} />
+          return <ReservesView key={`sales-${ordersKey}`} backend={backend} flash={flash} isAdmin={salesAdmin} mode={salesTab} onCounts={refreshCounts} fulfil={new Map((forders ?? []).map(f => [f.id, f]))} onFulfil={refreshF} customers={snap.customers ?? []}
+            onNewOrder={() => setNewOrder(true)} onDoc={(k, id) => setDoc({ kind: k, id })}
+            onInvoice={async id => { try { const inv = await backend.makeInvoice(id); setDoc({ kind: 'invoice', id: inv.id }) } catch (e) { flash(String((e as Error).message ?? e), true) } }} strains={snap.strains ?? []}
             onHand={snap.pallets.reduce((m, p) => (p.kind !== 'mixed' && p.strain && (p.status === 'in_freezer' || p.status === 'unslotted'))
               ? m.set(p.strain.toLowerCase(), (m.get(p.strain.toLowerCase()) ?? 0) + Number(p.current_weight ?? 0)) : m, new Map<string, number>())} />
         })()}
@@ -780,6 +790,9 @@ export default function App() {
           onPutOnLoad={() => setPickLoad(selected)}
           onPulled={() => { const lo = ix.loadOf.get(selected.id); if (lo) act(() => backend.loadPallet(lo.item.id), `${selected.code} on the truck`) }} />
       )}
+      {doc && <DocSheet backend={backend} kind={doc.kind} id={doc.id} flash={flash} onClose={() => setDoc(null)} canEdit={isSales} canVoid={salesAdmin} sender={me?.display_name} />}
+      {newOrder && <NewOrderSheet backend={backend} customers={snap.customers ?? []} strains={snap.strains ?? []} flash={flash} onClose={() => setNewOrder(false)}
+        onDone={id => { setNewOrder(false); setOrdersKey(k => k + 1); refreshF(); setDoc({ kind: 'so', id }) }} />}
       {loadForm && <LoadForm ctx={ctx} load={loadForm.load} onClose={() => setLoadForm(null)} onSaved={id => { setLoadForm(null); setLoadId(id); setView('load') }} />}
       {pickLoad && <PickLoad ctx={ctx} ps={[pickLoad]} onClose={() => setPickLoad(null)} />}
       {pickLoadMany && <PickLoad ctx={ctx} ps={pickLoadMany} onClose={() => { setPickLoadMany(null); setSel([]); setSelecting(false) }} />}

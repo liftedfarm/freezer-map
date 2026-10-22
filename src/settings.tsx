@@ -6,7 +6,7 @@ import type { Customer, CustomerTerms, ListName, ListRow, ReserveYears, Settings
 
 // ---------- column definitions per list ----------
 
-type Kind = 'text' | 'int' | 'num' | 'bool' | 'kind' | 'aliases' | 'color' | 'active'
+type Kind = 'text' | 'int' | 'num' | 'bool' | 'kind' | 'aliases' | 'color' | 'active' | 'area' | 'terms'
 interface Col { key: string; label: string; kind: Kind; synonyms: string[]; hint?: string }
 
 const COLS: Record<ListName, Col[]> = {
@@ -26,6 +26,15 @@ const COLS: Record<ListName, Col[]> = {
     { key: 'license', label: 'License #', kind: 'text', synonyms: ['license', 'license #', 'license number', 'licence', 'state license'] },
     { key: 'address', label: 'Address', kind: 'text', synonyms: ['address', 'location', 'ship to'] },
     { key: 'contact', label: 'Contact', kind: 'text', synonyms: ['contact', 'phone', 'email', 'contact info'] },
+    { key: 'legal_name', label: 'Legal name', kind: 'text', synonyms: ['legal name', 'legal', 'entity', 'company legal name'], hint: 'on invoices, if different' },
+    { key: 'payment_terms', label: 'Payment terms', kind: 'terms', synonyms: ['payment terms', 'terms', 'net'], hint: 'default for this customer' },
+    { key: 'billing_address', label: 'Billing address', kind: 'area', synonyms: ['billing address', 'bill to', 'billing'] },
+    { key: 'billing_contact', label: 'Billing contact', kind: 'text', synonyms: ['billing contact', 'ap contact', 'accounts payable'] },
+    { key: 'billing_email', label: 'Billing email', kind: 'text', synonyms: ['billing email', 'ap email', 'invoice email'], hint: 'invoices go here' },
+    { key: 'billing_phone', label: 'Billing phone', kind: 'text', synonyms: ['billing phone', 'ap phone'] },
+    { key: 'ship_to_name', label: 'Ship-to premises name', kind: 'text', synonyms: ['ship to name', 'premises name', 'receiving premises'] },
+    { key: 'ship_to_address', label: 'Ship-to address', kind: 'area', synonyms: ['ship to', 'ship to address', 'shipping address', 'premises address'], hint: 'blank = Address' },
+    { key: 'receiving_contact', label: 'Receiving contact', kind: 'text', synonyms: ['receiving contact', 'receiving', 'dock contact'] },
     { key: 'reserves_enabled', label: 'Reserves', kind: 'bool', synonyms: ['reserves', 'reserves enabled', 'has reserves'], hint: 'off: portal ordering from the open menu only' },
     { key: 'price_per_lb', label: 'Price $/lb', kind: 'num', synonyms: ['price', 'price per lb', 'price/lb', '$/lb', 'contract price'], hint: 'fresh frozen, used on portal orders' },
     { key: 'contract_lbs', label: 'Contract lbs', kind: 'num', synonyms: ['contract lbs', 'contract', 'contracted lbs'] },
@@ -171,6 +180,8 @@ export function SettingsView({ backend, inventoryStrains, onChanged, flash, list
   const [plan, setPlan] = useState<{ rows: PlanRow[]; found: string[]; file: string } | null>(null)
   const [busy, setBusy] = useState(false)
   const [other, setOther] = useState<string | null>(lists.length ? null : extra?.[0]?.k ?? null)
+  const [terms, setTerms] = useState<{ code: string; label: string }[]>([])
+  useEffect(() => { if (lists.includes('customers')) backend.paymentTerms().then(t => setTerms(t.filter(x => x.active))).catch(() => {}) }, [])
 
   const load = () => backend.loadSettings().then(d => { setData(d); setErr(null) }).catch(e => setErr(String(e?.message ?? e)))
   useEffect(() => { load() }, [])
@@ -256,7 +267,7 @@ export function SettingsView({ backend, inventoryStrains, onChanged, flash, list
         </button>
       ))}
 
-      {edit && <EditForm list={tab} row={edit} busy={busy} onClose={() => setEdit(null)} onSave={save}
+      {edit && <EditForm list={tab} row={edit} busy={busy} onClose={() => setEdit(null)} onSave={save} terms={terms}
         extra={tab === 'customers' && edit.id != null && (edit as Customer).kind !== 'internal' && canTerms ? <TermsByYear backend={backend} c={edit as Customer} /> : null} />}
       {plan && <ImportPreview list={tab} plan={plan} busy={busy} onClose={() => setPlan(null)} onApply={applyPlan} />}
       </>}
@@ -272,8 +283,9 @@ function summary(list: ListName, r: ListRow, inv: Map<string, number>) {
   return [s.show_on_menu === false ? 'Hidden from menu' : '', n ? `${n} pallet${n === 1 ? "" : "s"} in inventory` : 'none in inventory', s.aliases?.length ? `also: ${s.aliases.join(', ')}` : ''].filter(Boolean).join(' · ')
 }
 
-function EditForm({ list, row, busy, onClose, onSave, extra }: {
+function EditForm({ list, row, busy, onClose, onSave, extra, terms }: {
   list: ListName; row: Partial<ListRow>; busy: boolean; onClose: () => void; onSave: (r: Partial<ListRow>) => void; extra?: React.ReactNode
+  terms?: { code: string; label: string }[]
 }) {
   const [r, setR] = useState<Record<string, unknown>>(row as Record<string, unknown>)
   const set = (k: string, v: unknown) => setR(x => ({ ...x, [k]: v }))
@@ -307,6 +319,13 @@ function EditForm({ list, row, busy, onClose, onSave, extra }: {
                 <input style={{ flex: 1 }} value={String(r.color ?? '')} placeholder="Auto" onChange={e => set('color', e.target.value)} />
                 {Boolean(r.color) && <button className="ghost small" onClick={() => set('color', null)}>Auto</button>}
               </div>
+            ) : c.kind === 'area' ? (
+              <textarea rows={3} value={String(r[c.key] ?? '')} onChange={e => set(c.key, e.target.value)} />
+            ) : c.kind === 'terms' ? (
+              <select value={String(r[c.key] ?? '')} onChange={e => set(c.key, e.target.value || null)}>
+                <option value="">Due on receipt (default)</option>
+                {(terms ?? []).map(t => <option key={t.code} value={t.code}>{t.label}</option>)}
+              </select>
             ) : c.kind === 'bool' ? (
               <label className="check"><input type="checkbox" checked={Boolean(r[c.key] ?? c.key === 'show_on_menu')} onChange={e => set(c.key, e.target.checked)} /> On</label>
             ) : c.kind === 'num' ? (

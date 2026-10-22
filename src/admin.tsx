@@ -69,10 +69,15 @@ export function AdminDashboard({ backend, open }: { backend: Backend; open: (j: 
   )
 }
 
-const APP_KEYS: { k: string; l: string; hint?: string }[] = [
+const APP_KEYS: { k: string; l: string; hint?: string; area?: boolean }[] = [
   { k: 'crop_year', l: 'Current crop year', hint: 'The crop on the open menu and current reserves. Change it when the new crop takes over.' },
-  { k: 'company.name', l: 'Company name' }, { k: 'company.license', l: 'License #' }, { k: 'company.address', l: 'Address' },
-  { k: 'company.phone', l: 'Phone' }, { k: 'company.email', l: 'Email', hint: 'Shown to customers in the portal' },
+  { k: 'company.legal', l: 'Legal name on documents', hint: 'Default: DNA Organics, Inc. (dba Lifted Farms)' },
+  { k: 'company.address', l: 'Address', hint: 'Use a new line for the city line. Default: 1961 Main St. #146 / Watsonville, CA 95076' },
+  { k: 'company.email', l: 'Email', hint: 'On invoices and in the portal. Default: accounting@lifted-organics.com' },
+  { k: 'company.phone', l: 'Phone' }, { k: 'company.web', l: 'Website' }, { k: 'company.license', l: 'License #', hint: 'Optional, under the address on documents' },
+  { k: 'company.remit', l: 'Remit to (bank details)', hint: 'e.g. Remit to: [Bank] · Account ••••0000 · Routing 122243224 | Check payable to: DNA Organics, Inc.', area: true },
+  { k: 'company.crypto', l: 'Crypto line' },
+  { k: 'company.late_terms', l: 'Late payment terms', hint: 'The 1.5% monthly finance charge paragraph. Blank = the standard wording.', area: true },
 ]
 
 /** Admin > Settings > App settings: things that apply to the whole app */
@@ -92,10 +97,11 @@ export function AppSettingsPanel({ backend, flash }: { backend: Backend; flash: 
     <div className="form-panel">
       {APP_KEYS.map(x => (
         <div key={x.k} className="field"><label>{x.l}</label>
-          <input value={v[x.k] ?? ''} inputMode={x.k === 'crop_year' ? 'numeric' : undefined} onChange={e => setV({ ...v, [x.k]: e.target.value })} />
+          {x.area || x.k === 'company.address' ? <textarea rows={3} value={v[x.k] ?? ''} onChange={e => setV({ ...v, [x.k]: e.target.value })} />
+            : <input value={v[x.k] ?? ''} inputMode={x.k === 'crop_year' ? 'numeric' : undefined} onChange={e => setV({ ...v, [x.k]: e.target.value })} />}
           {x.hint && <p className="muted">{x.hint}</p>}</div>
       ))}
-      <p className="muted">Each module's own settings (vehicles, customers, deadlines, sites, fields) are under Settings in that module.</p>
+      <p className="muted">These show on every sales order and invoice. Each module's own settings (vehicles, customers, payment terms, sites, fields) are under Settings in that module.</p>
       <button className="primary" disabled={busy || !changed.length} onClick={save}>Save{changed.length ? ` ${changed.length} change${changed.length > 1 ? 's' : ''}` : ''}</button>
     </div>
   )
