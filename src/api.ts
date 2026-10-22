@@ -24,6 +24,8 @@ export interface Backend {
   listRequests(): Promise<ReserveRequest[]>
   requestReserve(strain: string, lbs: number, note: string, year?: number): Promise<void>
   reserveYears(): Promise<ReserveYears>
+  requestReserveBatch(year: number, lines: { strain: string; lbs: number }[], note: string): Promise<number>
+  decideRequests(items: { id: number; approve: boolean; lbs: number | null }[], note: string): Promise<{ approved: number; declined: number }>
   reserveStrains(): Promise<string[]>
   setReserveDeadline(year: number, date: string | null): Promise<void>
   listTerms(): Promise<CustomerTerms[]>
@@ -226,6 +228,18 @@ class SupaBackend implements Backend {
   async listRequests() {
     const { data, error } = await this.sb.from('reserve_requests').select('*').order('requested_at', { ascending: false }).limit(500)
     fail(error); return (data ?? []) as ReserveRequest[]
+  }
+  async requestReserveBatch(year: number, lines: { strain: string; lbs: number }[], note: string) {
+    const { data, error } = await this.sb.rpc('request_reserve_batch', { p_lines: lines, p_note: note || null, p_year: year })
+    fail(error)
+    const r = data as { ids: number[]; count: number }
+    if (r.ids?.length) this.notify('reserve', r.ids[0])
+    return r.count
+  }
+  async decideRequests(items: { id: number; approve: boolean; lbs: number | null }[], note: string) {
+    const { data, error } = await this.sb.rpc('decide_reserve_requests', { p_items: items, p_note: note || null })
+    fail(error)
+    return data as { approved: number; declined: number }
   }
   async reserveYears(): Promise<ReserveYears> {
     const { data, error } = await this.sb.rpc('reserve_years')
@@ -793,6 +807,8 @@ class DemoBackend implements Backend {
   async myModules() { return [] as string[] }
   async reserveYears() { return { current: new Date().getFullYear(), years: [{ year: new Date().getFullYear(), deadline: null, open: true }] } }
   async reserveStrains() { return [] as string[] }
+  async requestReserveBatch() { return 0 }
+  async decideRequests() { return { approved: 0, declined: 0 } }
   async setReserveDeadline() {}
   async listTerms() { return [] }
   async setTerms() {}

@@ -3,6 +3,7 @@ import type { Backend } from './api'
 import { readSheet } from 'read-excel-file/browser'
 import { parseCsv } from './settings'
 import { OpenMenu } from './menu'
+import { RequestsPanel } from './requests'
 import type { MenuNumbers, ReserveRequest, ReserveYears, Role, Balance, Customer, ImportResult, Order, RoshiRow, Strain } from './types'
 
 const n0 = (x: number) => Math.round(x).toLocaleString()
@@ -47,7 +48,6 @@ export function ReservesView({ backend, customers, strains, onHand, flash, role,
   const isAdmin = role === 'admin'
   const [reqs, setReqs] = useState<ReserveRequest[]>([])
   const [nums, setNums] = useState<MenuNumbers[]>([])
-  const [decideNote, setDecideNote] = useState<Record<number, string>>({})
   const [year, setYear] = useState<number | null>(null)
   const [bal, setBal] = useState<Balance[] | null>(null)
   const [ys, setYs] = useState<ReserveYears | null>(null)
@@ -124,11 +124,6 @@ export function ReservesView({ backend, customers, strains, onHand, flash, role,
       const text = years.map(y => `${y} crop, fresh frozen (lbs open)\n` + rows.filter(r => r.crop_year === y).map(r => `${r.strain}: ${n0(Number(r.available))}`).join('\n')).join('\n\n')
       await navigator.clipboard.writeText(text); flash('Menu copied')
     } catch (e) { flash(String((e as Error).message ?? e), true) }
-  }
-  async function decide(id: number, approve: boolean) {
-    setBusy(true)
-    try { await backend.decideRequest(id, approve, decideNote[id] ?? ''); await load(); flash(approve ? 'Approved. Reserve updated.' : 'Declined') }
-    catch (e) { flash(String((e as Error).message ?? e), true) } finally { setBusy(false) }
   }
   async function importFile(f: File) {
     setBusy(true); setResult(null)
@@ -232,40 +227,8 @@ export function ReservesView({ backend, customers, strains, onHand, flash, role,
         <OpenMenu backend={backend} reserves={false} />
       </>}
 
-      {mode === 'requests' && (() => {
-        const shown = reqs.filter(r => !ql || cname(r.customer_id).toLowerCase().includes(ql) || r.strain.toLowerCase().includes(ql))
-        const open_ = shown.filter(r => r.status === 'pending'), done = shown.filter(r => r.status !== 'pending').slice(0, 60)
-        const card = (r: ReserveRequest) => {
-          const d = Number(r.requested_lbs) - Number(r.current_lbs)
-          const m = nums.find(x => x.strain.toLowerCase() === r.strain.toLowerCase())
-          return (
-            <div key={r.id} className={`li reqcard ${r.status}`}>
-              <div className="grow">
-                <div><b>{cname(r.customer_id)}</b> · {r.strain}{r.crop_year && r.crop_year !== cur ? <span className="pill old">{r.crop_year} crop</span> : null} <span className={`pill r-${r.status}`}>{r.status}</span></div>
-                <div>{n0(Number(r.current_lbs))} → <b>{n0(Number(r.requested_lbs))} lbs</b> <span className={d > 0 ? 'up' : 'down'}>({d > 0 ? '+' : ''}{n0(d)})</span></div>
-                <div className="muted">{r.requested_by} · {new Date(r.requested_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}{r.note && <> · "{r.note}"</>}</div>
-                {r.status === 'pending' && m && (!r.crop_year || r.crop_year === cur) && <div className="muted">Free now {n0(Number(m.free))} lbs (this request already held)</div>}
-                {r.status !== 'pending' && r.decided_by && <div className="muted">{r.status} by {r.decided_by}{r.decision_note && <> · "{r.decision_note}"</>}</div>}
-                {r.status === 'pending' && isAdmin && (
-                  <div className="row reqact">
-                    <input placeholder="Note (optional)" value={decideNote[r.id] ?? ''} onChange={e => setDecideNote({ ...decideNote, [r.id]: e.target.value })} />
-                    <button className="ghost small" disabled={busy} onClick={() => decide(r.id, false)}>Decline</button>
-                    <button className="primary small" disabled={busy} onClick={() => decide(r.id, true)}>Approve</button>
-                  </div>
-                )}
-              </div>
-            </div>
-          )
-        }
-        return (
-          <>
-            {!isAdmin && <p className="muted">Only an Admin can approve reserve changes.</p>}
-            {open_.length === 0 && <p className="muted">No requests waiting.</p>}
-            {open_.map(card)}
-            {done.length > 0 && <><h3 className="grouph">Decided</h3>{done.map(card)}</>}
-          </>
-        )
-      })()}
+      {mode === 'requests' && <RequestsPanel backend={backend} reqs={reqs.filter(r => !ql || cname(r.customer_id).toLowerCase().includes(ql) || r.strain.toLowerCase().includes(ql))}
+        nums={nums} cname={cname} cur={cur} isAdmin={isAdmin} flash={flash} onDone={load} />}
 
       {mode === 'orders' && (
         <>

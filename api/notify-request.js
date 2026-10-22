@@ -41,10 +41,18 @@ export default async function handler(req, res) {
     const what = Number(q.from) === 0 ? `add ${lbs(q.to)} lbs of ${q.strain}` : Number(q.to) === 0 ? `drop their ${lbs(q.from)} lbs of ${q.strain}`
       : `${up ? 'raise' : 'lower'} ${q.strain} from ${lbs(q.from)} to ${lbs(q.to)} lbs`
     const yr = q.crop_year ? ` (${q.crop_year} crop)` : ''
+    if (q.lines && q.lines.length > 1) {
+      const rows = q.lines.map(l => `<tr><td style="padding:2px 12px 2px 0">${esc(l.strain)}</td><td style="text-align:right">${lbs(l.from)} → <b>${lbs(l.to)}</b> lbs</td></tr>`).join('')
+      subject = `Reserve requests${yr}: ${q.customer} · ${q.lines.length} strains`
+      html = wrap(`<p><b>${esc(q.customer)}</b> sent ${q.lines.length} reserve changes${esc(yr)}.</p><table>${rows}</table>
+        <p>Requested by ${esc(who)}${q.note ? `<br>Note: "${esc(q.note)}"` : ''}</p>
+        <p><a href="${esc(app)}/?go=requests">Approve, change or decline in Lifted Inventory Management</a> (Sales &gt; Requests). Only an Admin can approve.</p>`)
+    } else {
     subject = `Reserve request${yr}: ${q.customer} · ${q.strain} ${lbs(q.from)} → ${lbs(q.to)} lbs`
     html = wrap(`<p><b>${esc(q.customer)}</b> wants to ${esc(what)}${esc(yr)}.</p>
       <p>Requested by ${esc(who)}${q.note ? `<br>Note: "${esc(q.note)}"` : ''}</p>
       <p><a href="${esc(app)}/?go=requests">Approve or decline in Lifted Inventory Management</a> (Sales &gt; Requests). Only an Admin can approve.</p>`)
+    }
   }
   const send = await fetch('https://api.resend.com/emails', {
     method: 'POST', headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },

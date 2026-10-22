@@ -432,11 +432,12 @@ export default function App() {
   const selWeight = sel.reduce((a, id) => { const p = ix.pallet.get(id); return a + (p ? weightOf(ix, p) : 0) }, 0)
 
   return (
-    <div className={`app ${banner ? 'is-moving' : ''} ${side && !inCult ? 'with-side' : ''} ${myMods.length > 1 ? 'with-rail' : ''} ${inCult ? 'mod-cult' : ''}`}>
+    <div className={`app with-rail ${myMods.length > 1 ? 'with-mods' : ''} ${banner ? 'is-moving' : ''} ${side && !inCult ? 'with-side' : ''} ${inCult ? 'mod-cult' : ''}`}
+      style={{ ['--navw' as string]: myMods.length > 1 ? '284px' : '200px' }}>
       {viewBar}
-      {myMods.length > 1 && (
-        <aside className="rail" aria-label="Modules">
-          <div className="rail-mods">
+      {(
+        <aside className="rail" aria-label="Navigation">
+          {myMods.length > 1 && <div className="rail-mods">
             <div className="rail-logo">Lifted</div>
             {myMods.map(x => (
               <button key={x.m} className={`rail-mod ${mod === x.m ? 'on' : ''}`} onClick={() => goMod(x.m)}>
@@ -446,7 +447,20 @@ export default function App() {
                 <span>{x.l}</span>
               </button>
             ))}
-          </div>
+          </div>}
+          {!inCult && (
+            <nav className="rail-screens" aria-label="Distribution screens">
+              <div className="rail-h">DISTRIBUTION</div>
+              <button className={view === 'map' || view === 'freezer' ? 'on' : ''} onClick={() => setView(view !== 'map' && view !== 'freezer' && freezerId != null ? 'freezer' : 'map')}>Map</button>
+              <button className={view === 'transit' || view === 'load' ? 'on' : ''} onClick={() => setView('transit')}>Transit{openLoads.length > 0 && <span className="badge">{openLoads.length}</span>}</button>
+              {canSales(me?.role) && <button className={view === 'reserves' ? 'on' : ''} onClick={() => setView('reserves')}>Sales{salesBadge > 0 && <span className="badge warn">{salesBadge}</span>}</button>}
+              <button className={view === 'activity' ? 'on' : ''} onClick={() => setView('activity')}>Activity</button>
+              <button className={view === 'review' ? 'on' : ''} onClick={() => setView('review')}>Review{reviewCount > 0 && <span className="badge warn">{reviewCount}</span>}</button>
+              <div className="rail-sep" />
+              <button className={side ? 'on' : ''} onClick={() => toggleSide(!side)}>Summary panel</button>
+              <button className={view === 'settings' ? 'on' : ''} onClick={() => setView('settings')}>Settings</button>
+            </nav>
+          )}
           {inCult && (
             <nav className="rail-screens" aria-label="Production screens">
               <div className="rail-h">PRODUCTION</div>

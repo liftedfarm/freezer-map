@@ -473,7 +473,7 @@ body.dragging { user-select: none; -webkit-user-select: none; cursor: grabbing; 
 .rail { display: none; }
 @media (prefers-color-scheme: dark) { .modpill.m-cult { color: #fbbf24; border-color: #fbbf24; } .app.mod-cult .top .brand .app-name { color: #fbbf24; } }
 @media (min-width: 1000px) {
-  .app.with-rail .modpick { display: none; }
+  .app.with-mods .modpick { display: none; }
   .rail { display: flex; position: fixed; top: 0; bottom: 0; left: 0; z-index: 7; }
   .rail-mods { width: 84px; background: #12301f; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 14px 0; }
   .rail-logo { font-weight: 800; font-size: 15px; color: #bfe3cc; margin-bottom: 12px; }
@@ -481,24 +481,37 @@ body.dragging { user-select: none; -webkit-user-select: none; cursor: grabbing; 
     background: transparent; color: #c9d6cd; font-size: 11px; }
   .rail-mod.on { background: #2b5a3d; color: #fff; font-weight: 700; }
   .rail-mod:hover { background: #1f4630; color: #fff; }
-  .rail-screens { width: 200px; background: var(--panel); border-right: 1px solid var(--line); padding: 18px 10px; display: flex; flex-direction: column; gap: 2px; overflow-y: auto; }
+  .rail-screens { width: 200px; box-sizing: border-box; background: var(--panel); border-right: 1px solid var(--line); padding: 18px 10px; display: flex; flex-direction: column; gap: 2px; overflow-y: auto; }
   .rail-h { font-size: 12px; font-weight: 700; color: var(--muted); padding: 0 10px 8px; }
-  .rail-screens button { text-align: left; padding: 10px; border-radius: 10px; border: 0; background: transparent; font-size: 15px; }
-  .rail-screens button.on { background: color-mix(in srgb, var(--brand) 12%, var(--panel)); color: var(--brand); font-weight: 700; }
-  .app.with-rail { padding-left: 84px; }
-  .app.with-rail .bottom { left: 84px; }
-  .app.with-rail .sidebar { left: 84px; }
-  .app.with-rail.with-side { padding-left: 424px; }
-  .app.with-rail.with-side .bottom, .app.with-rail.with-side .planbar { left: 424px; }
-  .app.with-rail .planbar { left: 84px; }
-  .app.with-rail.mod-cult { padding-left: 284px; padding-bottom: 20px; }
-  .app.with-rail.mod-cult .bottom { display: none; }
-  .app.with-rail .cult .selbar { margin-left: 142px; }
+  .rail-screens button { text-align: left; padding: 10px; border-radius: 10px; border: 0; background: transparent; font-size: 15px; color: var(--ink);
+    display: flex; justify-content: space-between; align-items: center; }
+  .rail-screens button.on { background: color-mix(in srgb, var(--brand) 14%, var(--panel)); color: var(--brand); font-weight: 700; }
+  .rail-screens button:hover:not(.on) { background: var(--bg); }
+  .rail-sep { height: 1px; background: var(--line); margin: 10px 6px; }
+  .app.with-rail { padding-left: var(--navw); padding-bottom: 20px; }
+  .app.with-rail .bottom { display: none; }
+  .app.with-rail .sidebtn { display: none; }
+  .app.with-rail .sidebar { left: var(--navw); }
+  .app.with-rail.with-side { padding-left: calc(var(--navw) + 340px); }
+  .app.with-rail .planbar { left: var(--navw); }
+  .app.with-rail.with-side .planbar { left: calc(var(--navw) + 340px); }
+}
 }
 .top > .grow { flex: 1; }
 @media (max-width: 999px) {
   .modmenu { position: fixed; top: 64px; left: 16px; right: 16px; min-width: 0; }
 }
 @media (max-width: 600px) {
-  .app.with-rail .top .app-name { display: none; }
+  .app.with-mods .top .app-name { display: none; }
 }
+/* highlights that read in light and dark mode */
+.restable tr.picked td { background: color-mix(in srgb, var(--brand) 16%, var(--panel)); color: var(--ink); }
+.restable tr.picked td input { color: var(--ink); }
+.restable tr.unpicked td { opacity: .55; }
+.okbox { background: color-mix(in srgb, var(--brand) 16%, var(--panel)); color: var(--ink); border: 1px solid color-mix(in srgb, var(--brand) 45%, var(--panel)); }
+.reqbatch { padding: 10px 12px; }
+.reqbatch .reqhead { display: grid; gap: 2px; margin-bottom: 6px; }
+.reqbatch .restable { margin: 4px 0 8px; }
+.restable .selcol { width: 30px; text-align: center; }
+.restable input.qty { width: 90px; text-align: right; }
+.reqbatch .up { color: var(--brand); } .reqbatch .down { color: var(--bad); }
