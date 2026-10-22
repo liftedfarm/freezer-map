@@ -44,7 +44,7 @@ export function MothersTab({ d, c, q, api, flash, onSaved, onOpen, onAdd }: {
         <tr className="wk"><td colSpan={sel.on ? 8 : 7}><span className="row between"><span><span className={`gpill g${ms[0].gen}`}>{GEN_LABEL[ms[0].gen]}</span> {ms[0].strain} · {n0(sum(ms.map(live)))} {sum(ms.map(live)) === 1 ? 'plant' : 'plants'} in {ms.length} {ms.length === 1 ? 'lot' : 'lots'}</span>
           <button className="linkbtn" onClick={() => onAdd({ strain: ms[0].strain, gen: ms[0].gen, season: ms[0].season })}>+ lot</button></span></td></tr>
         {ms.map(m => <tr key={m.id} className={`tap ${m.status !== 'active' ? 'done' : ''}`} onClick={() => sel.on ? sel.toggle(m.id) : onOpen(m)}>
-          <SelBox sel={sel} id={m.id} /><td>{where(c, m) || <span className="muted">—</span>}</td>
+          <SelBox sel={sel} id={m.id} /><td>{where(c, m) || <span className="muted">—</span>}{m.source && m.source !== 'Internal' ? <span className="muted small"> · {m.source}</span> : ''}</td>
           <td className="num">{n0(live(m) || m.qty)}{m.lost ? <span className="muted"> ({n0(m.lost)} lost)</span> : ''}</td>
           <td className="small">{m.plant_tag ? m.plant_tag.slice(-10) : <span className="warn-t">no tag</span>}</td>
           <td className="nowrap">{fmtD(m.started_on)}</td><td className="num hide-s">{m.cuts_per_plant ?? ''}</td><td className="hide-s">{m.season ?? ''}</td>
@@ -77,6 +77,7 @@ export function MotherSheet({ d, c, m: m0, api, flash, onClose, onSaved }: { d: 
     <Sheet title={isNew ? 'New mother lot' : `${m0.strain} · ${GEN_LABEL[m0.gen ?? 2]}`} sub={isNew ? 'One METRC tag, a count of plants' : `${where(c, m0 as Mother) || 'no location'} · ${n0(live(m0 as Mother))} plants`} onClose={onClose}>
       <F label="Strain"><TextIn value={x.strain} list="n-strains" onChange={v => set({ strain: v ?? '' })} autoFocus={isNew && !m0.strain} /></F>
       <StrainList id="n-strains" names={d.strains} />
+      <datalist id="n-sources">{['Internal', 'TC', 'HVN', 'Seed', 'Pheno hunt'].map(v => <option key={v} value={v} />)}</datalist>
       <div className="grid3">
         <F label="Generation"><Pick value={x.gen} options={[1, 2, 3].map(g => ({ v: g as 1 | 2 | 3, l: GEN_WHAT[g] }))} onChange={v => set({ gen: v ?? 2 })} /></F>
         <F label="For season" hint="(crop year)"><NumIn value={x.season} onChange={v => set({ season: v })} /></F>
@@ -85,6 +86,7 @@ export function MotherSheet({ d, c, m: m0, api, flash, onClose, onSaved }: { d: 
         {room?.kind === 'hoop' ? <F label="Bed"><Pick value={x.bed} blank="—" options={(room.beds.length ? room.beds.map(b => b.bed) : ['A', 'B', 'C']).map(b => ({ v: b, l: b }))} onChange={v => set({ bed: v })} /></F>
           : <F label="Pot"><TextIn value={x.pot} placeholder='4", 1G, 10L' onChange={v => set({ pot: v })} /></F>}
         <F label="Planted"><DateIn value={x.started_on} onChange={v => set({ started_on: v })} /></F>
+        <F label="Source"><TextIn value={x.source} list="n-sources" onChange={v => set({ source: v })} placeholder="Internal, TC, HVN, seed" /></F>
         <F label="Cuts per plant" hint="(estimate)"><NumIn value={x.cuts_per_plant} onChange={v => set({ cuts_per_plant: v })} /></F>
         <F label="Status"><Pick value={x.status} options={[{ v: 'active', l: 'Active' }, { v: 'retired', l: 'Retired' }, { v: 'destroyed', l: 'Destroyed' }]}
           onChange={v => set({ status: v ?? 'active', ended_on: v && v !== 'active' ? x.ended_on ?? today() : null })} /></F>
@@ -100,7 +102,7 @@ export function MotherSheet({ d, c, m: m0, api, flash, onClose, onSaved }: { d: 
       </div>}
       <SaveBar busy={busy} disabled={!x.strain?.trim() || !(Number(x.qty) > 0)} saveLabel={isNew ? 'Add lot' : 'Save'} onCancel={onClose}
         onSave={() => run(() => api.save<Mother>('nursery_mothers', { id: x.id, site: x.site ?? site, strain: x.strain!.trim(), gen: x.gen, season: x.season, qty: x.qty, room_id: x.room_id ?? null,
-          bed: x.bed ?? null, pot: x.pot ?? null, plant_tag: x.plant_tag || null, started_on: x.started_on ?? null, cuts_per_plant: x.cuts_per_plant ?? null,
+          bed: x.bed ?? null, pot: x.pot ?? null, source: x.source ?? null, plant_tag: x.plant_tag || null, started_on: x.started_on ?? null, cuts_per_plant: x.cuts_per_plant ?? null,
           status: x.status, ended_on: x.ended_on ?? null, notes: x.notes ?? null }), isNew ? `${x.strain} ${GEN_LABEL[x.gen ?? 2]} lot added` : 'Saved')}
         onDelete={!isNew ? () => run(() => api.remove('nursery_mothers', m0.id!), 'Removed (entered by mistake)') : undefined} />
     </Sheet>

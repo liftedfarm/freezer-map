@@ -60,7 +60,7 @@ export default function NurseryView({ backend, flash, tab, go, customers, isAdmi
       {tab === 'plan' && <PlanTab d={d} c={c} api={api} flash={flash} onSaved={saved} />}
       {tab === 'mothers' && <MothersTab d={d} c={c} q={q} api={api} flash={flash} onSaved={saved} onOpen={setMother} onAdd={v => setMother(v ?? {})} />}
       {tab === 'logs' && <OpsLogs sb={sb} module="nursery" sites={d.sites.map(s => s.code)} areas={areas} strains={[...new Set([...d.mothers.map(m => m.strain), ...d.strains])]} flash={flash}
-        wage={d.settings.wage} batches={d.batches.filter(b => b.stage !== 'cancelled').slice(0, 300).map(b => ({ id: b.id, strain: b.strain, label: `${fmtD(b.cut_on)} ${b.strain} ${GEN_LABEL[b.gen]} · ${n0(b.cuttings)}` }))}
+        wage={d.settings.wage} canEditRecipes={isAdmin} batches={d.batches.filter(b => b.stage !== 'cancelled').slice(0, 300).map(b => ({ id: b.id, strain: b.strain, label: `${fmtD(b.cut_on)} ${b.strain} ${GEN_LABEL[b.gen]} · ${n0(b.cuttings)}` }))}
         extraTab={{ k: 'lab', l: 'Lab tests', node: <LabTests d={d} c={c} api={api} flash={flash} onSaved={saved} /> }} />}
       {tab === 'invoices' && <InvoicesView backend={backend} customers={customers} flash={flash} isAdmin={isAdmin} sender={sender} scope="nursery" />}
       {tab === 'review' && <NurseryReview d={d} c={c} onOrder={setOrder} onBatch={setBatch} onMother={setMother} go={go} />}

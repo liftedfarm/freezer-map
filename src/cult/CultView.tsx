@@ -73,7 +73,8 @@ export default function CultView({ backend, flash, onPalletsChanged, tab, go }: 
       {tab === 'review' && <ReviewTab d={d} c={c} site={site} onOpen={setOpen} go={go} />}
       {tab === 'activity' && <ActivityTab api={api} />}
       {tab === 'logs' && backend.client() && <OpsLogs sb={backend.client()!} module="cultivation" sites={d.sites.map(s => s.code)} flash={flash}
-        areas={[...new Set(d.fields.filter(f => f.active).map(f => `${f.site} ${f.name}`))]} strains={[...new Set(d.harvests.map(h => h.strain))].sort()} />}
+        areas={d.fields.filter(f => f.active).map(f => `Block ${f.code}`)} strains={[...new Set(d.harvests.map(h => h.strain))].sort()} canEditRecipes
+        fieldAcres={Object.fromEntries(d.fields.filter(f => f.acres).flatMap(f => [[`Block ${f.code}`, f.acres!], [`Field ${f.code}`, f.acres!], [f.name, f.acres!]]))} />}
       {tab === 'setup' && <SetupTab d={d} api={api} flash={flash} onSaved={saved} />}
 
       {open && <HarvestSheet key={open.id ?? 'new'} d={d} c={c} harvest={open} api={api} flash={flash} onClose={() => setOpen(null)}

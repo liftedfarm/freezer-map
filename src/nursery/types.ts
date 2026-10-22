@@ -8,7 +8,7 @@ export interface NRoom {
 export interface Mother {
   id: number; site: string; room_id: number | null; strain: string; plant_tag: string | null; started_on: string | null
   status: 'active' | 'retired' | 'destroyed'; ended_on: string | null; notes: string | null; created_at: string
-  qty: number; lost: number; gen: 1 | 2 | 3; season: number | null; bed: string | null; pot: string | null; cuts_per_plant: number | null; batch_id: number | null
+  qty: number; lost: number; gen: 1 | 2 | 3; season: number | null; bed: string | null; pot: string | null; cuts_per_plant: number | null; batch_id: number | null; source?: string | null
 }
 export type Stage = 'rooting' | 'ready' | 'done' | 'cancelled'
 export interface Batch {

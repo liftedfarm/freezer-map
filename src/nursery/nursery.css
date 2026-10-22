@@ -47,3 +47,9 @@
 @media (max-width: 640px) { .sortrow { grid-template-columns: 1fr 1fr; } .csheet .grid3 { grid-template-columns: 1fr 1fr; } }
 .nset select { width: 100%; }
 .howto { margin: 4px 0 8px; } .howto summary { cursor: pointer; }
+.logtable tr.mhead td { background: color-mix(in srgb, var(--brand) 10%, var(--panel)); cursor: pointer; font-size: 14px; }
+.logtable tr.wk td { font-size: 12.5px; }
+.ptotals { margin-top: 10px; }
+.ptotals summary { cursor: pointer; padding: 6px 0; }
+.opslogs .toolbar select { padding: 7px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); font-size: 14px; }
+.csheet.wide { max-width: 860px; }
