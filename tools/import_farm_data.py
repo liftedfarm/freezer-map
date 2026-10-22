@@ -210,7 +210,7 @@ delete from nursery_batches where notes like '{TAG_N}%';
                 s.append(f"insert into nursery_batches (site, strain, name, gen, season, cut_on, cuttings, stage, ready_on, tags, room_id, notes) values "
                          f"('1PN', {q(str(x['Strain']).strip())}, {q(gen + ' ' + str(x['Strain']).strip())}, {g}, {season}, {q(cut)}, {n_cut}, 'rooting', "
                          f"{q((dt.date.fromisoformat(cut) + dt.timedelta(days=14)).isoformat())}, {q('{' + tag + '}' if tag else '{}')}, "
-                         f"(select id from nursery_rooms where site = '1PN' and kind = 'trailer' order by sort limit 1), "
+                         f"(select id from nursery_rooms where site = '1PN' and name = 'Trailer 4'), "
                          f"{q(notes + ('' if cuts else ' (cut count not entered yet: 36 standard cuts assumed)'))});")
             continue
         if cut and cuts:
