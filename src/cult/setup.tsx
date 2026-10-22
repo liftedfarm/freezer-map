@@ -4,6 +4,9 @@ import { n0, n2, pct } from './calc'
 import type { CField, CSite, CultData, LogRow } from './types'
 import { F, NumIn, Pick, SaveBar, Sheet, TextIn, errText } from './ui'
 import type { Flash } from './ui'
+import type { SupabaseClient } from '@supabase/supabase-js'
+import { Fold } from '../fold'
+import { ModulePeople } from '../users'
 
 const TABLE_LABEL: Record<string, string> = {
   cult_harvests: 'Harvest', cult_plantings: 'Planting', cult_tests: 'Test', cult_flower_picks: 'Dry flower pick', cult_demand: 'Plan strain',
@@ -18,7 +21,7 @@ export function describeLog(r: LogRow) {
   return `${what} ${r.op === 'insert' ? 'added' : r.op === 'delete' ? 'deleted' : 'changed'}${name ? `: ${name}` : ''}${keys.length ? ` (${keys.join(', ').replace(/_/g, ' ')})` : ''}`
 }
 
-export function SetupTab({ d, api, flash, onSaved }: { d: CultData; api: CultApi; flash: Flash; onSaved: (m: string) => Promise<void> }) {
+export function SetupTab({ d, api, sb, flash, onSaved }: { d: CultData; api: CultApi; sb: SupabaseClient | null; flash: Flash; onSaved: (m: string) => Promise<void> }) {
   const [site, setSite] = useState<CSite | null>(null)
   const [field, setField] = useState<Partial<CField> | null>(null)
   const [labs, setLabs] = useState(d.settings.labs.join(', '))
@@ -34,7 +37,7 @@ export function SetupTab({ d, api, flash, onSaved }: { d: CultData; api: CultApi
   }
   return (
     <>
-      <h3 className="csec">Sites</h3>
+      <Fold id="cset.sites" title="Sites" count={d.sites.length} open>
       <div className="cwrap"><table className="ctable">
         <thead><tr><th>Site</th><th>License</th><th className="num">Row ft / acre</th><th className="num">Dry ice / 10 lb</th><th className="num">Truck (raw lbs)</th><th className="num">Work day</th>
           <th className="num">Deleaf rate</th><th className="num">Buck rate</th><th className="num">Dry conv.</th><th>Pallets</th></tr></thead>
@@ -45,8 +48,9 @@ export function SetupTab({ d, api, flash, onSaved }: { d: CultData; api: CultApi
         </tbody>
       </table></div>
       <p className="cnote">Deleaf and buck rates here are the defaults for harvests that don't have their own. Row feet per acre: 13,068 for 40" beds, 17,424 for 60" beds.</p>
+      </Fold>
 
-      <div className="row between"><h3 className="csec">Fields</h3><button className="primary small" onClick={() => setField({ site: 'OHR', kind: 'flower', active: true, aliases: [], sort: 50 })}>+ Field</button></div>
+      <Fold id="cset.fields" title="Fields" count={d.fields.filter(f => f.active).length} right={<button className="primary small" onClick={() => setField({ site: 'OHR', kind: 'flower', active: true, aliases: [], sort: 50 })}>+ Field</button>}>
       <div className="cwrap"><table className="ctable">
         <thead><tr><th>Site</th><th>Code</th><th>Name</th><th>Also written as</th><th className="num">Acres</th><th>Use</th></tr></thead>
         <tbody>{d.fields.map(f => (
@@ -55,12 +59,15 @@ export function SetupTab({ d, api, flash, onSaved }: { d: CultData; api: CultApi
         </tbody>
       </table></div>
       <p className="cnote">Pallet zones, harvest log fields and planting zones all match to these by code, name or "also written as" ("Block 1- A", "1A", "Field 8A").</p>
+      </Fold>
 
-      <h3 className="csec">Lists</h3>
+      <Fold id="cset.lists" title="Lists">
       <F label="Labs" hint="comma separated"><TextIn value={labs} onChange={v => setLabs(v ?? '')} /></F>
       <F label="Biomass equipment" hint="cut, merge, combine, strip header"><TextIn value={eq} onChange={v => setEq(v ?? '')} /></F>
       <F label="Days from harvest to ready" hint="(availability)"><NumIn value={ready} onChange={setReady} /></F>
       <button className="primary" onClick={saveSettings}>Save lists</button>
+      </Fold>
+      <Fold id="cset.people" title="People"><ModulePeople sb={sb} module="cultivation" flash={flash} /></Fold>
 
       <p className="cnote">Every change in Production is listed under Activity.</p>
 

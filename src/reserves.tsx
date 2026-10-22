@@ -3,6 +3,7 @@ import type { Backend } from './api'
 import { readSheet } from 'read-excel-file/browser'
 import { parseCsv } from './settings'
 import { OpenMenu } from './menu'
+import { CatalogButton } from './catalog'
 import { RequestsPanel } from './requests'
 import { STATE_LABEL } from './fulfill'
 import type { FOrder, MenuNumbers, ReserveRequest, ReserveYears, Balance, Customer, ImportResult, Order, RoshiRow, Strain } from './types'
@@ -219,6 +220,7 @@ export function ReservesView({ backend, customers, strains, onHand, flash, isAdm
 
       {mode === 'menu' && <>
         <p className="muted">Exactly what customers see on the portal: open lbs rounded down to 10, hidden strains left out. <a onClick={copyMenu}>Copy as text</a></p>
+        <div className="row toolbar"><CatalogButton backend={backend} flash={flash} /></div>
         <OpenMenu backend={backend} reserves={false} />
       </>}
 

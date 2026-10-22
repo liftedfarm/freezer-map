@@ -203,8 +203,7 @@ export function HarvestSheet({ d, c, harvest, api, flash, onClose, onSaved }: {
       <F label="Notes"><textarea value={h.notes ?? ''} onChange={e => set({ notes: e.target.value || null })} /></F>
 
       {!isNew && !logging && h.status !== 'cancelled' && (
-        <div className="row"><button className="primary" disabled={busy} onClick={() => set({ status: 'done', harvested_on: h.harvested_on ?? (h.planned_on && h.planned_on < today() ? h.planned_on : today()), plants_harvested: h.plants_harvested ?? h.plants })}>Log this harvest…</button>
-          <span className="muted">Date, plants, raw weights{h.kind === 'ff' ? ', pallets' : ''}</span></div>
+        <p className="cnote">Log what comes in on the Harvest screen (raw bins{h.kind === 'ff' ? ', then each pallet' : ''}). This is the plan.</p>
       )}
 
       {logging && <>

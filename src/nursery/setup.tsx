@@ -6,6 +6,8 @@ import { live, n0, sum } from './calc'
 import { F, NumIn, Pick, SaveBar, Sheet, TextIn } from '../cult/ui'
 import type { Flash } from '../cult/ui'
 import { t } from '../i18n'
+import { Fold } from '../fold'
+import { ModulePeople } from '../users'
 import { TagRanges } from '../licenses'
 import type { PaymentTerm } from '../types'
 
@@ -48,7 +50,7 @@ export function SetupTab({ d, sb, api, terms, flash, onSaved }: { d: NData; sb: 
   const inRoom = (id: number) => sum(d.mothers.filter(m => m.room_id === id).map(live))
   return (
     <div className="dash">
-      <section className="dcard"><div className="dcard-h"><h3>{t('Planning numbers')}</h3></div>
+      <Fold id="nset.plan" title={t('Planning numbers')} open>
         <div className="nset">{NUMS.map(([k, , l, h]) => <F key={k} label={t(l)} hint={h ? `(${t(h)})` : undefined}><NumIn value={vals[k]} onChange={v => setVals(s => ({ ...s, [k]: v }))} /></F>)}
           <F label={t('Payment terms')} hint={t('(default)')}><Pick value={termsCode} options={terms.filter(t => t.active || t.code === termsCode).map(t => ({ v: t.code, l: t.label }))} onChange={setTerms} /></F></div>
         {(changed.length > 0 || termsCode !== d.settings.terms) && <button className="primary small" disabled={busy} onClick={() => run(async () => {
@@ -56,26 +58,28 @@ export function SetupTab({ d, sb, api, terms, flash, onSaved }: { d: NData; sb: 
           if (termsCode !== d.settings.terms) await api.setSetting('nursery.terms', termsCode ?? 'COD')
         }, t('Saved'))}>{t('Save')}</button>}
         <p className="muted small-note">{t('The Plan screen uses these. Cuts per mom can also be set per strain (tap a strain on the Plan). Each clone order can have its own price and terms.')}</p>
-      </section>
+      </Fold>
 
-      <section className="dcard"><div className="dcard-h"><h3>{t('Locations')}</h3><button className="linkbtn" onClick={() => setRoom({ site: d.sites[0]?.code, place: 'Webb', kind: 'hoop', active: true, beds: [{ bed: 'A', cap: 150 }, { bed: 'B', cap: 200 }, { bed: 'C', cap: 150 }] })}>{t('+ Add ›')}</button></div>
+      <Fold id="nset.locations" title={t('Locations')} count={d.rooms.filter(r => r.active).length} right={<button className="linkbtn" onClick={() => setRoom({ site: d.sites[0]?.code, place: 'Webb', kind: 'hoop', active: true, beds: [{ bed: 'A', cap: 150 }, { bed: 'B', cap: 200 }, { bed: 'C', cap: 150 }] })}>{t('+ Add ›')}</button>}>
         {places.map(p => { const rs = d.rooms.filter(r => r.place === p); const hoops = rs.filter(r => r.kind === 'hoop'); return (
           <div key={p} className="locgroup"><b>{p}{rs.some(r => r.rented) ? ' (rented)' : ''}</b>
             <span className="muted small"> · {hoops.length} hoops, {n0(sum(hoops.map(h => h.capacity ?? 0)))} mom spots{rs.some(r => r.kind === 'trailer') ? ` · ${rs.filter(r => r.kind === 'trailer').length} trailers` : ''}</span>
             <div className="locgrid">{rs.map(r => <button key={r.id} className={`loc ${r.active ? '' : 'off'}`} onClick={() => setRoom(r)}>
               <b>{r.name}</b><span className="muted">{r.kind === 'hoop' ? `${n0(inRoom(r.id))} / ${n0(r.capacity)}` : r.kind === 'trailer' ? t('{n} trays', { n: n0(r.trays) }) : inRoom(r.id) ? t('{n} moms', { n: n0(inRoom(r.id)) }) : t(KIND[r.kind])}</span></button>)}</div>
           </div>) })}
-      </section>
+      </Fold>
 
-      <section className="dcard"><div className="dcard-h"><h3>{t('Nursery sites')}</h3></div>
+      <Fold id="nset.sites" title={t('Nursery sites')} count={d.sites.length}>
         <div className="dlist">{d.sites.map(s => { const l = d.licenses.find(x => x.license_no === s.license)
           return <div key={s.code} className="drow"><span className="grow"><b>{s.name}</b><span className="muted"> · {t('license')} {s.license ?? t('none')}{l ? ` · ${l.entity}` : ''}</span></span></div> })}</div>
         <p className="muted small-note">{t('Invoices for clones come from the nursery license\'s entity. Edit licenses in Admin → Settings → Licenses.')}</p>
-      </section>
+      </Fold>
 
-      {nLics.map(l => <section key={l.license_no} className="dcard"><div className="dcard-h"><h3>{t('METRC tags')} · {l.license_no}</h3></div>
+      {nLics.map(l => <Fold key={l.license_no} id={`nset.tags.${l.license_no}`} title={`${t('METRC tags')} · ${l.license_no}`}>
         <TagRanges sb={sb} license={l.license_no} kind="nursery" ranges={d.ranges} used={used} canEdit flash={flash} onChanged={() => onSaved(t('Tags updated'))} />
-      </section>)}
+      </Fold>)}
+
+      <Fold id="nset.people" title={t('People')}><ModulePeople sb={sb} module="nursery" flash={flash} /></Fold>
 
       {room && <RoomSheet d={d} r={room} api={api} busy={busy} run={run} onClose={() => setRoom(null)} />}
     </div>

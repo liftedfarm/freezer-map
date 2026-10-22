@@ -1,3 +1,6 @@
+import { Fold } from './fold'
+import { StrainProfileEdit, loadProfiles, profileLine } from './strains'
+import type { StrainProfile } from './strains'
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { readSheet } from 'read-excel-file/browser'
@@ -185,6 +188,9 @@ export function SettingsView({ backend, inventoryStrains, onChanged, flash, list
 
   const load = () => backend.loadSettings().then(d => { setData(d); setErr(null) }).catch(e => setErr(String(e?.message ?? e)))
   useEffect(() => { load() }, [])
+  const [profiles, setProfiles] = useState<Map<number, StrainProfile>>(new Map())
+  const loadProfilesNow = () => { if (lists.includes('strains')) loadProfiles(backend.client()).then(setProfiles) }
+  useEffect(loadProfilesNow, [])
 
   const rows = (data?.[tab] ?? []) as ListRow[]
   const shown = rows.filter(r => (showRetired || r.active) && (!q || JSON.stringify(r).toLowerCase().includes(q.toLowerCase())))
@@ -243,36 +249,58 @@ export function SettingsView({ backend, inventoryStrains, onChanged, flash, list
         <input className="search" type="search" placeholder={`Search ${TITLES[tab].toLowerCase()}`} value={q} onChange={e => setQ(e.target.value)} />
         <button className="primary" onClick={() => setEdit(tab === 'customers' ? { kind: 'external', active: true } as Partial<Customer> : tab === 'strains' ? { aliases: [], active: true, show_on_menu: true } as Partial<Strain> : { active: true, spaces: 8, across: 2 } as Partial<Vehicle>)}>+ Add</button>
       </div>
-      <div className="row toolbar">
-        <label className="ghost small filebtn">Import spreadsheet
-          <input type="file" accept=".xlsx,.xlsm,.csv" onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) pickFile(f) }} />
-        </label>
-        <button className="ghost small" onClick={() => downloadTemplate(tab, rows)}>Download as spreadsheet</button>
-        <label className="check small-check"><input type="checkbox" checked={showRetired} onChange={e => setShowRetired(e.target.checked)} /> Show retired</label>
-      </div>
-      <p className="muted">Import adds new {TITLES[tab].toLowerCase()} and updates existing ones by name. Blank cells don't overwrite anything. The download doubles as a template.</p>
+      <Fold id={`set.${tab}.tools`} title="Import, export and retired">
+        <div className="row toolbar">
+          <label className="ghost small filebtn">Import spreadsheet
+            <input type="file" accept=".xlsx,.xlsm,.csv" onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) pickFile(f) }} />
+          </label>
+          <button className="ghost small" onClick={() => downloadTemplate(tab, rows)}>Download as spreadsheet</button>
+          <label className="check small-check"><input type="checkbox" checked={showRetired} onChange={e => setShowRetired(e.target.checked)} /> Show retired</label>
+        </div>
+        <p className="muted">Import adds new {TITLES[tab].toLowerCase()} and updates existing ones by name. Blank cells don't overwrite anything. The download doubles as a template.</p>
+      </Fold>
 
       {tab === 'strains' && unknownStrains.length > 0 && (
         <div className="warnbox">{unknownStrains.length} strain{unknownStrains.length > 1 ? 's' : ''} on pallets {unknownStrains.length > 1 ? "aren't" : "isn't"} in the list: {unknownStrains.slice(0, 6).join(', ')}{unknownStrains.length > 6 ? '…' : ''}. <a onClick={addMissing}>Add {unknownStrains.length > 1 ? 'them' : 'it'}</a>, or add {unknownStrains.length > 1 ? 'them' : 'it'} as another name on an existing strain.</div>
       )}
 
       {shown.length === 0 && <p className="muted">Nothing here yet. Add one, or import a spreadsheet.</p>}
-      {shown.map(r => (
-        <button key={r.id} className={`li setrow ${r.active ? '' : 'retired'}`} onClick={() => setEdit(structuredClone(r))}>
-          {tab === 'strains' && <span className="swatch" style={{ background: (r as Strain).color ?? 'transparent' }} />}
-          <div className="grow">
-            <div><b>{r.name}</b>{!r.active && <span className="muted"> · retired</span>}</div>
-            <div className="muted">{summary(tab, r, inventoryStrains)}</div>
-          </div>
-        </button>
+      {groupsOf(tab, shown, inventoryStrains).map(([gk, gl, gr]) => gr.length > 0 && (
+        <Fold key={gk} id={`set.${tab}.${gk}`} title={gl} count={gr.length} open={gk === 'main'} force={!!q}>
+          {gr.map(r => (
+            <button key={r.id} className={`li setrow ${r.active ? '' : 'retired'}`} onClick={() => setEdit(structuredClone(r))}>
+              {tab === 'strains' && <span className="swatch" style={{ background: (r as Strain).color ?? 'transparent' }} />}
+              <div className="grow">
+                <div><b>{r.name}</b>{!r.active && <span className="muted"> · retired</span>}</div>
+                <div className="muted">{[summary(tab, r, inventoryStrains), tab === 'strains' ? profileLine(profiles.get(r.id)) : ''].filter(Boolean).join(' · ')}</div>
+              </div>
+            </button>
+          ))}
+        </Fold>
       ))}
 
       {edit && <EditForm list={tab} row={edit} busy={busy} onClose={() => setEdit(null)} onSave={save} terms={terms}
-        extra={tab === 'customers' && edit.id != null && (edit as Customer).kind !== 'internal' && canTerms ? <TermsByYear backend={backend} c={edit as Customer} /> : null} />}
+        extra={tab === 'customers' && edit.id != null && (edit as Customer).kind !== 'internal' && canTerms ? <TermsByYear backend={backend} c={edit as Customer} />
+          : tab === 'strains' && edit.id != null && profiles.get(edit.id) ? <StrainProfileEdit sb={backend.client()} p={profiles.get(edit.id)!} flash={flash} onSaved={loadProfilesNow} /> : null} />}
       {plan && <ImportPreview list={tab} plan={plan} busy={busy} onClose={() => setPlan(null)} onApply={applyPlan} />}
       </>}
     </div>
   )
+}
+
+/** the folds a list splits into: [key, title, rows] */
+function groupsOf(list: ListName, rows: ListRow[], inv: Map<string, number>): [string, string, ListRow[]][] {
+  if (list === 'strains') {
+    const st = rows as Strain[]
+    const has = (s: Strain) => [s.name, ...(s.aliases ?? [])].some(x => (inv.get(x) ?? [...inv.entries()].find(([k]) => k.toLowerCase() === x.toLowerCase())?.[1] ?? 0) > 0)
+    return [['main', 'In the freezers', st.filter(r => r.active && r.show_on_menu !== false && has(r))], ['menu', 'On the menu, none in the freezers', st.filter(r => r.active && r.show_on_menu !== false && !has(r))], ['hidden', 'Hidden from menu', st.filter(r => r.active && r.show_on_menu === false)],
+      ['retired', 'Retired', st.filter(r => !r.active)]]
+  }
+  if (list === 'customers') {
+    const cs = rows as Customer[]
+    return [['main', 'Customers', cs.filter(r => r.active && r.kind !== 'internal')], ['internal', 'Our sites and labs', cs.filter(r => r.active && r.kind === 'internal')], ['retired', 'Retired', cs.filter(r => !r.active)]]
+  }
+  return [['main', TITLES[list], rows.filter(r => r.active)], ['retired', 'Retired', rows.filter(r => !r.active)]]
 }
 
 function summary(list: ListName, r: ListRow, inv: Map<string, number>) {

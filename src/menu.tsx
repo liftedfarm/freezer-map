@@ -1,3 +1,5 @@
+import { loadMenuInfo } from './strains'
+import type { MenuInfo } from './strains'
 import { useEffect, useState } from 'react'
 import type { Backend } from './api'
 import type { MenuRow, ReserveRequest } from './types'
@@ -14,6 +16,8 @@ export function OpenMenu({ backend, reserves }: { backend: Backend; reserves: bo
   const [q, setQ] = useState('')
   const [pick, setPick] = useState<MenuRow | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
+  const [info, setInfo] = useState<Map<string, MenuInfo>>(new Map())
+  useEffect(() => { loadMenuInfo(backend.client()).then(setInfo) }, [backend])
   const load = () => Promise.all([backend.openMenu(), backend.listRequests().catch(() => [] as ReserveRequest[])])
     .then(([m, r]) => { const y = Math.max(...m.map(x => x.crop_year), 0); setRows(m); setReqs(r.filter(x => !x.crop_year || x.crop_year <= y)); setErr(null) }).catch(e => setErr(String(e?.message ?? e)))
   useEffect(() => { load() }, [])
@@ -43,7 +47,8 @@ export function OpenMenu({ backend, reserves }: { backend: Backend; reserves: bo
         <tbody>
           {shown.map(r => (
             <tr key={r.strain}>
-              <td>{r.strain}
+              <td>{r.strain}{(() => { const m = info.get(r.strain.toLowerCase()); const bits = [m?.solventless_pct != null ? `${Number(m.solventless_pct)}% solventless` : '', m?.hydrocarbon_pct != null ? `${Number(m.hydrocarbon_pct)}% hydrocarbon` : ''].filter(Boolean)
+                return bits.length ? <div className="muted small">{bits.join(' · ')}</div> : null })()}
                 {r.request_id != null && <div className="reqnote">Requested {n0(r.requested_lbs)} lbs · waiting</div>}</td>
               <td className="num">{Number(r.available) > 0 ? n0(r.available) : <span className="muted">0</span>}</td>
               {reserves && <><td className="num">{r.my_reserved != null ? <>{n0(r.my_reserved)}<div className="muted small">{n0(r.my_left)} left</div></> : <span className="muted">-</span>}</td>

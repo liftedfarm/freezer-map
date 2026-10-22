@@ -11,6 +11,7 @@ import { BatchSheet, BatchesTab } from './batches'
 import { MotherSheet, MothersTab } from './mothers'
 import { PlanTab } from './plan'
 import { LabTests } from './tests'
+import { Leachate } from './leachate'
 import { BreedingTab } from './breeding'
 import { OpsLogs } from '../logs'
 import { SetupTab } from './setup'
@@ -66,7 +67,7 @@ export default function NurseryView({ backend, flash, tab, go, customers, isAdmi
       {tab === 'breeding' && <BreedingTab sb={sb} d={d} c={c} flash={flash} me={me ?? ''} />}
       {tab === 'logs' && <OpsLogs sb={sb} module="nursery" sites={d.sites.map(s => s.code)} areas={areas} strains={[...new Set([...d.mothers.map(m => m.strain), ...d.strains])]} flash={flash}
         wage={d.settings.wage} canEditRecipes={isAdmin} batches={d.batches.filter(b => b.stage !== 'cancelled').slice(0, 300).map(b => ({ id: b.id, strain: b.strain, label: `${fmtD(b.cut_on)} ${b.strain} ${GEN_LABEL[b.gen]} · ${n0(b.cuttings)}` }))}
-        extraTab={{ k: 'lab', l: t('Lab tests'), node: <LabTests d={d} c={c} api={api} flash={flash} onSaved={saved} /> }} />}
+        extraTabs={[{ k: 'leach', l: t('Leachate'), node: <Leachate sb={sb} d={d} flash={flash} /> }, { k: 'lab', l: t('Lab tests'), node: <LabTests d={d} c={c} api={api} flash={flash} onSaved={saved} /> }]} />}
       {tab === 'invoices' && <InvoicesView backend={backend} customers={customers} flash={flash} isAdmin={isAdmin} sender={sender} scope="nursery" />}
       {tab === 'review' && <NurseryReview d={d} c={c} onOrder={setOrder} onBatch={setBatch} onMother={setMother} go={go} />}
       {tab === 'activity' && <NurseryActivity api={api} />}

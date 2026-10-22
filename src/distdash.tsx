@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react'
-import { lbs } from './forms'
 import type { Backend } from './api'
 import { Card, Cards, DashHead, Meter, Tile, Tiles } from './dash'
 import type { Freezer, InvEvent, Load, LoadItem, LoadStop, Pallet, Site, Slot, Snapshot } from './types'
@@ -27,7 +26,6 @@ export interface SideCtx {
   searchFor: (q: string) => void
 }
 
-const PICKABLE = new Set(['On', 'Needs Attention'])
 const n0 = (n: number) => Math.round(n).toLocaleString()
 
 // ---------- Site Overview (workbook rows 5 to 15) ----------
@@ -73,73 +71,6 @@ export function Overview({ ctx }: { ctx: SideCtx }) {
         ))}
       </tbody>
     </table>
-  )
-}
-
-// ---------- Order Builder (workbook L3:T187) ----------
-
-export function OrderBuilder({ ctx }: { ctx: SideCtx }) {
-  const [strain, setStrain] = useState('')
-  const [need, setNeed] = useState('')
-  const [where, setWhere] = useState<'Both' | Site>('Both')
-  // pickable = loose package in a working freezer, not on a load
-  const pickable = useMemo(() => {
-    const out: { p: Pallet; f: Freezer; s: Slot }[] = []
-    for (const p of ctx.snap.pallets) {
-      if (p.status !== 'in_freezer' || p.container_id || p.kind === 'mixed' || p.slot_id == null || !p.strain || !p.current_weight) continue
-      if (ctx.onLoad(p)) continue
-      const f = ctx.freezerOf(p.slot_id), s = ctx.slot(p.slot_id)
-      if (!f || !s || !PICKABLE.has(f.status)) continue
-      out.push({ p, f, s })
-    }
-    return out
-  }, [ctx.snap])
-  const strains = useMemo(() => [...new Set(pickable.map(x => x.p.strain!))].sort(), [pickable])
-  const q = strain.trim().toLowerCase()
-  const lbsNeeded = parseFloat(need) || 0
-  const rows = pickable.filter(x => x.p.strain!.toLowerCase() === q && (where === 'Both' || x.f.site === where))
-  const available = rows.reduce((a, x) => a + (x.p.current_weight ?? 0), 0)
-  const best = lbsNeeded > 0 ? rows.filter(x => (x.p.current_weight ?? 0) >= lbsNeeded).sort((a, b) => (a.p.current_weight! - b.p.current_weight!) || (a.s.front_rank - b.s.front_rank))[0] : undefined
-  // easiest to grab: closest to the door first, then lighter pallets
-  const easy = [...rows].sort((a, b) => (a.s.front_rank - b.s.front_rank) || (a.p.current_weight! - b.p.current_weight!))
-  let run = 0
-  const list = easy.map(x => { const pull = lbsNeeded > 0 && run < lbsNeeded; run += x.p.current_weight!; return { ...x, pull, run } })
-  const pulled = list.filter(x => x.pull)
-  const pulledLbs = pulled.reduce((a, x) => a + x.p.current_weight!, 0)
-  const line = (x: { p: Pallet; f: Freezer; s: Slot }, extra?: React.ReactNode) => (
-    <button key={x.p.id} className="side-pick" onClick={() => ctx.openPallet(x.p.id)}>
-      {extra}<b>{x.p.code}</b><span>{x.f.site} F{x.f.number} · {x.s.code}</span><span>{lbs(x.p.current_weight)}</span>
-      <span className="muted">front {x.s.front_rank}{x.f.status !== 'On' ? ` · ${x.f.status}` : ''}</span>
-    </button>
-  )
-  return (
-    <div className="order">
-      <div className="order-in">
-        <input list="side-strains" placeholder="Strain" value={strain} onChange={e => setStrain(e.target.value)} />
-        <datalist id="side-strains">{strains.map(s => <option key={s} value={s} />)}</datalist>
-        <input type="number" inputMode="decimal" placeholder="Lbs needed" value={need} onChange={e => setNeed(e.target.value)} />
-        <select value={where} onChange={e => setWhere(e.target.value as 'Both' | Site)}><option>Both</option><option>OHR</option><option>GVR</option></select>
-      </div>
-      {q && rows.length === 0 && <div className="muted small-note">Nothing pickable for "{strain}". Pallets on a load, on mixed pallets, or in Off / Not Working freezers aren't counted.</div>}
-      {rows.length > 0 && (<>
-        <div className="order-kpis">
-          <div><span>Available</span><b>{n0(available)} lbs</b></div>
-          <div><span>Pallets to pull</span><b>{pulled.length}</b></div>
-          <div><span>Lbs pulled</span><b>{n0(pulledLbs)}</b></div>
-          <div className={lbsNeeded > pulledLbs ? 'short' : ''}><span>Short by</span><b>{n0(Math.max(0, lbsNeeded - pulledLbs))}</b></div>
-        </div>
-        {lbsNeeded > 0 && (<>
-          <div className="side-sub">Best pick: smallest single pallet that covers it</div>
-          {best ? line(best) : <div className="muted small-note">No single pallet has {n0(lbsNeeded)} lbs.</div>}
-        </>)}
-        <div className="side-sub">Easiest to grab: front slots first{lbsNeeded > 0 ? ' (✔ pull these)' : ''}</div>
-        <div className="side-list">
-          {list.slice(0, Math.max(12, pulled.length + 3)).map(x => line(x, <span className={`chk ${x.pull ? 'on' : ''}`}>{x.pull ? '✔' : ''}</span>))}
-          {list.length > Math.max(12, pulled.length + 3) && <div className="muted small-note">+{list.length - Math.max(12, pulled.length + 3)} more</div>}
-        </div>
-        <button className="ghost small" onClick={() => ctx.searchFor(strain)}>Show {strain} on the map</button>
-      </>)}
-    </div>
   )
 }
 
@@ -255,7 +186,6 @@ export function DistDashboard({ ctx, sales, goMap, fulfill, staged }: { ctx: Sid
         <Card title="Loads" badge={loads.length}>
           <Loads ctx={ctx} loads={loads} />
         </Card>
-        <Card title="Order builder"><OrderBuilder ctx={ctx} /></Card>
         <Card title="Recent activity"><Activity ctx={ctx} /></Card>
         <Card title="Site overview"><Overview ctx={ctx} /></Card>
       </Cards>

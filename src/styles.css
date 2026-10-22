@@ -667,3 +667,15 @@ a.btn { display: inline-flex; align-items: center; text-decoration: none; color:
 .viewbanner { margin: 0 0 10px; padding: 8px 12px; border-radius: 10px; font-size: 14px; background: color-mix(in srgb, var(--brand) 10%, var(--panel)); border: 1px solid color-mix(in srgb, var(--brand) 25%, var(--line)); }
 .viewonly main button.primary, .viewonly .sheet button.primary, .viewonly .sheet .csave .ghost.danger, .viewonly main .docact, .viewonly .sheet .docact,
 .viewonly main .selbar, .viewonly .sheet button.danger, .viewonly .csave > button:first-child { display: none !important; }
+
+/* folding settings areas */
+.fold { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); margin: 8px 0; }
+.fold-h { display: flex; align-items: center; gap: 6px; padding: 10px 12px; cursor: pointer; user-select: none; }
+.fold-h:hover { background: color-mix(in srgb, var(--brand) 5%, var(--panel)); border-radius: 12px; }
+.fold-arrow { width: 14px; color: var(--muted, #888); }
+.fold-b { padding: 0 12px 10px; }
+.fold-b > .li:first-child { margin-top: 0; }
+.sprofile { margin: 10px 0; }
+.sprofile .fold { margin: 6px 0; }
+.sfield .row input { flex: 1; min-width: 0; }
+.sphoto { max-width: 100%; max-height: 220px; border-radius: 10px; margin-top: 6px; object-fit: cover; }

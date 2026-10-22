@@ -3,6 +3,8 @@ import type { Backend } from './api'
 import { MODULES } from './types'
 import type { AppUser, Customer, Level, Me, ModKey } from './types'
 import { LANGS } from './i18n'
+import type { SupabaseClient } from '@supabase/supabase-js'
+import { isAdminOf, isOwnerMe } from './fold'
 
 type Kind = 'staff' | 'customer' | 'none'
 const KINDS: { k: Kind; label: string; what: string }[] = [
@@ -108,7 +110,13 @@ function UserForm({ user, customers, me, isMe, onClose, onSave, onRemove, backen
   const setLevel = (m: ModKey, lv: Level | null) => setU(v => { const a = { ...(v.access ?? {}) }; if (lv) a[m] = lv; else delete a[m]; return { ...v, access: a } })
   const isNew = !user.created_at
   const iOwn = me.access.owner
-  const locked = !!user.owner && !iOwn            // only Owners change Owners
+  const myLv = me.access.modules as Record<string, string | undefined>
+  const manages = (m: string) => iOwn || (m !== 'admin' && myLv[m] === 'admin')
+  const hasAdminModule = iOwn || !!myLv.admin
+  // Owners, and anyone who's an Admin of something: only an Owner changes them
+  const protectedU = !!user.owner || user.role === 'admin' || Object.values(user.access ?? {}).includes('admin')
+  const locked = (!!user.owner && !iOwn) || (!iOwn && !isNew && (protectedU || isMe))
+  const kindLocked = locked || (!hasAdminModule)
   const emailOk = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test((u.email ?? '').trim())
   const ok = emailOk && !locked && (kind !== 'customer' || !!u.customer_id)
   const run = (f: () => Promise<void>) => { setBusy(true); f().finally(() => setBusy(false)) }
@@ -118,7 +126,8 @@ function UserForm({ user, customers, me, isMe, onClose, onSave, onRemove, backen
     <div className="scrim" onClick={onClose}>
       <div className="sheet form" onClick={e => e.stopPropagation()}>
         <div className="sheet-h"><h2>{isNew ? 'Add person' : 'Edit person'}</h2><button className="ghost" onClick={onClose}>✕</button></div>
-        {locked && <div className="warnbox">{user.display_name || user.email} is an Owner. Only another Owner can change them.</div>}
+        {locked && <div className="warnbox">{isMe ? 'Ask an Owner to change your own access.' : user.owner ? `${user.display_name || user.email} is an Owner. Only another Owner can change them.` : `${user.display_name || user.email} is an Admin. Only an Owner can change another Admin.`}</div>}
+        {!iOwn && !locked && <p className="muted small">You can change the modules you're an Admin of: Off, View or User. Only Owners make Admins.</p>}
         <div className="field"><label>Email</label>
           <input type="email" value={u.email ?? ''} disabled={!isNew} autoFocus={isNew} onChange={e => set({ email: e.target.value })} placeholder="name@company.com" /></div>
         <div className="field"><label>Name <span className="muted">(what the app shows)</span></label>
@@ -128,7 +137,7 @@ function UserForm({ user, customers, me, isMe, onClose, onSave, onRemove, backen
         <div className="field"><label>Type</label>
           <div className="choices col">
             {KINDS.map(k => (
-              <button key={k.k} className={kind === k.k ? 'on' : ''} disabled={locked || (isMe && k.k !== 'staff')} onClick={() => setKind(k.k)}>
+              <button key={k.k} className={kind === k.k ? 'on' : ''} disabled={kindLocked || (isMe && k.k !== 'staff')} onClick={() => setKind(k.k)}>
                 <b>{k.label}</b> <span className="muted">{k.what}</span>
               </button>
             ))}
@@ -149,9 +158,9 @@ function UserForm({ user, customers, me, isMe, onClose, onSave, onRemove, backen
           {u.owner ? <p className="muted">Owners have every module as Admin.</p> : (
             <div className="field"><label>Modules</label>
               <div className="accgrid">
-                {MODULES.map(m => {
+                {MODULES.filter(m => manages(m.key)).map(m => {
                   const lv = a[m.key] ?? null
-                  const opts: [Level | null, string][] = m.key === 'admin' ? [[null, 'Off'], ['admin', 'On']] : [[null, 'Off'], ['view', 'View'], ['user', 'User'], ['admin', 'Admin']]
+                  const opts: [Level | null, string][] = m.key === 'admin' ? [[null, 'Off'], ['admin', 'On']] : iOwn ? [[null, 'Off'], ['view', 'View'], ['user', 'User'], ['admin', 'Admin']] : [[null, 'Off'], ['view', 'View'], ['user', 'User']]
                   return (
                     <div key={m.key} className="accrow">
                       <div><b>{m.label}</b><div className="muted">{lv === 'admin' && m.key !== 'admin' ? m.admin : lv === 'view' ? 'Sees everything a User sees, can\'t change anything' : lv ? m.user : m.what}</div></div>
@@ -164,7 +173,7 @@ function UserForm({ user, customers, me, isMe, onClose, onSave, onRemove, backen
             </div>
           )}
         </>)}
-        {!isNew && !isMe && !user.owner && !(user.access ?? {}).admin && (
+        {!isNew && !isMe && !user.owner && (iOwn || (!protectedU && (user.role === 'customer' ? myLv.sales === 'admin' : MODULES.some(m => manages(m.key) && (user.access ?? {})[m.key])))) && (
           <div className="field"><label>See what they see</label>
             <div className="row"><button className="ghost small" disabled={busy} onClick={() => run(async () => { await backend.startViewAs(user.email!); location.reload() })}>View as {user.display_name || user.email}</button>
               <span className="muted">Read-only, for up to 2 hours. Logged in Activity.</span></div></div>
@@ -172,7 +181,7 @@ function UserForm({ user, customers, me, isMe, onClose, onSave, onRemove, backen
         {!isNew && user.role === 'customer' && <LinkBox backend={backend} email={user.email!} claimed={claimed} flash={flash} onLinked={onLinked} />}
         {isMe && <p className="muted">You can't take away your own access{iOwn ? ' or Owner' : ' or Admin module'}. Another {iOwn ? 'Owner' : 'Admin'} can.</p>}
         <div className="row between">
-          {!isNew && !isMe && !locked
+          {!isNew && !isMe && !locked && hasAdminModule
             ? <button className="ghost" disabled={busy} onClick={() => run(() => onRemove(u.email!))}>Remove</button>
             : <span />}
           <div className="row">
@@ -214,4 +223,53 @@ function LinkBox({ backend, email, claimed, flash, onLinked }: {
       </>}
     </div>
   )
+}
+
+/** a module's Settings > People: who has this module and at what level. Owners set any level; the module's Admins set Off / View / User
+ *  for people who aren't Admins. The database checks all of it (set_module_level). */
+export function ModulePeople({ sb, module, flash }: { sb: SupabaseClient | null; module: 'distribution' | 'sales' | 'cultivation' | 'nursery'; flash: (t: string, bad?: boolean) => void }) {
+  const [rows, setRows] = useState<{ email: string; name: string | null; owner: boolean; last: string | null; lv: Level | null }[] | null>(null)
+  const [q, setQ] = useState('')
+  const [busy, setBusy] = useState(false)
+  const own = isOwnerMe(), can = isAdminOf(module)
+  const load = async () => {
+    if (!sb) return
+    const [u, a] = await Promise.all([sb.from('app_users').select('email,display_name,owner,last_seen,role').in('role', ['admin', 'sales', 'crew']).order('email'),
+      sb.from('module_access').select('email,level').eq('module', module)])
+    const lv = new Map(((a.data ?? []) as { email: string; level: Level }[]).map(x => [x.email, x.level]))
+    setRows(((u.data ?? []) as { email: string; display_name: string | null; owner: boolean; last_seen: string | null }[])
+      .map(x => ({ email: x.email, name: x.display_name, owner: x.owner, last: x.last_seen, lv: x.owner ? 'admin' as Level : lv.get(x.email) ?? null })))
+  }
+  useEffect(() => { load() }, [sb, module])
+  if (!rows) return <p className="muted">Loading…</p>
+  const label = MODULES.find(m => m.key === module)?.label ?? module
+  const set = async (email: string, level: Level | null) => {
+    if (!sb) return
+    setBusy(true)
+    const { error } = await sb.rpc('set_module_level', { p_email: email, p_module: module, p_level: level ?? '' })
+    setBusy(false)
+    if (error) flash(/set_module_level/.test(error.message) ? 'Run 040_strains_access_pallets.sql in Supabase first' : error.message, true)
+    else { flash('Access saved'); load() }
+  }
+  const viewAs = async (email: string) => {
+    if (!sb) return
+    const { error } = await sb.rpc('start_view_as', { p_email: email })
+    if (error) flash(error.message, true); else location.reload()
+  }
+  const ql = q.trim().toLowerCase()
+  const shown = rows.filter(r => !ql || `${r.email} ${r.name ?? ''}`.toLowerCase().includes(ql)).sort((a, b) => Number(!a.lv) - Number(!b.lv) || a.email.localeCompare(b.email))
+  const opts: [Level | null, string][] = own ? [[null, 'Off'], ['view', 'View'], ['user', 'User'], ['admin', 'Admin']] : [[null, 'Off'], ['view', 'View'], ['user', 'User']]
+  return <div className="mpeople">
+    <p className="muted small">{own ? `Who has ${label}. You're an Owner, so you can set any level.` : can ? `Who has ${label}. As a ${label} Admin you can set Off, View or User for people who aren't Admins. Only Owners make Admins.` : `Who has ${label}.`}</p>
+    <input className="search" type="search" placeholder="Search people" value={q} onChange={e => setQ(e.target.value)} />
+    <div className="dlist">{shown.map(r => {
+      const locked = !can || (!own && (r.owner || r.lv === 'admin'))
+      return <div key={r.email} className={`drow ${r.lv ? '' : 'off'}`}>
+        <span className="grow"><b>{r.name || r.email.split('@')[0]}</b><span className="muted small"> · {r.email}{r.owner ? ' · Owner' : ''}</span></span>
+        {locked ? <span className="pill">{r.owner ? 'Owner' : r.lv ? r.lv[0].toUpperCase() + r.lv.slice(1) : 'Off'}</span>
+          : <div className="seg">{opts.map(([v, l]) => <button key={l} disabled={busy} className={r.lv === v ? 'on' : ''} onClick={() => r.lv !== v && set(r.email, v)}>{l}</button>)}</div>}
+        {can && !r.owner && (own || r.lv !== 'admin') && r.lv && <button className="ghost small" title="See what they see (read only, 2 hours)" onClick={() => viewAs(r.email)}>View as</button>}
+      </div>
+    })}</div>
+  </div>
 }

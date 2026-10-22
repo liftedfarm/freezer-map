@@ -58,13 +58,14 @@ function lineCost(l: ProductLine, p: Product | undefined): number | null {
   return l.total * p.price
 }
 
-export function OpsLogs({ sb, module, sites, areas, strains, flash, batches, wage, extraTab, fieldAcres, canEditRecipes }: {
+export function OpsLogs({ sb, module, sites, areas, strains, flash, batches, wage, extraTabs, fieldAcres, canEditRecipes }: {
   sb: SupabaseClient; module: 'nursery' | 'cultivation'; sites: string[]; areas: string[]; strains: string[]; flash: Flash
-  batches?: { id: number; label: string; strain: string }[]; wage?: number; extraTab?: { k: string; l: string; node: ReactNode }
+  batches?: { id: number; label: string; strain: string }[]; wage?: number; extraTabs?: { k: string; l: string; node: ReactNode }[]
   fieldAcres?: Record<string, number>; canEditRecipes?: boolean
 }) {
   const field = module === 'cultivation'
   const [kind, setKind] = useState<LogKind | 'extra' | 'recipes' | 'products'>('spray')
+  const [extraK, setExtraK] = useState<string | null>(null)
   const [rows, setRows] = useState<OpsLog[] | null>(null)
   const [products, setProducts] = useState<Product[]>([])
   const [recipes, setRecipes] = useState<Recipe[]>([])
@@ -132,7 +133,7 @@ export function OpsLogs({ sb, module, sites, areas, strains, flash, batches, wag
     <div className="row toolbar between">
       <div className="row wrap">
         <div className="seg">{(['spray', 'feed', 'labor'] as LogKind[]).map(k => <button key={k} className={kind === k ? 'on' : ''} onClick={() => setKind(k)}>{t(KIND_LABEL[k])}</button>)}
-          {extraTab && <button className={kind === 'extra' ? 'on' : ''} onClick={() => setKind('extra')}>{extraTab.l}</button>}
+          {extraTabs?.map(x => <button key={x.k} className={kind === 'extra' && extraK === x.k ? 'on' : ''} onClick={() => { setKind('extra'); setExtraK(x.k) }}>{x.l}</button>)}
           <button className={kind === 'recipes' ? 'on' : ''} onClick={() => setKind('recipes')}>{t('Recipes')}</button>
           <button className={kind === 'products' ? 'on' : ''} onClick={() => setKind('products')}>{t('Products')}</button></div>
         {kind !== 'extra' && kind !== 'recipes' && kind !== 'products' && <>
@@ -143,7 +144,7 @@ export function OpsLogs({ sb, module, sites, areas, strains, flash, batches, wag
       </div>
       {kind !== 'extra' && kind !== 'recipes' && kind !== 'products' && <button className="primary" onClick={() => newLog(kind)}>{t('+ ' + KIND_LABEL[kind] + ' log')}</button>}
     </div>
-    {kind === 'extra' && extraTab?.node}
+    {kind === 'extra' && extraTabs?.find(x => x.k === extraK)?.node}
     {kind === 'products' && <Products sb={sb} module={module} products={products} logs={rows} canEdit={!!canEditRecipes} field={field} flash={flash} onChanged={load} />}
     {kind === 'recipes' && <Recipes sb={sb} module={module} recipes={recipes} products={products} canEdit={!!canEditRecipes} flash={flash} onChanged={load} />}
     {kind !== 'extra' && kind !== 'recipes' && kind !== 'products' && (!shown.length ? <p className="muted">{t('No ' + KIND_LABEL[kind].toLowerCase() + ' logs in {yr}.', { yr })}</p> : <>

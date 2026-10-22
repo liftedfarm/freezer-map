@@ -86,7 +86,8 @@ function LogPage({ h, d, c, api, flash, onSaved, back }: { h: Harvest; d: CultDa
           <div><b>{k.palletLbs && (h.plants_harvested ?? h.plants) ? n1(k.palletLbs / (h.plants_harvested ?? h.plants)!) : ''}</b><span>lbs / plant{h.est_lbs_per_plant ? ` (est ${n1(h.est_lbs_per_plant)})` : ''}</span></div>
         </div>
         <Weights title="Raw bins" kind="raw" rows={raw} busy={busy} done={done} unit="bin" onAdd={lbs => run(() => api.logWeight(h.id, 'raw', lbs), `Bin ${n0(lbs)} lbs`)} onRemove={id => run(() => api.removeWeight(id), 'Removed')} />
-        <PalletLog h={h} api={api} busy={busy} done={done} pallets={pallets} run={run} />
+        <PalletLog h={h} api={api} busy={busy} done={done} pallets={pallets} run={run}
+          prefix={c.field.get(h.field_id ?? -1)?.kind === 'trials' ? 'T' : c.site.get(h.site)?.pallet_prefix ?? 'P'} />
       </>}
 
       {h.kind === 'dry' && <>
@@ -134,9 +135,17 @@ function Weights({ title, kind, rows, busy, done, unit, withTag, onAdd, onRemove
 }
 
 /** fresh frozen pallets, one at a time */
-function PalletLog({ h, api, busy, done, pallets, run }: {
+/** P + the METRC tag's last 4 digits: 1A4…10053 → P53 (trials: T053) */
+export function palletFromTag(tag: string, prefix = 'P') {
+  const m = /(\d{4})$/.exec(tag.trim())
+  if (!m) return ''
+  const n = Number(m[1])
+  return n ? prefix + (prefix === 'T' ? String(n).padStart(3, '0') : String(n)) : ''
+}
+
+function PalletLog({ h, api, busy, done, pallets, run, prefix }: {
   h: Harvest; api: CultApi; busy: boolean; done: boolean; pallets: { id: number; code: string; og_weight: number | null; package_tag: string | null; boxes?: number | null; partial?: boolean }[]
-  run: (f: () => Promise<unknown>, ok: string) => Promise<void>
+  run: (f: () => Promise<unknown>, ok: string) => Promise<void>; prefix: string
 }) {
   const last = pallets[pallets.length - 1]
   const [lbs, setLbs] = useState<number | null>(650)
@@ -148,9 +157,13 @@ function PalletLog({ h, api, busy, done, pallets, run }: {
   const used = useMemo(() => new Set(pallets.map(p => p.package_tag)), [pallets])
   const suggested = pool.find(t => !used.has(t)) ?? ''
   useEffect(() => { setTag(suggested) }, [suggested])
+  // pallet # = the tag's last 4 digits (…10053 → P53); type over it if this pallet is numbered differently
+  const [code, setCode] = useState<string | null>(null)
+  const auto = palletFromTag(tag, prefix)
+  const shownCode = code ?? auto
   async function save() {
-    await run(() => api.addPallets(h.id, [{ lbs: lbs!, tag: tag.trim(), boxes, partial }]), `Pallet saved: ${n0(lbs!)} lbs, in Staging`)
-    setPartial(false); setLbs(650)
+    await run(() => api.addPallets(h.id, [{ lbs: lbs!, tag: tag.trim(), code: shownCode || undefined, boxes, partial }]), `Pallet ${shownCode || ''} saved: ${n0(lbs!)} lbs, in Staging`)
+    setPartial(false); setLbs(650); setCode(null)
   }
   return (
     <section className="dcard">
@@ -160,6 +173,9 @@ function PalletLog({ h, api, busy, done, pallets, run }: {
         <label><span>Boxes</span><NumIn value={boxes} onChange={setBoxes} /></label>
         <label className="htag"><span>METRC tag {suggested && tag === suggested ? <em className="muted">(next in range)</em> : !tag ? <em className="muted">(blank = pending)</em> : null}</span>
           <div className="row"><input value={tag} onChange={e => setTag(e.target.value.toUpperCase())} placeholder="Scan or type" /><ScanButton onScan={setTag} disabled={busy} /></div></label>
+        <label><span>Pallet # {code == null && auto ? <em className="muted">(from tag)</em> : code != null && auto && code !== auto ? <a className="linkbtn" onClick={() => setCode(null)}>use {auto}</a> : !auto ? <em className="muted">(blank = next)</em> : null}</span>
+          <input value={shownCode} placeholder={`${prefix}…`} onChange={e => setCode(e.target.value.toUpperCase().replace(/\s/g, ''))} style={{ width: 90 }} /></label>
+        {shownCode && pallets.some(p => p.code === shownCode) && <p className="warn-t small">{shownCode} is already on this harvest.</p>}
         <label className="check"><input type="checkbox" checked={partial} onChange={e => setPartial(e.target.checked)} /> <span>Last pallet (partial)</span></label>
         <button className="primary" disabled={busy || !(Number(lbs) > 0)} onClick={save}>Save pallet</button>
         <p className="cnote">Saved pallets go into {h.site} Staging on the freezer map right away, so Distribution can move them into freezers. Extra boxes on top count in the pallet weight.</p>

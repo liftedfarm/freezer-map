@@ -1,10 +1,10 @@
-import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Backend, CONFIG_MISSING, IS_PORTAL, makeBackend, portalUrl } from './api'
 import { FREEZER_STATUSES } from './types'
 import { MergeForm, MergeHere, MixedBuilder, NewPalletChooser, PickMixed, SingleForm, SplitForm, TagForm, WeightForm, lbs } from './forms'
 import { SettingsView } from './settings'
-import { UsersTab } from './users'
+import { ModulePeople, UsersTab } from './users'
 import { AdminDashboard, AdminReview, AppSettingsPanel } from './admin'
 import type { Jump } from './admin'
 import { DeadlinesPanel, SalesDashboard, SalesReview } from './salesdash'
@@ -28,6 +28,7 @@ import { LicensesPanel } from './licenses'
 import { LoadForm, LoadView, PickLoad, TransitView, stopColor } from './loads'
 import type { LoadCtx } from './loads'
 import { lang, setLang, t } from './i18n'
+import { setMyAccess } from './fold'
 import type { FOrder, ModKey, UnmatchedTag, ShippedCheck, Freezer, Me, FreezerStatus, InvEvent, Load, LoadItem, LoadStop, Pallet, Site, Slot, Snapshot } from './types'
 
 const backend: Backend = makeBackend()
@@ -258,7 +259,8 @@ export default function App() {
   const setSalesTab = (t: SalesTab) => { setSalesTabS(t); setView('sales'); top() }
   const setAdminTab = (t: AdminTab) => { setAdminTabS(t); setView('admin'); top() }
   const setNurTab = (t: NTab) => { setNurTabS(t); store('nur.tab', t); setView('nursery'); top() }
-  const go = (v: View) => { setView(v); top() }
+  const lastView = useRef<View>('dash')
+  const go = (v: View) => { if (view !== 'mine') lastView.current = view; setView(v); top() }
   const [freezerId, setFreezerId] = useState<number | null>(null)
   const [palletId, setPalletId] = useState<number | null>(null)
   const [plan, setPlan] = useState<Plan>(EMPTY)
@@ -300,6 +302,7 @@ export default function App() {
   const staff = !!me && ['admin', 'sales', 'crew'].includes(me.role)
   // language: the person's own setting (an Admin may have set it for them); English until signed in
   if (me && (me.access?.prefs?.lang ?? 'en') !== lang()) setLang(me.access?.prefs?.lang ?? 'en')
+  setMyAccess(me?.access ?? null)
   const lv = me?.access?.modules ?? {}
   const MODS = (Object.keys(MOD_KEY) as Mod[]).map(m => ({ m, l: ML(m), on: !!lv[MOD_KEY[m]] }))
   const myMods = MODS.filter(x => x.on)
@@ -619,7 +622,7 @@ export default function App() {
         {cur === 'dist' && !noMods && <input className="search" type="search" placeholder="Pallet, strain or tag" value={query}
           onChange={e => { setQuery(e.target.value); if (view === 'freezer' || view === 'activity' || view === 'dash' || view === 'mine') setView('map') }} />}
         {(cur !== 'dist' || noMods) && <span className="grow" />}
-        <button className={`ghost small ${view === 'mine' ? 'on-btn' : ''}`} title={t('Your own settings')} onClick={() => go('mine')}>⚙<span className="hide-phone"> {t('My settings')}</span></button>
+        <button className={`ghost small ${view === 'mine' ? 'on-btn' : ''}`} title={t('Your own settings')} onClick={() => (view === 'mine' ? go(lastView.current) : go('mine'))}>⚙<span className="hide-phone"> {t('My settings')}</span></button>
         <button className="ghost small" title={t('Signed in as {u}. Click to sign out.', { u: user ?? '' })} onClick={() => backend.signOut().then(() => setUser(null))}>{who(user)} ⏏</button>
       </header>
 
@@ -713,7 +716,8 @@ export default function App() {
           if (salesTab === 'invoices') return <InvoicesView backend={backend} customers={snap.customers ?? []} flash={flash} isAdmin={salesAdmin} sender={me?.display_name} />
           if (salesTab === 'settings') return <SettingsView backend={backend} flash={flash} onChanged={() => { reload() }} inventoryStrains={invStrains} title="Sales settings"
             lists={['customers', 'strains']} canTerms={salesAdmin} extra={[{ k: 'terms', l: 'Payment terms', node: <TermsPanel backend={backend} flash={flash} canEdit={salesAdmin} /> },
-              { k: 'deadlines', l: 'Reserve deadlines', node: <DeadlinesPanel backend={backend} flash={flash} /> }]} />
+              { k: 'deadlines', l: 'Reserve deadlines', node: <DeadlinesPanel backend={backend} flash={flash} /> },
+              { k: 'people', l: 'People', node: <ModulePeople sb={backend.client()} module="sales" flash={flash} /> }]} />
           return <ReservesView key={`sales-${ordersKey}`} backend={backend} flash={flash} isAdmin={salesAdmin} mode={salesTab} onCounts={refreshCounts} fulfil={new Map((forders ?? []).map(f => [f.id, f]))} onFulfil={refreshF} customers={snap.customers ?? []}
             onNewOrder={() => setNewOrder(true)} onDoc={(k, id) => setDoc({ kind: k, id })}
             onInvoice={async id => { try { const inv = await backend.makeInvoice(id); setDoc({ kind: 'invoice', id: inv.id }) } catch (e) { flash(String((e as Error).message ?? e), true) } }} strains={snap.strains ?? []}
@@ -736,7 +740,8 @@ export default function App() {
           lists={[]} extra={[{ k: 'users', l: 'Users and access', node: <UsersTab backend={backend} me={me!} customers={snap.customers ?? []} flash={flash} /> },
             { k: 'licenses', l: 'Licenses', node: <LicensesPanel backend={backend} flash={flash} /> },
             { k: 'app', l: 'App settings', node: <AppSettingsPanel backend={backend} flash={flash} /> }]} />}
-        {view === 'settings' && cur === 'dist' && <SettingsView backend={backend} flash={flash} onChanged={() => { reload() }} inventoryStrains={invStrains} title="Distribution settings" lists={['vehicles', 'strains']} />}
+        {view === 'settings' && cur === 'dist' && <SettingsView backend={backend} flash={flash} onChanged={() => { reload() }} inventoryStrains={invStrains} title="Distribution settings" lists={['vehicles', 'strains']}
+          extra={[{ k: 'people', l: 'People', node: <ModulePeople sb={backend.client()} module="distribution" flash={flash} /> }]} />}
       </main>
 
       {active(plan) && L && (
