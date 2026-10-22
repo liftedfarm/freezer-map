@@ -4,7 +4,8 @@ import { readSheet } from 'read-excel-file/browser'
 import { parseCsv } from './settings'
 import { OpenMenu } from './menu'
 import { RequestsPanel } from './requests'
-import type { MenuNumbers, ReserveRequest, ReserveYears, Balance, Customer, ImportResult, Order, RoshiRow, Strain } from './types'
+import { STATE_LABEL } from './fulfill'
+import type { FOrder, MenuNumbers, ReserveRequest, ReserveYears, Balance, Customer, ImportResult, Order, RoshiRow, Strain } from './types'
 
 const n0 = (x: number) => Math.round(x).toLocaleString()
 
@@ -44,9 +45,10 @@ export type SalesMode = 'customer' | 'strain' | 'orders' | 'requests' | 'menu'
 export const SALES_TITLES: Record<SalesMode, string> = { menu: 'Open menu', orders: 'Orders', requests: 'Requests', customer: 'Reserves by customer', strain: 'Reserves by strain' }
 
 /** Sales screens. The Sales module menu picks the screen (mode); isAdmin = Sales Admin (approvals, reserves, deadlines). */
-export function ReservesView({ backend, customers, strains, onHand, flash, isAdmin, mode, onCounts }: {
+export function ReservesView({ backend, customers, strains, onHand, flash, isAdmin, mode, onCounts, fulfil, onFulfil }: {
   backend: Backend; customers: Customer[]; strains: Strain[]; onHand: Map<string, number>
   flash: (t: string, bad?: boolean) => void; isAdmin: boolean; mode: SalesMode; onCounts?: () => void
+  fulfil?: Map<number, FOrder>; onFulfil?: () => Promise<void>
 }) {
   const [reqs, setReqs] = useState<ReserveRequest[]>([])
   const [nums, setNums] = useState<MenuNumbers[]>([])
@@ -228,9 +230,11 @@ export function ReservesView({ backend, customers, strains, onHand, flash, isAdm
             <div key={o.id} className="rescard">
               <button className="li setrow" onClick={() => setOpen(open === -o.id ? null : -o.id)}>
                 <div className="grow"><b>{o.so_number ?? `Order #${o.id}`}</b> <span className={`pill o-${o.status}`}>{STATUS_LABEL[o.status]}</span>
+                  {o.status === 'pending' && fulfil?.get(o.id) && <span className={`pill fs-${fulfil.get(o.id)!.state}`}>{STATE_LABEL[fulfil.get(o.id)!.state]}{fulfil.get(o.id)!.stop ? ` · ${fulfil.get(o.id)!.stop!.load}` : ''}</span>}
                   <div className="muted">{cname(o.customer_id)} · {fmtDate(o.order_date)}{o.source === 'portal' ? ' · from portal' : ''}{o.roshi_status && o.roshi_status !== 'Fulfilled' ? ` · Roshi: ${o.roshi_status}` : ''}</div></div>
                 <b className="num">{n0(orderLbs(o))} lbs</b>
               </button>
+              {open === -o.id && fulfil?.get(o.id)?.state === 'needs_ok' && <FillOk f={fulfil.get(o.id)!} backend={backend} flash={flash} onDone={async () => { await load(); await onFulfil?.() }} />}
               {open === -o.id && <OrderEditor backend={backend} o={o} strains={strains} flash={flash} onChanged={load} />}
             </div>
           ))}
@@ -388,6 +392,23 @@ function OrderEditor({ backend, o, strains, flash, onChanged }: {
           <button className="ghost small" disabled={busy} onClick={() => run(() => backend.setOrderStatus(o.id, 'cancelled', so, ''), 'Order cancelled')}>Cancel order</button>
         </div>
       )}
+    </div>
+  )
+}
+
+/** Sales OKs what Distribution assigned when it isn't exactly what was ordered */
+export function FillOk({ f, backend, flash, onDone }: { f: FOrder; backend: Backend; flash: (t: string, bad?: boolean) => void; onDone: () => Promise<void> }) {
+  const [busy, setBusy] = useState(false)
+  const diffs = f.lines.map(l => ({ l, got: l.picks.reduce((a, p) => a + Number(p.lbs), 0) })).filter(x => (x.got > 0 || x.l.cant_fill) && x.got !== Number(x.l.lbs))
+  return (
+    <div className="warnbox fillok">
+      <b>Distribution assigned different amounts.</b> OK them and the order lines change to match (and bill from there).
+      <table className="restable"><thead><tr><th>Strain</th><th className="num">Ordered</th><th className="num">Assigned</th><th className="num">Diff</th></tr></thead>
+        <tbody>{diffs.map(({ l, got }) => <tr key={l.id}><td>{l.strain}</td><td className="num">{n0(Number(l.lbs))}</td><td className="num"><b>{l.cant_fill && !got ? "can't fill" : n0(got)}</b></td>
+          <td className={`num ${got > Number(l.lbs) ? 'up' : 'down'}`}>{got > Number(l.lbs) ? '+' : ''}{n0(got - Number(l.lbs))}</td></tr>)}</tbody></table>
+      <div className="row"><button className="primary small" disabled={busy} onClick={async () => {
+        setBusy(true); try { const n = await backend.approveFill(f.id); await onDone(); flash(`${n} line${n === 1 ? '' : 's'} OK'd`) } catch (e) { flash(String((e as Error).message ?? e), true) } finally { setBusy(false) } }}>OK these amounts</button>
+        <span className="muted">Or ask Distribution to change the pallets.</span></div>
     </div>
   )
 }

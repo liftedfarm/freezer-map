@@ -9,6 +9,7 @@ import { AdminDashboard, AdminReview, AppSettingsPanel } from './admin'
 import type { Jump } from './admin'
 import { DeadlinesPanel, SalesDashboard, SalesReview } from './salesdash'
 import { MySettings } from './mine'
+import { FulfillView, STATE_LABEL } from './fulfill'
 import { applyTheme } from './theme'
 import { EMPTY, active, addMoves, addToTray, backToTray, dropFromPlan, fillStaging, laneShuffle, occupants, place, slotView, suggestions, toSave } from './plan'
 import type { Layout, Plan, PlanMove, PlaceMode } from './plan'
@@ -22,13 +23,13 @@ import { CULT_TABS, CULT_TAIL } from './cult/tabs'
 import type { CultTab } from './cult/tabs'
 import { LoadForm, LoadView, PickLoad, TransitView, stopColor } from './loads'
 import type { LoadCtx } from './loads'
-import type { ModKey, UnmatchedTag, ShippedCheck, Freezer, Me, FreezerStatus, InvEvent, Load, LoadItem, LoadStop, Pallet, Site, Slot, Snapshot } from './types'
+import type { FOrder, ModKey, UnmatchedTag, ShippedCheck, Freezer, Me, FreezerStatus, InvEvent, Load, LoadItem, LoadStop, Pallet, Site, Slot, Snapshot } from './types'
 
 const backend: Backend = makeBackend()
 // Cultivation module: its own bundle, only loaded for users who have it switched on
 const CultView = lazy(() => import('./cult/CultView'))
 
-type View = 'dash' | 'map' | 'freezer' | 'transit' | 'load' | 'review' | 'activity' | 'settings' | 'sales' | 'cult' | 'admin' | 'mine'
+type View = 'dash' | 'fulfill' | 'map' | 'freezer' | 'transit' | 'load' | 'review' | 'activity' | 'settings' | 'sales' | 'cult' | 'admin' | 'mine'
 // modules: each person has a level (User / Admin) per module; Owners have all of them (Admin > Settings > Users)
 type Mod = 'dist' | 'sales' | 'cult' | 'admin'
 const MOD_KEY: Record<Mod, ModKey> = { dist: 'distribution', sales: 'sales', cult: 'cultivation', admin: 'admin' }
@@ -192,6 +193,17 @@ function describe(ix: Index, e: InvEvent, names?: Map<number, string>) {
     case 'reserve_approved': case 'reserve_declined': { const d = e.details as { customer?: string; strain?: string; from?: number; to?: number } | null
       return `Reserve request ${e.type === 'reserve_approved' ? 'approved' : 'declined'}: ${d?.customer} · ${d?.strain} ${lbs(Number(d?.from ?? 0))} → ${lbs(Number(d?.to ?? 0))}` }
     case 'user_removed': return `${e.note} removed from users`
+    case 'fulfill_assigned': case 'fulfill_unassigned': case 'fulfill_cant_fill': case 'fulfill_can_fill': case 'fulfill_loaded': case 'fulfill_unloaded': case 'order_fill_ok': {
+      const d = e.details as { customer?: string; so?: string; strain?: string; load?: string; from?: number; to?: number } | null
+      const o = `${d?.customer ?? ''}${d?.so ? ` ${d.so}` : ''}`
+      const code = e.pallet_id != null ? (ix.pallet.get(e.pallet_id)?.code ?? names?.get(e.pallet_id) ?? `#${e.pallet_id}`) : ''
+      if (e.type === 'fulfill_assigned') return `${code} assigned to ${o}${e.lbs ? ` (${lbs(Number(e.lbs))})` : ''}`
+      if (e.type === 'fulfill_unassigned') return `${code} unassigned from ${o}`
+      if (e.type === 'fulfill_cant_fill') return `${o}: can't fill ${d?.strain}`
+      if (e.type === 'fulfill_can_fill') return `${o}: ${d?.strain} back on`
+      if (e.type === 'fulfill_loaded') return `${o} put on ${d?.load}`
+      if (e.type === 'fulfill_unloaded') return `${o} taken off ${d?.load}`
+      return `${o}: Sales OK'd ${d?.strain} at ${lbs(Number(d?.to ?? 0))} (ordered ${lbs(Number(d?.from ?? 0))})` }
     case 'user_access': { const d = e.details as { email?: string; owner?: boolean; kind?: string; access?: Record<string, string> } | null
       return `${d?.email}: ${d?.kind !== 'staff' ? d?.kind : d?.owner ? 'Owner' : Object.entries(d?.access ?? {}).map(([m, l]) => `${m === 'cultivation' ? 'production' : m} ${l}`).join(', ') || 'no modules'}` }
     case 'app_setting': { const d = e.details as { key?: string; value?: string } | null; return `App setting ${d?.key} set to ${d?.value}` }
@@ -297,11 +309,16 @@ export default function App() {
   }, [me?.email])
   // the module we're in isn't on for this person: go to one that is
   useEffect(() => { if (staff && cur !== mod && myMods.length) goMod(cur) }, [cur, mod, staff, myMods.length])
+  // Fulfillment: open orders and the pallets held for them (Distribution and Sales)
+  const [forders, setForders] = useState<FOrder[] | null>(null)
+  const canFulfill = !!lv.distribution || !!lv.sales
+  const refreshF = useCallback(async () => { if (canFulfill) setForders(await backend.fulfillmentOrders().catch(() => [])) }, [canFulfill])
   useEffect(() => {
     if (!staff) return
     reload().then(() => setLoadError(null)).catch(e => setLoadError(String(e?.message ?? e)))
-    return backend.subscribe(() => { reload() })
-  }, [staff, reload])
+    refreshF()
+    return backend.subscribe(() => { reload(); refreshF() })
+  }, [staff, reload, refreshF])
 
   // search outside the live set (archived / old pallets) once the query is specific
   useEffect(() => {
@@ -428,6 +445,10 @@ export default function App() {
   }
   const looseList = snap.pallets.filter(loose).filter(p => !ix.loadOf.has(p.id))
   const openLoads = (snap.loads ?? []).filter(l => ['planning', 'loading', 'in_transit'].includes(l.status))
+  const heldBy = new Map<number, FOrder>()
+  for (const o of forders ?? []) if (o.state !== 'shipped') for (const l of o.lines) for (const pk of l.picks) heldBy.set(pk.pallet_id, o)
+  const toFulfill = (forders ?? []).filter(o => o.state === 'open' || o.state === 'ready').length
+  const canonOf = (() => { const m = new Map<string, string>(); for (const st of snap.strains ?? []) for (const n of [st.name, ...(st.aliases ?? [])]) m.set(n.toLowerCase(), st.name.toLowerCase()); return (x: string | null | undefined) => { const k = (x ?? '').trim().toLowerCase(); return m.get(k) ?? k } })()
   const ctx: LoadCtx = {
     loads: snap.loads ?? [], stops: snap.stops ?? [], items: snap.items ?? [],
     vehicles: snap.vehicles ?? [], customers: snap.customers ?? [],
@@ -490,6 +511,7 @@ export default function App() {
   const distMain: NavItem[] = [
     { k: 'dash', l: 'Dashboard', on: view === 'dash', go: () => go('dash') },
     { k: 'map', l: 'Map', on: view === 'map' || view === 'freezer', go: () => go(view !== 'map' && view !== 'freezer' && freezerId != null ? 'freezer' : 'map') },
+    { k: 'fulfill', l: <>Fulfillment{badge(toFulfill)}</>, on: view === 'fulfill', go: () => go('fulfill') },
     { k: 'transit', l: <>Transit{badge(openLoads.length)}</>, on: view === 'transit' || view === 'load', go: () => go('transit') },
   ]
   const distTail: NavItem[] = [
@@ -500,7 +522,8 @@ export default function App() {
   const sItem = (t: SalesTab, l: ReactNode): NavItem => ({ k: t, l, on: view === 'sales' && salesTab === t, go: () => setSalesTab(t) })
   const salesMain: NavItem[] = [sItem('dash', 'Dashboard'), sItem('menu', SALES_TITLES.menu), sItem('orders', <>Orders{badge(counts.orders, true)}</>),
     sItem('requests', <>Requests{badge(counts.requests, salesAdmin)}</>), sItem('customer', 'Reserves'), sItem('strain', 'By strain')]
-  const salesTail: NavItem[] = [sItem('review', <>Review{badge(salesBadge, true)}</>), sItem('activity', 'Activity'), ...(isAdminOf('sales') ? [sItem('settings', 'Settings')] : [])]
+  const fillsToOk = (forders ?? []).filter(o => o.state === 'needs_ok').length
+  const salesTail: NavItem[] = [sItem('review', <>Review{badge(salesBadge + fillsToOk, true)}</>), sItem('activity', 'Activity'), ...(isAdminOf('sales') ? [sItem('settings', 'Settings')] : [])]
   const cItem = (t: CultTab, l: string): NavItem => ({ k: t, l, on: view === 'cult' && cultTab === t, go: () => setCultTab(t) })
   const cultMain = CULT_TABS.map(t => cItem(t.t, t.l))
   const cultTail = CULT_TAIL.filter(t => t.t !== 'setup' || isAdminOf('cult')).map(t => cItem(t.t, t.l))
@@ -585,11 +608,11 @@ export default function App() {
         {view === 'mine' && <MySettings backend={backend} me={me!} flash={flash} onSaved={(p, name) => setMe(m => m && ({ ...m, display_name: name ?? m.display_name, access: { ...m.access, prefs: p } }))} />}
         {noMods && view !== 'mine' && <div className="list"><h2>No modules</h2><p className="muted">No parts of the app are switched on for your account yet. Ask someone with the Admin module to give you access.</p></div>}
         {view === 'dash' && cur === 'dist' && (
-          <DistDashboard goMap={() => { setView('map'); setFreezerId(null) }}
+          <DistDashboard goMap={() => { setView('map'); setFreezerId(null) }} fulfill={forders ? { open: (forders ?? []).filter(o => o.state === 'open').length, ready: (forders ?? []).filter(o => o.state === 'ready').length, waiting: (forders ?? []).filter(o => o.state === 'needs_ok').length, go: () => go('fulfill') } : undefined}
             ctx={{
               snap, site, backend,
               slotsOf: id => ix.slotsOf.get(id) ?? [], inSlot: id => ix.inSlot.get(id) ?? [], weight: p => weightOf(ix, p),
-              onLoad: p => ix.loadOf.has(p.id), slot: id => ix.slot.get(id),
+              onLoad: p => ix.loadOf.has(p.id) || heldBy.has(p.id), slot: id => ix.slot.get(id),
               freezerOf: id => { const sl = ix.slot.get(id); return sl ? ix.freezer.get(sl.freezer_id) : undefined },
               describe: e => describe(ix, e),
               reviewCounts: { spot: unplaced.length, tags: pendingTags.length, issues: review.length },
@@ -650,14 +673,18 @@ export default function App() {
         {view === 'sales' && cur === 'sales' && (() => {
           const goS = (m: SalesMode) => setSalesTab(m)
           if (salesTab === 'dash') return <SalesDashboard backend={backend} customers={snap.customers ?? []} isAdmin={salesAdmin} go={goS} />
-          if (salesTab === 'review') return <SalesReview backend={backend} customers={snap.customers ?? []} isAdmin={salesAdmin} go={goS} />
+          if (salesTab === 'review') return <SalesReview backend={backend} customers={snap.customers ?? []} isAdmin={salesAdmin} go={goS} fulfil={forders} onFulfil={refreshF} flash={flash} />
           if (salesTab === 'activity') return <ActivityView ix={ix} module="sales" />
           if (salesTab === 'settings') return <SettingsView backend={backend} flash={flash} onChanged={() => { reload() }} inventoryStrains={invStrains} title="Sales settings"
             lists={['customers', 'strains']} canTerms={salesAdmin} extra={[{ k: 'deadlines', l: 'Reserve deadlines', node: <DeadlinesPanel backend={backend} flash={flash} /> }]} />
-          return <ReservesView backend={backend} flash={flash} isAdmin={salesAdmin} mode={salesTab} onCounts={refreshCounts} customers={snap.customers ?? []} strains={snap.strains ?? []}
+          return <ReservesView backend={backend} flash={flash} isAdmin={salesAdmin} mode={salesTab} onCounts={refreshCounts} fulfil={new Map((forders ?? []).map(f => [f.id, f]))} onFulfil={refreshF} customers={snap.customers ?? []} strains={snap.strains ?? []}
             onHand={snap.pallets.reduce((m, p) => (p.kind !== 'mixed' && p.strain && (p.status === 'in_freezer' || p.status === 'unslotted'))
               ? m.set(p.strain.toLowerCase(), (m.get(p.strain.toLowerCase()) ?? 0) + Number(p.current_weight ?? 0)) : m, new Map<string, number>())} />
         })()}
+        {view === 'fulfill' && cur === 'dist' && <FulfillView backend={backend} orders={forders} reload={async () => { await reload(); await refreshF() }} flash={flash}
+          pallets={snap.pallets} heldBy={heldBy} onLoad={id => ix.loadOf.has(id)} where={where} rank={p => (p.slot_id != null ? ix.slot.get(p.slot_id)?.front_rank : null) ?? 99}
+          canon={canonOf} loads={snap.loads ?? []} vehicles={snap.vehicles ?? []} isSales={isSales}
+          openLoad={id => { setLoadId(id); setView('load'); window.scrollTo(0, 0) }} openPallet={setPalletId} />}
         {view === 'transit' && <TransitView ctx={ctx} onOpen={id => { setLoadId(id); setView('load'); window.scrollTo(0, 0) }} onNew={() => setLoadForm({})} />}
         {view === 'load' && loadId != null && <LoadView ctx={ctx} loadId={loadId} onBack={() => setView('transit')} onEdit={() => setLoadForm({ load: (snap.loads ?? []).find(l => l.id === loadId) })} />}
         {view === 'cult' && inCult && <Suspense fallback={<p className="muted">Loading…</p>}><CultView backend={backend} flash={flash} tab={cultTab} go={setCultTab} onPalletsChanged={() => { reload() }} /></Suspense>}
@@ -732,6 +759,8 @@ export default function App() {
           })}
           onLineage={(ps) => setPool(ps)}
           loadInfo={ix.loadOf.get(selected.id)}
+          held={heldBy.get(selected.id) ? `${heldBy.get(selected.id)!.customer} · ${heldBy.get(selected.id)!.so ?? 'order'} (${STATE_LABEL[heldBy.get(selected.id)!.state]})` : undefined}
+          onHeld={() => { setPalletId(null); go('fulfill') }}
           customerName={id => (snap.customers ?? []).find(c => c.id === id)?.name ?? ''}
           onOpenLoad={id => { setPalletId(null); setLoadId(id); setView('load') }}
           onPutOnLoad={() => setPickLoad(selected)}
@@ -1165,7 +1194,8 @@ function ActivityView({ ix, module }: { ix: Index; module: 'distribution' | 'sal
 
 type SheetAction = 'split' | 'merge' | 'tag' | 'weight' | 'addto' | 'addmixed'
 
-function PalletSheet({ ix, p, others, busy, where, onClose, onGo, onMove, onRemove, onClear, onPick, onForm, onTakeOff, onBreak, onLineage, loadInfo, customerName, onOpenLoad, onPutOnLoad, onPulled }: {
+function PalletSheet({ ix, p, others, busy, where, onClose, onGo, onMove, onRemove, onClear, onPick, onForm, onTakeOff, onBreak, onLineage, loadInfo, customerName, onOpenLoad, onPutOnLoad, onPulled, held, onHeld }: {
+  held?: string; onHeld?: () => void
   ix: Index; p: Pallet; others: Pallet[]; busy: boolean; where: (p: Pallet) => string
   onClose: () => void; onGo: () => void; onMove: () => void; onRemove: () => void; onClear: () => void; onPick: (id: number) => void
   onForm: (kind: SheetAction) => void; onTakeOff: () => void; onBreak: () => void; onLineage: (ps: Pallet[]) => void
@@ -1205,6 +1235,7 @@ function PalletSheet({ ix, p, others, busy, where, onClose, onGo, onMove, onRemo
         {p.needs_review && <div className="warnbox">{p.needs_review}</div>}
         {p.tag_pending && live && <div className="warnbox">METRC tag pending. <a onClick={() => onForm('tag')}>Enter tag</a></div>}
         {container && <div className="infobox">On mixed pallet {link(container)}. It moves with {container.code}.</div>}
+        {held && <div className="infobox held">Held for <a onClick={onHeld}>{held}</a></div>}
         {loadInfo && (
           <div className="infobox load" style={{ ['--sc' as string]: stopColor(loadInfo.stop.seq) }}>
             {loadInfo.item.loaded ? 'On the truck: ' : 'Planned on '}<a onClick={() => onOpenLoad(loadInfo.load.id)}>{loadInfo.load.code}</a>

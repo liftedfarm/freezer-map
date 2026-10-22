@@ -1,6 +1,6 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { accessFromRole } from './types'
-import type { Prefs, ModKey, Level, ReserveYears, CustomerTerms, UnmatchedTag, ShippedCheck, OrderInput, Terms, MenuNumbers, MenuRow, ReserveRequest, Balance, ImportResult, Order, RoshiRow, Reserve, LinkInfo, AppUser, Customer, Me, Role, Freezer, FreezerStatus, InvEvent, ListName, ListRow, Load, LoadItem, LoadStop, MixLine, Pallet, Settings, SingleInput, Slot, Snapshot, StopInput, Strain, Vehicle } from './types'
+import type { FOrder, Prefs, ModKey, Level, ReserveYears, CustomerTerms, UnmatchedTag, ShippedCheck, OrderInput, Terms, MenuNumbers, MenuRow, ReserveRequest, Balance, ImportResult, Order, RoshiRow, Reserve, LinkInfo, AppUser, Customer, Me, Role, Freezer, FreezerStatus, InvEvent, ListName, ListRow, Load, LoadItem, LoadStop, MixLine, Pallet, Settings, SingleInput, Slot, Snapshot, StopInput, Strain, Vehicle } from './types'
 
 export interface SaveUser { email: string; name: string; kind: 'staff' | 'customer' | 'none'; customerId: number | null; access: Partial<Record<ModKey, Level>>; owner?: boolean }
 export interface Overview {
@@ -102,6 +102,15 @@ export interface Backend {
   /** top bar ⚙: your own settings */
   setMyPrefs(p: Prefs): Promise<Prefs>
   setMyName(name: string): Promise<void>
+  /** Fulfillment: open orders with their assigned pallets (no prices) */
+  fulfillmentOrders(): Promise<FOrder[]>
+  pickPallet(lineId: number, palletId: number): Promise<void>
+  pickPart(lineId: number, palletId: number, lbs: number, tag: string | null): Promise<void>
+  unpick(pickId: number): Promise<void>
+  cantFill(lineId: number, on: boolean): Promise<void>
+  approveFill(orderId: number, note?: string): Promise<number>
+  orderToLoad(orderId: number, loadId: number): Promise<void>
+  orderOffLoad(orderId: number): Promise<void>
   /** Admin module */
   adminOverview(): Promise<Overview>
   appSettings(): Promise<Record<string, string>>
@@ -194,6 +203,20 @@ class SupaBackend implements Backend {
     if (error && /set_my_prefs/.test(error.message)) throw new Error('Run 024_module_roles.sql in Supabase first')
     fail(error); return (data ?? {}) as Prefs
   }
+  async fulfillmentOrders() {
+    const { data, error } = await this.sb.rpc('fulfillment_orders')
+    if (error && /fulfillment_orders/.test(error.message)) return [] as FOrder[]   // before 025
+    fail(error); return (data ?? []) as FOrder[]
+  }
+  async pickPallet(lineId: number, palletId: number) { const { error } = await this.sb.rpc('pick_pallet', { p_line: lineId, p_pallet: palletId }); fail(error) }
+  async pickPart(lineId: number, palletId: number, lbs: number, tag: string | null) {
+    const { error } = await this.sb.rpc('pick_part', { p_line: lineId, p_pallet: palletId, p_lbs: lbs, p_tag: tag, p_tag_pending: !tag }); fail(error)
+  }
+  async unpick(pickId: number) { const { error } = await this.sb.rpc('unpick', { p_pick: pickId }); fail(error) }
+  async cantFill(lineId: number, on: boolean) { const { error } = await this.sb.rpc('cant_fill', { p_line: lineId, p_on: on }); fail(error) }
+  async approveFill(orderId: number, note?: string) { const { data, error } = await this.sb.rpc('approve_fill', { p_order: orderId, p_note: note ?? null }); fail(error); return Number(data ?? 0) }
+  async orderToLoad(orderId: number, loadId: number) { const { error } = await this.sb.rpc('order_to_load', { p_order: orderId, p_load: loadId }); fail(error) }
+  async orderOffLoad(orderId: number) { const { error } = await this.sb.rpc('order_off_load', { p_order: orderId }); fail(error) }
   async setMyName(name: string) { const { error } = await this.sb.rpc('set_my_name', { p_name: name }); fail(error) }
   async adminOverview() {
     const { data, error } = await this.sb.rpc('admin_overview')
@@ -857,6 +880,14 @@ class DemoBackend implements Backend {
   async saveUser(u: SaveUser) { const x = this.users.find(y => y.email === u.email); if (x) x.access = u.access }
   async setMyPrefs(p: Prefs) { return p }
   async setMyName() {}
+  async fulfillmentOrders() { return [] as FOrder[] }
+  async pickPallet() { throw new Error('Not in demo') }
+  async pickPart() { throw new Error('Not in demo') }
+  async unpick() {}
+  async cantFill() {}
+  async approveFill() { return 0 }
+  async orderToLoad() { throw new Error('Not in demo') }
+  async orderOffLoad() {}
   async adminOverview(): Promise<Overview> { throw new Error('Not in demo') }
   async appSettings() { return {} as Record<string, string> }
   async setAppSetting() {}

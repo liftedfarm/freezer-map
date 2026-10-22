@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import type { Backend } from './api'
-import type { Balance, Customer, MenuNumbers, Order, ReserveRequest, ReserveYears } from './types'
+import type { FOrder, Balance, Customer, MenuNumbers, Order, ReserveRequest, ReserveYears } from './types'
 import type { SalesMode } from './reserves'
-import { DeadlineEdit } from './reserves'
+import { DeadlineEdit, FillOk } from './reserves'
 import { Card, Cards, DashHead, Empty, Meter, Tile, Tiles } from './dash'
 
 const n0 = (x: number) => Math.round(x).toLocaleString()
@@ -79,7 +79,8 @@ export function SalesDashboard({ backend, customers, isAdmin, go }: { backend: B
 }
 
 /** Sales > Review: what needs a decision, in one place */
-export function SalesReview({ backend, customers, isAdmin, go }: { backend: Backend; customers: Customer[]; isAdmin: boolean; go: (m: SalesMode) => void }) {
+export function SalesReview({ backend, customers, isAdmin, go, fulfil, onFulfil, flash }: { backend: Backend; customers: Customer[]; isAdmin: boolean; go: (m: SalesMode) => void
+  fulfil?: FOrder[] | null; onFulfil?: () => Promise<void>; flash: (t: string, bad?: boolean) => void }) {
   const [d, setD] = useState<Data | null>(null)
   useEffect(() => { loadAll(backend).then(setD).catch(() => {}) }, [backend])
   if (!d) return <p className="muted">Loading…</p>
@@ -89,11 +90,16 @@ export function SalesReview({ backend, customers, isAdmin, go }: { backend: Back
   const pend = d.reqs.filter(r => r.status === 'pending')
   const over = d.bal.filter(r => (r.crop_year ?? cur) === cur && Number(r.remaining) < 0)
   const short = d.nums.filter(m => m.crop_year === cur && Number(m.free) < 0)
-  const none = !toConfirm.length && !pend.length && !over.length && !short.length
+  const fills = (fulfil ?? []).filter(f => f.state === 'needs_ok')
+  const none = !toConfirm.length && !pend.length && !over.length && !short.length && !fills.length
   return (
     <div className="list dash">
       <h2>Review</h2>
       {none && <p className="muted">Nothing needs attention in Sales.</p>}
+      {fills.length > 0 && <section className="dcard"><div className="dcard-h"><h3>Amounts to OK <span className="side-badge">{fills.length}</span></h3></div>
+        <p className="muted">Distribution assigned pallets that don't exactly match what was ordered.</p>
+        {fills.map(f => <div key={f.id}><b>{f.customer}</b> <span className="muted">{f.so ?? `Order #${f.id}`}</span>
+          <FillOk f={f} backend={backend} flash={flash} onDone={async () => { await onFulfil?.(); setD(await loadAll(backend)) }} /></div>)}</section>}
       {toConfirm.length > 0 && <section className="dcard"><div className="dcard-h"><h3>Orders to confirm <span className="side-badge">{toConfirm.length}</span></h3><button className="linkbtn" onClick={() => go('orders')}>Orders ›</button></div>
         <div className="dlist">{toConfirm.map(o => <button key={o.id} className="drow click" onClick={() => go('orders')}><span><b>{cname(o.customer_id)}</b><span className="muted"> · placed {fmt(o.order_date)}</span></span><b>{n0(o.order_lines.reduce((a, l) => a + Number(l.lbs), 0))} lbs</b></button>)}</div></section>}
       {pend.length > 0 && <section className="dcard"><div className="dcard-h"><h3>Reserve requests waiting <span className="side-badge">{pend.length}</span></h3><button className="linkbtn" onClick={() => go('requests')}>Requests ›</button></div>

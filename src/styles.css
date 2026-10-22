@@ -619,3 +619,23 @@ body.dragging { user-select: none; -webkit-user-select: none; cursor: grabbing; 
 .scanframe { position: absolute; left: 6%; right: 6%; top: 32%; bottom: 32%; border: 2px solid rgb(255 255 255 / .85); border-radius: 8px; box-shadow: 0 0 0 999px rgb(0 0 0 / .25); }
 .scanframe::after { content: ''; position: absolute; left: 4%; right: 4%; top: 50%; height: 2px; background: #ef4444; box-shadow: 0 0 8px #ef4444; }
 .scanactions { margin-top: 8px; gap: 8px; flex-wrap: wrap; }
+
+/* Fulfillment */
+.fulfill { display: grid; gap: 10px; }
+.fulfill .forder { align-items: center; gap: 10px; }
+.fulfill .forder .dmeter { margin-top: 6px; max-width: 360px; }
+.pill.fs-open { background: color-mix(in srgb, var(--warn) 18%, var(--panel)); color: var(--warn); }
+.pill.fs-needs_ok { background: color-mix(in srgb, #2563eb 16%, var(--panel)); color: #1d4ed8; }
+.pill.fs-ready { background: color-mix(in srgb, var(--brand) 18%, var(--panel)); color: var(--brand); }
+.pill.fs-loaded { background: #dbeafe; color: #1e40af; }
+.pill.fs-shipped { background: var(--empty); color: var(--muted); }
+.fline .dcard-h h3 { font-size: 16px; }
+.fline .drow .grow { flex: 1; min-width: 0; }
+.fpick { border: 1px dashed var(--line); border-radius: 10px; padding: 10px; display: grid; gap: 6px; }
+.fpick .drow { gap: 8px; }
+.infobox.held { border-color: #2563eb; background: color-mix(in srgb, #2563eb 10%, var(--panel)); }
+.ok-t { color: var(--brand); }
+.bad-t { color: var(--bad); font-weight: 600; }
+.row.wrap { flex-wrap: wrap; }
+.grow { flex: 1; }
+.fulfill > .ghost.small:first-child { justify-self: start; }

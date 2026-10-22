@@ -191,7 +191,7 @@ export function Activity({ ctx }: { ctx: SideCtx }) {
 
 export interface SalesNums { orders: number; requests: number; isAdmin: boolean; go: () => void }
 
-export function DistDashboard({ ctx, sales, goMap }: { ctx: SideCtx; sales?: SalesNums; goMap: () => void }) {
+export function DistDashboard({ ctx, sales, goMap, fulfill }: { ctx: SideCtx; sales?: SalesNums; goMap: () => void; fulfill?: { open: number; ready: number; waiting: number; go: () => void } }) {
   const fz = ctx.snap.freezers.filter(f => f.kind !== 'staging')
   const per = useMemo(() => {
     const out = new Map<number, { slots: number; used: number; pallets: number; lbs: number; open: number }>()
@@ -218,6 +218,8 @@ export function DistDashboard({ ctx, sales, goMap }: { ctx: SideCtx; sales?: Sal
       <Tiles>
         <Tile label="Needs a spot" value={rc.spot} sub={rc.spot ? 'pallets not in a freezer' : 'all pallets placed'} tone={rc.spot ? 'warn' : 'ok'} onClick={ctx.goReview} />
         <Tile label="METRC tags pending" value={rc.tags} sub={rc.issues ? `${rc.issues} import issues` : ''} tone={rc.tags ? 'warn' : 'ok'} onClick={ctx.goReview} />
+        {fulfill && <Tile label="Orders to fulfill" value={fulfill.open + fulfill.ready} sub={[fulfill.open && `${fulfill.open} need pallets`, fulfill.ready && `${fulfill.ready} ready to load`, fulfill.waiting && `${fulfill.waiting} waiting on Sales`].filter(Boolean).join(' · ') || 'all caught up'}
+          tone={fulfill.open + fulfill.ready ? 'warn' : 'ok'} onClick={fulfill.go} />}
         <Tile label="Loads" value={loads.length} sub={loads.length ? [outToday && `${outToday} going out today`, moving && `${moving} in transit`].filter(Boolean).join(' · ') || 'being planned' : 'none active'} tone={outToday ? 'info' : undefined} onClick={ctx.goTransit} />
         <Tile label="Open spaces" value={n0(all.open)} sub={`about ${n0(all.open * avg)} lbs of room`} tone={all.open < 10 ? 'warn' : undefined} onClick={goMap} />
         <Tile label="In the freezers" value={`${n0(all.lbs)} lbs`} sub={`${n0(all.pallets)} pallets · ${n0(avg)} avg`} />

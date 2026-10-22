@@ -132,3 +132,14 @@ export interface OrderInput { strain: string; lbs: number; crop_year?: number }
 export interface UnmatchedTag { package_tag: string; strain: string; lbs: number; tags_on_line: number; sos: string; last_shipped: string | null }
 export interface ShippedCheck { pallet_id: number; package_tag: string; shipped_lbs: number; new_lbs: number; sos: string; last_shipped: string | null }
 export interface Terms { name: string; price_per_lb: number | null; contract_lbs: number | null; reserves_enabled?: boolean }
+
+/** Fulfillment (025): an order as Distribution sees it (no prices) */
+export type FState = 'open' | 'needs_ok' | 'ready' | 'loaded' | 'shipped' | 'cancelled' | 'submitted' | 'draft'
+export interface FPick { id: number; pallet_id: number; lbs: number; code: string; tag: string | null; tag_pending: boolean; slot_id: number | null }
+export interface FLine { id: number; strain: string; lbs: number; ordered_lbs: number | null; crop_year: number; cant_fill?: boolean; picks: FPick[] }
+export interface FOrder {
+  id: number; so: string | null; po: string | null; customer_id: number; customer: string; status: string; state: FState; source: string
+  order_date: string | null; wanted_date: string | null; shipped_date: string | null; notes: string | null
+  stop: { id: number; load_id: number; load: string; load_status: string; load_date: string; stop_status: string } | null
+  lines: FLine[]
+}
