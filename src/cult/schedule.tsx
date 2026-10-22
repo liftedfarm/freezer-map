@@ -1,4 +1,3 @@
-import { ScanButton } from '../scan'
 import { useMemo, useState } from 'react'
 import type { CultApi } from './api'
 import { KIND_LABEL, KIND_SHORT, addDays, calcHarvest, fieldName, fmtD, isBiomass, monday, n0, n1, n2, pct, sum, today } from './calc'
@@ -106,9 +105,6 @@ export function HarvestSheet({ d, c, harvest, api, flash, onClose, onSaved }: {
 }) {
   const [h, setH] = useState<Partial<Harvest>>({ raw_bins: [], ...harvest })
   const [busy, setBusy] = useState(false)
-  const [bin, setBin] = useState('')
-  const [rows, setRows] = useState<{ lbs: string; tag: string; code: string }[]>([])
-  const [bulk, setBulk] = useState({ n: '', lbs: '' })
   const set = (x: Partial<Harvest>) => setH(v => ({ ...v, ...x }))
   const isNew = h.id == null
   const site = c.site.get(h.site ?? 'OHR')
@@ -139,24 +135,6 @@ export function HarvestSheet({ d, c, harvest, api, flash, onClose, onSaved }: {
     setBusy(true)
     try { await api.remove('cult_harvests', h.id!); await onSaved('Deleted') } catch (e) { flash(errText(e), true) } finally { setBusy(false) }
   }
-  function addBins(text: string) {
-    const xs = text.split(/[\s,;]+/).map(Number).filter(x => isFinite(x) && x > 0)
-    if (xs.length) set({ raw_bins: [...(h.raw_bins ?? []), ...xs] })
-    setBin('')
-  }
-  async function makePallets() {
-    const good = rows.filter(r => Number(r.lbs) > 0)
-    if (!good.length) { flash('Enter a weight for each pallet', true); return }
-    setBusy(true)
-    try {
-      // save the harvest first so the pallets get today's numbers
-      await api.save<Harvest>('cult_harvests', { ...h, status: 'done', harvested_on: h.harvested_on ?? today() })
-      const codes = await api.addPallets(h.id!, good.map(r => ({ lbs: Number(r.lbs), tag: r.tag.trim(), code: r.code.trim() || undefined })))
-      setRows([])
-      await onSaved(`${codes.length} pallet${codes.length === 1 ? '' : 's'} added: ${codes.join(', ')}. They're in Review as "Needs a spot".`)
-    } catch (e) { flash(errText(e), true) } finally { setBusy(false) }
-  }
-
   return (
     <Sheet title={isNew ? 'Add harvest' : `${h.strain}`} sub={!isNew && <>{h.site} {fieldName(c, h.field_id ?? null)} · {KIND_LABEL[h.kind as HarvestKind]} · {h.status}</>} onClose={onClose} wide>
       <StrainList id="cult-strains" names={strainNames} />
@@ -214,15 +192,9 @@ export function HarvestSheet({ d, c, harvest, api, flash, onClose, onSaved }: {
           <F label="Plants harvested"><NumIn value={h.plants_harvested} onChange={v => set({ plants_harvested: v })} /></F>
           <F label="METRC harvest name"><TextIn value={h.metrc_name} onChange={v => set({ metrc_name: v })} /></F>
         </div>
-        {!isBiomass(h.kind as HarvestKind) && (
-          <F label="Raw weights" hint={`${(h.raw_bins ?? []).length} bins · ${n1(sum(h.raw_bins ?? []))} lbs`}>
-            <div className="row">
-              <input inputMode="decimal" placeholder="Bin weight, Enter to add (or paste a column)" value={bin} onChange={e => setBin(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addBins(bin) } }}
-                onPaste={e => { const t = e.clipboardData.getData('text'); if (/[\s,;]/.test(t.trim())) { e.preventDefault(); addBins(t) } }} />
-              <button className="ghost small" onClick={() => addBins(bin)}>Add</button>
-            </div>
-            {(h.raw_bins ?? []).length > 0 && <div className="binrow">{(h.raw_bins ?? []).map((b, i) => <span key={i}>{b}<a onClick={() => set({ raw_bins: (h.raw_bins ?? []).filter((_, j) => j !== i) })}>×</a></span>)}</div>}
+        {!isBiomass(h.kind as HarvestKind) && (h.raw_bins ?? []).length > 0 && (
+          <F label="Raw bins" hint={`${(h.raw_bins ?? []).length} bins · ${n1(sum(h.raw_bins ?? []))} lbs`}>
+            <div className="binrow">{(h.raw_bins ?? []).map((b, i) => <span key={i}>{b}</span>)}</div>
           </F>
         )}
         <div className="grid3">
@@ -242,25 +214,8 @@ export function HarvestSheet({ d, c, harvest, api, flash, onClose, onSaved }: {
                 <td className="muted small">{p.status === 'in_freezer' ? 'in a freezer' : p.status === 'unslotted' ? 'needs a spot' : p.status}</td></tr>)}
             </tbody></table></div>
           )}
-          <div className="row">
-            <input className="grow-in" style={{ width: 70 }} inputMode="numeric" placeholder="How many" value={bulk.n} onChange={e => setBulk({ ...bulk, n: e.target.value })} />
-            <span className="muted">×</span>
-            <input style={{ width: 90 }} inputMode="decimal" placeholder="lbs each" value={bulk.lbs} onChange={e => setBulk({ ...bulk, lbs: e.target.value })} />
-            <button className="ghost small" onClick={() => { const n = Math.min(60, Number(bulk.n) || 1); setRows([...rows, ...Array.from({ length: n }, () => ({ lbs: bulk.lbs, tag: '', code: '' }))]) }}>Add pallets</button>
-          </div>
-          {rows.map((r, i) => (
-            <div key={i} className="palrow">
-              <input inputMode="decimal" placeholder="lbs" value={r.lbs} onChange={e => setRows(rows.map((x, j) => j === i ? { ...x, lbs: e.target.value } : x))} />
-              <input placeholder="METRC tag (blank = pending)" value={r.tag} onChange={e => setRows(rows.map((x, j) => j === i ? { ...x, tag: e.target.value.toUpperCase() } : x))} />
-              <ScanButton compact onScan={tag => setRows(rows.map((x, j) => j === i ? { ...x, tag } : x))} />
-              <button className="ghost small" onClick={() => setRows(rows.filter((_, j) => j !== i))}>✕</button>
-            </div>
-          ))}
-          {rows.length > 0 && <div className="row">
-            {rows[0].tag && rows.length > 1 && <button className="ghost small" onClick={() => setRows(rows.map((x, j) => ({ ...x, tag: nextTag(rows[0].tag, j) })))}>Number the tags in order from the first</button>}
-            <button className="primary" disabled={busy} onClick={makePallets}>Create {rows.length} pallet{rows.length === 1 ? '' : 's'} ({n0(sum(rows.map(r => Number(r.lbs) || 0)))} lbs)</button>
-          </div>}
-          <p className="cnote">New pallets get the next {site?.pallet_prefix ?? 'P'} number{c.field.get(h.field_id ?? -1)?.kind === 'trials' ? ' (T for the trials field)' : ''} and show up in the freezer app under Review as "Needs a spot".</p>
+          {!pallets.length && <p className="muted">No pallets logged.</p>}
+          <p className="cnote">Pallets are only made on the Harvest screen while harvesting (tag, pallet #, then Staging on the freezer map). To fix a pallet's weight or tag, open it on the freezer map.</p>
         </>}
       </>}
 
