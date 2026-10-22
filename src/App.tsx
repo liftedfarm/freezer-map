@@ -312,7 +312,11 @@ export default function App() {
   // Fulfillment: open orders and the pallets held for them (Distribution and Sales)
   const [forders, setForders] = useState<FOrder[] | null>(null)
   const canFulfill = !!lv.distribution || !!lv.sales
-  const refreshF = useCallback(async () => { if (canFulfill) setForders(await backend.fulfillmentOrders().catch(() => [])) }, [canFulfill])
+  const [fErr, setFErr] = useState<string | null>(null)
+  const refreshF = useCallback(async () => {
+    if (!canFulfill) return
+    try { setForders(await backend.fulfillmentOrders()); setFErr(null) } catch (e) { setForders([]); setFErr(String((e as Error).message ?? e)) }
+  }, [canFulfill])
   useEffect(() => {
     if (!staff) return
     reload().then(() => setLoadError(null)).catch(e => setLoadError(String(e?.message ?? e)))
@@ -681,7 +685,7 @@ export default function App() {
             onHand={snap.pallets.reduce((m, p) => (p.kind !== 'mixed' && p.strain && (p.status === 'in_freezer' || p.status === 'unslotted'))
               ? m.set(p.strain.toLowerCase(), (m.get(p.strain.toLowerCase()) ?? 0) + Number(p.current_weight ?? 0)) : m, new Map<string, number>())} />
         })()}
-        {view === 'fulfill' && cur === 'dist' && <FulfillView backend={backend} orders={forders} reload={async () => { await reload(); await refreshF() }} flash={flash}
+        {view === 'fulfill' && cur === 'dist' && <FulfillView err={fErr} backend={backend} orders={forders} reload={async () => { await reload(); await refreshF() }} flash={flash}
           pallets={snap.pallets} heldBy={heldBy} onLoad={id => ix.loadOf.has(id)} where={where} rank={p => (p.slot_id != null ? ix.slot.get(p.slot_id)?.front_rank : null) ?? 99}
           canon={canonOf} loads={snap.loads ?? []} vehicles={snap.vehicles ?? []} isSales={isSales}
           openLoad={id => { setLoadId(id); setView('load'); window.scrollTo(0, 0) }} openPallet={setPalletId} />}

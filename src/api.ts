@@ -205,7 +205,7 @@ class SupaBackend implements Backend {
   }
   async fulfillmentOrders() {
     const { data, error } = await this.sb.rpc('fulfillment_orders')
-    if (error && /fulfillment_orders/.test(error.message)) return [] as FOrder[]   // before 025
+    if (error && /fulfillment_orders/.test(error.message)) throw new Error('Fulfillment isn\'t set up in the database yet. Run 025_fulfillment.sql in Supabase, then refresh.')
     fail(error); return (data ?? []) as FOrder[]
   }
   async pickPallet(lineId: number, palletId: number) { const { error } = await this.sb.rpc('pick_pallet', { p_line: lineId, p_pallet: palletId }); fail(error) }

@@ -13,7 +13,7 @@ export const orderLbs = (o: FOrder) => o.lines.reduce((a, l) => a + Number(l.lbs
 export const orderGot = (o: FOrder) => o.lines.reduce((a, l) => a + got(l), 0)
 
 export interface FulfillProps {
-  backend: Backend; orders: FOrder[] | null; reload: () => Promise<void>; flash: (t: string, bad?: boolean) => void
+  err?: string | null; backend: Backend; orders: FOrder[] | null; reload: () => Promise<void>; flash: (t: string, bad?: boolean) => void
   pallets: Pallet[]; heldBy: Map<number, FOrder>; onLoad: (id: number) => boolean
   where: (p: Pallet) => string; rank: (p: Pallet) => number; canon: (s: string | null | undefined) => string
   loads: Load[]; vehicles: Vehicle[]; isSales: boolean; openLoad: (id: number) => void; openPallet: (id: number) => void
@@ -24,6 +24,7 @@ export function FulfillView(props: FulfillProps) {
   const { orders } = props
   const [openId, setOpenId] = useState<number | null>(null)
   const [q, setQ] = useState('')
+  if (props.err) return <div className="list fulfill"><h2>Fulfillment</h2><div className="warnbox">{props.err}</div></div>
   if (!orders) return <p className="muted">Loading…</p>
   const cur = orders.find(o => o.id === openId)
   if (cur) return <OrderPage {...props} o={cur} back={() => setOpenId(null)} />
