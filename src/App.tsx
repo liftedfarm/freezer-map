@@ -548,7 +548,8 @@ export default function App() {
     setModS(m); store('fm.mod', m)
     if (m === 'dist') go(t as View); else if (m === 'sales') setSalesTab(t as SalesTab); else if (m === 'cult') setCultTab(t as CultTab); else setAdminTab(t === 'users' ? 'settings' : t as AdminTab)
   }
-  const appName = cur === 'dist' ? 'Inventory Management' : MOD_LABEL[cur]
+  const appName = MOD_LABEL[cur]
+  document.title = noMods ? 'Lifted Farms' : `${view === 'mine' ? 'My settings' : MOD_LABEL[cur]} · Lifted Farms`
 
   return (
     <div className={`app ${noMods ? '' : 'with-rail'} ${myMods.length > 1 ? 'with-mods' : ''} ${banner ? 'is-moving' : ''} mod-${cur}`}
@@ -879,7 +880,7 @@ function NoAccess({ me, signOut }: { me: Me; signOut: () => void }) {
         ? <><h2>Hi{me.display_name ? ` ${me.display_name}` : ''}</h2><p className="muted">Your login is set up for {me.customer_name ?? 'your company'}. The order portal is coming soon.</p></>
         : IS_PORTAL
           ? <><h2>Login not set up</h2><p className="muted">{me.email} isn't connected to a customer account yet. Use the invite link from your Lifted contact.</p></>
-          : <><h2>No access yet</h2><p className="muted">{me.email} isn't set up for Lifted Inventory Management. Ask an admin to add you in Settings &gt; Users.</p></>}
+          : <><h2>No access yet</h2><p className="muted">{me.email} isn't set up for the Lifted Farms app. Ask an admin to add you in Settings &gt; Users.</p></>}
       <button className="ghost" onClick={signOut}>Sign out</button>
     </div>
   )
@@ -889,8 +890,8 @@ function Login() {
   return (
     <div className="center login">
       <img className="logo-login" src="/logo-big.png" alt="Lifted Farms" />
-      <h1>Inventory Management</h1>
-      <p className="muted">Freezers, loads and sales</p>
+      <h1>Lifted Farms</h1>
+      <p className="muted">Distribution, sales and production</p>
       <button className="primary big" onClick={() => backend.signIn()}>Sign in with Microsoft</button>
       <p className="muted small-print">Customer? <a href={portalUrl('?portal')}>Sign in to the order portal</a></p>
     </div>
