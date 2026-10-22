@@ -616,3 +616,6 @@ body.dragging { user-select: none; -webkit-user-select: none; cursor: grabbing; 
 .accrow .seg { flex-shrink: 0; }
 @media (max-width: 600px) { .accrow { flex-direction: column; align-items: stretch; } .accrow .seg { align-self: flex-start; } }
 .mine input:not([type="checkbox"]) { padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
+.scanframe { position: absolute; left: 6%; right: 6%; top: 32%; bottom: 32%; border: 2px solid rgb(255 255 255 / .85); border-radius: 8px; box-shadow: 0 0 0 999px rgb(0 0 0 / .25); }
+.scanframe::after { content: ''; position: absolute; left: 4%; right: 4%; top: 50%; height: 2px; background: #ef4444; box-shadow: 0 0 8px #ef4444; }
+.scanactions { margin-top: 8px; gap: 8px; flex-wrap: wrap; }
