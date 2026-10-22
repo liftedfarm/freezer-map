@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { ReactNode } from 'react'
+import { lang, t } from '../i18n'
 
 export type Flash = (t: string, bad?: boolean) => void
 
@@ -58,16 +59,16 @@ export function StrainList({ id, names }: { id: string; names: string[] }) {
   return <datalist id={id}>{names.map(n => <option key={n} value={n} />)}</datalist>
 }
 
-export function SaveBar({ busy, onSave, onCancel, onDelete, saveLabel = 'Save', disabled }: { busy: boolean; onSave: () => void; onCancel: () => void; onDelete?: () => void; saveLabel?: string; disabled?: boolean }) {
+export function SaveBar({ busy, onSave, onCancel, onDelete, saveLabel, disabled }: { busy: boolean; onSave: () => void; onCancel: () => void; onDelete?: () => void; saveLabel?: string; disabled?: boolean }) {
   const [sure, setSure] = useState(false)
   return (
     <div className="row between csave">
       {onDelete ? (sure
-        ? <span className="row"><button className="ghost danger" disabled={busy} onClick={onDelete}>Yes, delete</button><button className="ghost small" onClick={() => setSure(false)}>Keep</button></span>
-        : <button className="ghost" disabled={busy} onClick={() => setSure(true)}>Delete</button>) : <span />}
+        ? <span className="row"><button className="ghost danger" disabled={busy} onClick={onDelete}>{t('Yes, delete')}</button><button className="ghost small" onClick={() => setSure(false)}>{t('Keep')}</button></span>
+        : <button className="ghost" disabled={busy} onClick={() => setSure(true)}>{t('Delete')}</button>) : <span />}
       <div className="row">
-        <button className="ghost" onClick={onCancel}>Cancel</button>
-        <button className="primary" disabled={busy || disabled} onClick={onSave}>{busy ? 'Saving…' : saveLabel}</button>
+        <button className="ghost" onClick={onCancel}>{t('Cancel')}</button>
+        <button className="primary" disabled={busy || disabled} onClick={onSave}>{busy ? t('Saving…') : saveLabel ?? t('Save')}</button>
       </div>
     </div>
   )
@@ -100,8 +101,8 @@ export function SelBox({ sel, id }: { sel: Sel; id: number | null | undefined })
   if (!sel.on) return null
   return <td className="selcol" onClick={e => e.stopPropagation()}>{id != null && <input type="checkbox" checked={sel.ids.has(id)} onChange={() => sel.toggle(id)} />}</td>
 }
-export function SelButton({ sel, label = 'Select' }: { sel: Sel; label?: string }) {
-  return sel.on ? <button className="ghost small" onClick={sel.stop}>Done selecting</button> : <button className="ghost small" onClick={sel.start}>{label}</button>
+export function SelButton({ sel, label }: { sel: Sel; label?: string }) {
+  return sel.on ? <button className="ghost small" onClick={sel.stop}>{t('Done selecting')}</button> : <button className="ghost small" onClick={sel.start}>{label ?? t('Select')}</button>
 }
 export interface SelAction { label: string; run: (ids: number[]) => Promise<void>; danger?: boolean }
 /** bar that sticks to the bottom while rows are picked */
@@ -117,11 +118,11 @@ export function SelBar({ sel, noun, actions }: { sel: Sel; noun: string; actions
   }
   return (
     <div className="selbar">
-      <b>{ids.length} {noun}{ids.length === 1 ? '' : 's'} picked</b>
+      <b>{lang() === 'es' ? t('{n} picked', { n: ids.length }) : `${ids.length} ${noun}${ids.length === 1 ? '' : 's'} picked`}</b>
       <div className="row">
         {actions.map(a => <button key={a.label} disabled={busy} className={a.danger ? (sure === a.label ? 'primary dangerbg' : 'ghost danger') : 'ghost'} onClick={() => go(a)}>
           {a.danger && sure === a.label ? `Yes, ${a.label.toLowerCase()} ${ids.length}` : a.label}</button>)}
-        <button className="ghost" onClick={sel.stop}>Cancel</button>
+        <button className="ghost" onClick={sel.stop}>{t('Cancel')}</button>
       </div>
     </div>
   )

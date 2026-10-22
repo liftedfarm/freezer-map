@@ -1,4 +1,5 @@
 // Cultivation math: the same formulas as the Harvest Scheduling Workbook, done from the database rows.
+import { MONTHS_ES, lang } from '../i18n'
 import type { CField, CPallet, CSite, CTest, CultData, Harvest, HarvestKind, Planting, Protocol } from './types'
 
 // ---------- dates (YYYY-MM-DD strings, no time zones) ----------
@@ -15,8 +16,10 @@ export const DAY_LONG = ['', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Frid
 export function fmtD(s: string | null | undefined, withDay = false) {
   if (!s) return ''
   const d = toDate(s)
+  if (lang() === 'es') return (withDay ? DAY_ES[weekday(s)] + ' ' : '') + `${d.getDate()} ${MONTHS_ES[d.getMonth()]}`   // 11 oct: no mixing up 10/11 and 11/10
   return (withDay ? DAY[weekday(s)] + ' ' : '') + `${d.getMonth() + 1}/${d.getDate()}`
 }
+export const DAY_ES = ['', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb', 'dom']
 export const n0 = (x: number | null | undefined) => (x == null || !isFinite(x) ? '' : Math.round(x).toLocaleString())
 export const n1 = (x: number | null | undefined) => (x == null || !isFinite(x) ? '' : (Math.round(x * 10) / 10).toLocaleString())
 export const n2 = (x: number | null | undefined) => (x == null || !isFinite(x) ? '' : (Math.round(x * 100) / 100).toLocaleString())

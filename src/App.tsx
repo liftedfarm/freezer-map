@@ -27,6 +27,7 @@ import type { NTab } from './nursery/tabs'
 import { LicensesPanel } from './licenses'
 import { LoadForm, LoadView, PickLoad, TransitView, stopColor } from './loads'
 import type { LoadCtx } from './loads'
+import { lang, setLang, t } from './i18n'
 import type { FOrder, ModKey, UnmatchedTag, ShippedCheck, Freezer, Me, FreezerStatus, InvEvent, Load, LoadItem, LoadStop, Pallet, Site, Slot, Snapshot } from './types'
 
 const backend: Backend = makeBackend()
@@ -40,6 +41,7 @@ type Mod = 'dist' | 'sales' | 'cult' | 'nurs' | 'admin'
 const MOD_KEY: Record<Mod, ModKey> = { dist: 'distribution', sales: 'sales', cult: 'cultivation', nurs: 'nursery', admin: 'admin' }
 const KEY_MOD: Record<ModKey, Mod> = { distribution: 'dist', sales: 'sales', cultivation: 'cult', nursery: 'nurs', admin: 'admin' }
 const MOD_LABEL: Record<Mod, string> = { dist: 'Distribution', sales: 'Sales', cult: 'Production', nurs: 'Nursery', admin: 'Admin' }
+const ML = (m: Mod) => t(MOD_LABEL[m])
 const MOD_WHAT: Record<Mod, string> = { dist: 'Freezer map · transit · review', sales: 'Reserves · menu · orders', cult: 'Harvests · fields · plan', nurs: 'Mothers · cuttings · deliveries', admin: 'Company · users · app settings' }
 type SalesTab = 'dash' | SalesMode | 'invoices' | 'review' | 'activity' | 'settings'
 type AdminTab = 'dash' | 'review' | 'activity' | 'settings'
@@ -296,8 +298,10 @@ export default function App() {
     backend.me().then(setMe).catch(e => setLoadError(String(e?.message ?? e)))
   }, [user])
   const staff = !!me && ['admin', 'sales', 'crew'].includes(me.role)
+  // language: the person's own setting (an Admin may have set it for them); English until signed in
+  if (me && (me.access?.prefs?.lang ?? 'en') !== lang()) setLang(me.access?.prefs?.lang ?? 'en')
   const lv = me?.access?.modules ?? {}
-  const MODS = (Object.keys(MOD_KEY) as Mod[]).map(m => ({ m, l: MOD_LABEL[m], on: !!lv[MOD_KEY[m]] }))
+  const MODS = (Object.keys(MOD_KEY) as Mod[]).map(m => ({ m, l: ML(m), on: !!lv[MOD_KEY[m]] }))
   const myMods = MODS.filter(x => x.on)
   const noMods = staff && myMods.length === 0
   const cur: Mod = myMods.some(x => x.m === mod) ? mod : myMods[0]?.m ?? 'dist'
@@ -543,13 +547,13 @@ export default function App() {
   const fillsToOk = (forders ?? []).filter(o => o.state === 'needs_ok').length
   const salesTail: NavItem[] = [sItem('review', <>Review{badge(salesBadge + fillsToOk, true)}</>), sItem('activity', 'Activity'), ...(isAdminOf('sales') ? [sItem('settings', 'Settings')] : [])]
   const cItem = (t: CultTab, l: string): NavItem => ({ k: t, l, on: view === 'cult' && cultTab === t, go: () => setCultTab(t) })
-  const cultMain = CULT_TABS.map(t => cItem(t.t, t.l))
-  const cultTail = CULT_TAIL.filter(t => t.t !== 'setup' || isAdminOf('cult')).map(t => cItem(t.t, t.l))
+  const cultMain = CULT_TABS.map(x => cItem(x.t, t(x.l)))
+  const cultTail = CULT_TAIL.filter(x => x.t !== 'setup' || isAdminOf('cult')).map(x => cItem(x.t, t(x.l)))
   const aItem = (t: AdminTab, l: string): NavItem => ({ k: t, l, on: view === 'admin' && adminTab === t, go: () => setAdminTab(t) })
   const adminMain = [aItem('dash', 'Dashboard')], adminTail = [aItem('review', 'Review'), aItem('activity', 'Activity'), aItem('settings', 'Settings')]
   const nItem = (t: NTab, l: string): NavItem => ({ k: t, l, on: view === 'nursery' && nurTab === t, go: () => setNurTab(t) })
-  const nurMain = NURSERY_TABS.map(t => nItem(t.t, t.l))
-  const nurTail = NURSERY_TAIL.filter(t => t.t !== 'settings' || isAdminOf('nurs')).map(t => nItem(t.t, t.l))
+  const nurMain = NURSERY_TABS.map(x => nItem(x.t, t(x.l)))
+  const nurTail = NURSERY_TAIL.filter(x => x.t !== 'settings' || isAdminOf('nurs')).map(x => nItem(x.t, t(x.l)))
   const NAV: Record<Mod, { main: NavItem[]; tail: NavItem[] }> = {
     dist: { main: distMain, tail: distTail }, sales: { main: salesMain, tail: salesTail }, cult: { main: cultMain, tail: cultTail }, nurs: { main: nurMain, tail: nurTail }, admin: { main: adminMain, tail: adminTail } }
   const nav = NAV[cur]
@@ -564,8 +568,8 @@ export default function App() {
     setModS(m); store('fm.mod', m)
     if (m === 'dist') go(t as View); else if (m === 'sales') setSalesTab(t as SalesTab); else if (m === 'cult') setCultTab(t as CultTab); else if (m === 'nurs') setNurTab(t as NTab); else setAdminTab(t === 'users' ? 'settings' : t as AdminTab)
   }
-  const appName = MOD_LABEL[cur]
-  document.title = noMods ? 'Lifted Farms' : `${view === 'mine' ? 'My settings' : MOD_LABEL[cur]} · Lifted Farms`
+  const appName = ML(cur)
+  document.title = noMods ? 'Lifted Farms' : `${view === 'mine' ? t('My settings') : ML(cur)} · Lifted Farms`
 
   return (
     <div className={`app ${noMods ? '' : 'with-rail'} ${myMods.length > 1 ? 'with-mods' : ''} ${banner ? 'is-moving' : ''} mod-${cur}`}
@@ -581,8 +585,8 @@ export default function App() {
               </button>
             ))}
           </div>}
-          <nav className="rail-screens" aria-label={`${MOD_LABEL[cur]} screens`}>
-            <div className="rail-h">{MOD_LABEL[cur].toUpperCase()}</div>
+          <nav className="rail-screens" aria-label={`${ML(cur)} screens`}>
+            <div className="rail-h">{ML(cur).toUpperCase()}</div>
             {nav.main.map(x => <button key={x.k} className={x.on ? 'on' : ''} onClick={x.go}>{x.l}</button>)}
             {nav.tail.length > 0 && <div className="rail-sep" />}
             {nav.tail.map(x => <button key={x.k} className={x.on ? 'on' : ''} onClick={x.go}>{x.l}</button>)}
@@ -596,13 +600,13 @@ export default function App() {
         {myMods.length > 1 && (
           <div className="modpick">
             <button className={`modpill m-${cur}`} aria-haspopup="menu" aria-expanded={modMenu} onClick={() => setModMenu(!modMenu)}>
-              {MOD_LABEL[cur]} <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
+              {ML(cur)} <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
             </button>
             {modMenu && <>
               <div className="modscrim" onClick={() => setModMenu(false)} />
               <div className="modmenu" role="menu">
                 {myMods.map(x => <button key={x.m} role="menuitem" className={cur === x.m ? 'on' : ''} onClick={() => goMod(x.m)}>
-                  <b>{x.l}</b><span className="muted">{MOD_WHAT[x.m]}</span></button>)}
+                  <b>{x.l}</b><span className="muted">{t(MOD_WHAT[x.m])}</span></button>)}
               </div>
             </>}
           </div>
@@ -615,8 +619,8 @@ export default function App() {
         {cur === 'dist' && !noMods && <input className="search" type="search" placeholder="Pallet, strain or tag" value={query}
           onChange={e => { setQuery(e.target.value); if (view === 'freezer' || view === 'activity' || view === 'dash' || view === 'mine') setView('map') }} />}
         {(cur !== 'dist' || noMods) && <span className="grow" />}
-        <button className={`ghost small ${view === 'mine' ? 'on-btn' : ''}`} title="Your own settings" onClick={() => go('mine')}>⚙<span className="hide-phone"> My settings</span></button>
-        <button className="ghost small" title={`Signed in as ${user}. Click to sign out.`} onClick={() => backend.signOut().then(() => setUser(null))}>{who(user)} ⏏</button>
+        <button className={`ghost small ${view === 'mine' ? 'on-btn' : ''}`} title={t('Your own settings')} onClick={() => go('mine')}>⚙<span className="hide-phone"> {t('My settings')}</span></button>
+        <button className="ghost small" title={t('Signed in as {u}. Click to sign out.', { u: user ?? '' })} onClick={() => backend.signOut().then(() => setUser(null))}>{who(user)} ⏏</button>
       </header>
 
       {banner && (
@@ -758,12 +762,12 @@ export default function App() {
       {!noMods && <>
         <nav className="bottom">
           {bottomFit.map(x => <button key={x.k} className={x.on ? 'on' : ''} onClick={x.go}>{x.l}</button>)}
-          {bottomRest.length > 0 && <button className={restOn ? 'on' : ''} onClick={() => setMore(true)}>{restOn ? restOn.l : <>More{badge(restBadge, true)}</>}</button>}
+          {bottomRest.length > 0 && <button className={restOn ? 'on' : ''} onClick={() => setMore(true)}>{restOn ? restOn.l : <>{t('More')}{badge(restBadge, true)}</>}</button>}
         </nav>
         {more && bottomRest.length > 0 && (
           <div className="scrim" onClick={() => setMore(false)}>
             <div className="sheet" onClick={e => e.stopPropagation()}>
-              <div className="sheet-h"><h2>{MOD_LABEL[cur]}</h2><button className="ghost" onClick={() => setMore(false)}>✕</button></div>
+              <div className="sheet-h"><h2>{ML(cur)}</h2><button className="ghost" onClick={() => setMore(false)}>✕</button></div>
               <div className="choices col">{bottomRest.map(x => <button key={x.k} className={x.on ? 'on' : ''} onClick={x.go}>{x.l}</button>)}</div>
             </div>
           </div>

@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { MONTHS_ES, MONTHS_LONG_ES, lang, t, tn } from './i18n'
 
 // Spray, feed and labor logs, shared by Production and the Nursery (each sees its own).
 // Production works like Farm Data OHR: rates per acre x acres; the Nursery mixes per gallon of water.
@@ -38,7 +39,7 @@ export function isoWeek(s: string): { year: number; week: number; monday: string
   const iso = (x: Date) => `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`
   return { year: th.getFullYear(), week: Math.round((mon.getTime() - w1.getTime()) / 6048e5) + 1, monday: iso(mon) }
 }
-const md = (s: string) => { const [, m, d] = s.split('-'); return `${Number(m)}/${Number(d)}` }
+const md = (s: string) => { const [, m, d] = s.split('-'); return lang() === 'es' ? `${Number(d)} ${MONTHS_ES[Number(m) - 1]}` : `${Number(m)}/${Number(d)}` }
 const addD = (s: string, k: number) => { const d = new Date(s + 'T12:00:00'); d.setDate(d.getDate() + k); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` }
 
 /** a product line's total: rate x acres, or rate x gallons of water */
@@ -75,7 +76,7 @@ export function OpsLogs({ sb, module, sites, areas, strains, flash, batches, wag
       sb.from('input_products').select('*').order('name'),
       sb.from('ops_recipes').select('*').eq('module', module).order('sort'),
     ])
-    if (l.error) { setErr(/ops_logs/.test(l.error.message) ? 'Logs need 031 and 032 run in Supabase.' : l.error.message); return }
+    if (l.error) { setErr(/ops_logs/.test(l.error.message) ? t('Logs need 031 and 032 run in Supabase.') : l.error.message); return }
     setRows((l.data ?? []).map(x => ({ ...x, products: x.products ?? [], sqft: n(x.sqft), water_gal: n(x.water_gal), qty: n(x.qty), hours: n(x.hours), acres: n(x.acres), run_min: n(x.run_min) })) as OpsLog[])
     setProducts(((p.data ?? []) as Product[]).map(x => ({ ...x, price: n(x.price) })))
     setRecipes(r.error ? [] : (r.data ?? []) as Recipe[]); setErr(null)
@@ -83,7 +84,7 @@ export function OpsLogs({ sb, module, sites, areas, strains, flash, batches, wag
   useEffect(() => { load() }, [load])
   const pmap = useMemo(() => new Map(products.map(p => [p.name.toLowerCase(), p])), [products])
   if (err) return <div className="warnbox">{err}</div>
-  if (!rows) return <p className="muted">Loading…</p>
+  if (!rows) return <p className="muted">{t('Loading…')}</p>
   const years = [...new Set(rows.map(r => Number(r.log_on.slice(0, 4))))].sort((a, b) => b - a)
   const yr = year ?? years[0] ?? new Date().getFullYear()
   const ql = q.trim().toLowerCase()
@@ -104,52 +105,52 @@ export function OpsLogs({ sb, module, sites, areas, strains, flash, batches, wag
   const labor = kind === 'labor'
   const cols = labor ? (field ? 8 : 9) : (kind === 'spray' ? 9 : 9) + (sites.length > 1 ? 1 : 0)
   const head = labor
-    ? field ? <tr><th>Date</th>{sites.length > 1 && <th>Site</th>}<th>Task</th><th>Where</th><th className="num">People</th><th className="num">Hours</th><th className="num">Person-hrs</th><th className="hide-s">Equipment</th><th className="hide-s">Notes</th></tr>
-      : <tr><th>Date</th>{sites.length > 1 && <th>Site</th>}<th>Task</th><th>Strain</th><th className="num">Qty</th><th className="num">People</th><th className="num">Hours</th><th className="num">Per person-hr</th>{wage ? <th className="num">Cost / each</th> : <th />}<th className="hide-s">Notes</th></tr>
-    : <tr><th>Date</th>{sites.length > 1 && <th>Site</th>}<th>Where</th>{field && <th className="num">Acres</th>}<th>{kind === 'spray' ? 'Type' : 'Method'}</th><th>Products</th>
-      <th className="num">{kind === 'feed' && field ? 'Solution gal' : 'Water gal'}</th>{!field && <th className="hide-s">By</th>}<th className="num">Cost</th><th className="hide-s">Notes</th></tr>
+    ? field ? <tr><th>{t('Date')}</th>{sites.length > 1 && <th>{t('Site')}</th>}<th>{t('Task')}</th><th>{t('Where')}</th><th className="num">{t('People')}</th><th className="num">{t('Hours')}</th><th className="num">{t('Person-hrs')}</th><th className="hide-s">{t('Equipment')}</th><th className="hide-s">{t('Notes')}</th></tr>
+      : <tr><th>{t('Date')}</th>{sites.length > 1 && <th>{t('Site')}</th>}<th>{t('Task')}</th><th>{t('Strain')}</th><th className="num">{t('Qty')}</th><th className="num">{t('People')}</th><th className="num">{t('Hours')}</th><th className="num">{t('Per person-hr')}</th>{wage ? <th className="num">{t('Cost / each')}</th> : <th />}<th className="hide-s">{t('Notes')}</th></tr>
+    : <tr><th>{t('Date')}</th>{sites.length > 1 && <th>{t('Site')}</th>}<th>{t('Where')}</th>{field && <th className="num">{t('Acres')}</th>}<th>{t(kind === 'spray' ? 'Type' : 'Method')}</th><th>{t('Products')}</th>
+      <th className="num">{t(kind === 'feed' && field ? 'Solution gal' : 'Water gal')}</th>{!field && <th className="hide-s">{t('By')}</th>}<th className="num">{t('Cost')}</th><th className="hide-s">{t('Notes')}</th></tr>
   const row = (r: OpsLog) => labor
-    ? field ? <tr key={r.id} className="tap" onClick={() => setOpen(r)}><td className="nowrap">{md(r.log_on)}</td>{sites.length > 1 && <td>{r.site}</td>}<td>{r.task}</td><td>{r.area}</td>
+    ? field ? <tr key={r.id} className="tap" onClick={() => setOpen(r)}><td className="nowrap">{md(r.log_on)}</td>{sites.length > 1 && <td>{r.site}</td>}<td>{r.task ? t(r.task) : ''}</td><td>{r.area}</td>
         <td className="num">{r.crew ?? ''}</td><td className="num">{num(r.hours, 2)}</td><td className="num">{num(hrs(r), 1)}</td><td className="hide-s small">{r.equipment}</td><td className="hide-s small">{r.notes?.replace('[import FarmData2026]', '').trim()}</td></tr>
-      : <tr key={r.id} className="tap" onClick={() => setOpen(r)}><td className="nowrap">{md(r.log_on)}</td>{sites.length > 1 && <td>{r.site}</td>}<td>{r.task}</td><td>{r.strain}</td>
+      : <tr key={r.id} className="tap" onClick={() => setOpen(r)}><td className="nowrap">{md(r.log_on)}</td>{sites.length > 1 && <td>{r.site}</td>}<td>{r.task ? t(r.task) : ''}</td><td>{r.strain}</td>
         <td className="num">{num(r.qty)}</td><td className="num">{r.crew ?? ''}</td><td className="num">{num(r.hours, 2)}</td><td className="num">{r.qty && hrs(r) ? num(r.qty / hrs(r)) : ''}</td>
         <td className="num">{wage && r.qty && hrs(r) ? `$${(hrs(r) * wage / r.qty).toFixed(3)}` : ''}</td><td className="hide-s small">{r.notes}</td></tr>
     : <tr key={r.id} className="tap" onClick={() => setOpen(r)}><td className="nowrap">{md(r.log_on)}</td>{sites.length > 1 && <td>{r.site}</td>}<td>{r.area}</td>{field && <td className="num">{num(r.acres, 1)}</td>}
-      <td>{kind === 'spray' ? <span className={`pill ${/pest|sulfur/i.test(r.spray_type ?? '') || r.products.some(l => pmap.get(l.product.toLowerCase())?.pesticide) ? 'warnp' : ''}`}>{r.spray_type ?? r.method ?? 'Spray'}</span> : (r.recipe ?? r.method)}</td>
+      <td>{kind === 'spray' ? <span className={`pill ${/pest|sulfur/i.test(r.spray_type ?? '') || r.products.some(l => pmap.get(l.product.toLowerCase())?.pesticide) ? 'warnp' : ''}`}>{t(r.spray_type ?? r.method ?? 'Spray')}</span> : (r.recipe ?? (r.method ? t(r.method) : ''))}</td>
       <td className="small">{r.products.map(l => `${l.product}${l.rate != null ? ` ${num(l.rate, 2)} ${l.unit ?? ''}${(l.basis ?? 'acre') === 'acre' && field ? '/ac' : ''}` : ''}`).join(', ')}</td>
       <td className="num">{num(r.water_gal)}</td>{!field && <td className="hide-s">{r.applicator}</td>}<td className="num">{cost(r) ? money(cost(r)) : ''}</td>
       <td className="hide-s small">{r.notes?.replace('[import FarmData2026]', '').trim()}</td></tr>
-  const sumLine = (rs: OpsLog[]) => labor ? `${rs.length} · ${num(rs.reduce((a, r) => a + hrs(r), 0), 1)} person-hrs`
-    : `${rs.length} ${rs.length === 1 ? 'log' : 'logs'}${field ? ` · ${num(rs.reduce((a, r) => a + (r.acres ?? 0), 0), 1)} acres` : ''}${rs.some(cost) ? ` · ${money(rs.reduce((a, r) => a + cost(r), 0))}` : ''}`
+  const sumLine = (rs: OpsLog[]) => labor ? `${rs.length} · ${num(rs.reduce((a, r) => a + hrs(r), 0), 1)} ${t('person-hrs')}`
+    : `${tn(rs.length, '{n} log', '{n} logs')}${field ? ` · ${num(rs.reduce((a, r) => a + (r.acres ?? 0), 0), 1)} ${t('acres')}` : ''}${rs.some(cost) ? ` · ${money(rs.reduce((a, r) => a + cost(r), 0))}` : ''}`
   const newLog = (k: LogKind) => setOpen({ kind: k, module, site: site ?? sites[0], log_on: new Date().toISOString().slice(0, 10), products: [],
     method: k === 'feed' ? (field ? 'Fertigation' : 'Foliar feed') : k === 'spray' ? 'Foliar' : null })
   return <div className="opslogs">
     <div className="row toolbar between">
       <div className="row wrap">
-        <div className="seg">{(['spray', 'feed', 'labor'] as LogKind[]).map(k => <button key={k} className={kind === k ? 'on' : ''} onClick={() => setKind(k)}>{KIND_LABEL[k]}</button>)}
+        <div className="seg">{(['spray', 'feed', 'labor'] as LogKind[]).map(k => <button key={k} className={kind === k ? 'on' : ''} onClick={() => setKind(k)}>{t(KIND_LABEL[k])}</button>)}
           {extraTab && <button className={kind === 'extra' ? 'on' : ''} onClick={() => setKind('extra')}>{extraTab.l}</button>}
-          <button className={kind === 'recipes' ? 'on' : ''} onClick={() => setKind('recipes')}>Recipes</button></div>
+          <button className={kind === 'recipes' ? 'on' : ''} onClick={() => setKind('recipes')}>{t('Recipes')}</button></div>
         {kind !== 'extra' && kind !== 'recipes' && <>
           <select value={yr} onChange={e => setYear(Number(e.target.value))}>{(years.length ? years : [yr]).map(y => <option key={y} value={y}>{y}</option>)}</select>
-          {sites.length > 1 && <div className="seg">{[null, ...sites].map(s => <button key={s ?? 'all'} className={site === s ? 'on' : ''} onClick={() => setSite(s)}>{s ?? 'All'}</button>)}</div>}
-          <input className="search" type="search" placeholder="Field, product, task" value={q} onChange={e => setQ(e.target.value)} />
+          {sites.length > 1 && <div className="seg">{[null, ...sites].map(s => <button key={s ?? 'all'} className={site === s ? 'on' : ''} onClick={() => setSite(s)}>{s ?? t('All')}</button>)}</div>}
+          <input className="search" type="search" placeholder={t('Field, product, task')} value={q} onChange={e => setQ(e.target.value)} />
         </>}
       </div>
-      {kind !== 'extra' && kind !== 'recipes' && <button className="primary" onClick={() => newLog(kind)}>+ {KIND_LABEL[kind]} log</button>}
+      {kind !== 'extra' && kind !== 'recipes' && <button className="primary" onClick={() => newLog(kind)}>{t('+ ' + KIND_LABEL[kind] + ' log')}</button>}
     </div>
     {kind === 'extra' && extraTab?.node}
     {kind === 'recipes' && <Recipes sb={sb} module={module} recipes={recipes} products={products} canEdit={!!canEditRecipes} flash={flash} onChanged={load} />}
-    {kind !== 'extra' && kind !== 'recipes' && (!shown.length ? <p className="muted">No {KIND_LABEL[kind].toLowerCase()} logs in {yr}.</p> : <>
+    {kind !== 'extra' && kind !== 'recipes' && (!shown.length ? <p className="muted">{t('No ' + KIND_LABEL[kind].toLowerCase() + ' logs in {yr}.', { yr })}</p> : <>
       <div className="cwrap"><table className="ctable logtable">
         <thead>{head}</thead>
         <tbody>{[...months.entries()].map(([m, weeks]) => {
           const mk = `${yr}-${m}`, mrows = [...weeks.values()].flat()
           return <Fragment key={mk}>
-            <tr className="mhead" onClick={() => toggle(mk)}><td colSpan={cols + 1}><b>{isOpen(mk) ? '▾' : '▸'} {MONTHS[m]} {yr}</b> <span className="muted">· {sumLine(mrows)}</span></td></tr>
+            <tr className="mhead" onClick={() => toggle(mk)}><td colSpan={cols + 1}><b>{isOpen(mk) ? '▾' : '▸'} {lang() === 'es' ? MONTHS_LONG_ES[m] : MONTHS[m]} {yr}</b> <span className="muted">· {sumLine(mrows)}</span></td></tr>
             {isOpen(mk) && [...weeks.entries()].map(([w, rs]) => {
               const mon = isoWeek(rs[0].log_on).monday
               return <Fragment key={`${mk}-${w}`}>
-                <tr className="wk"><td colSpan={cols + 1}>Week {w} <span className="muted">· {md(mon)} to {md(addD(mon, 6))} · {sumLine(rs)}</span></td></tr>
+                <tr className="wk"><td colSpan={cols + 1}>{t('Week {w}', { w })} <span className="muted">· {t('{a} to {b}', { a: md(mon), b: md(addD(mon, 6)) })} · {sumLine(rs)}</span></td></tr>
                 {rs.map(row)}
               </Fragment>
             })}
@@ -166,26 +167,26 @@ export function OpsLogs({ sb, module, sites, areas, strains, flash, batches, wag
 
 /** what went on this year: each product's total and cost (pesticide use at a glance) */
 function ProductTotals({ rows, pmap, label }: { rows: OpsLog[]; pmap: Map<string, Product>; label: string }) {
-  const t = new Map<string, { name: string; unit: string; total: number; cost: number; logs: number; pest: boolean }>()
+  const tot = new Map<string, { name: string; unit: string; total: number; cost: number; logs: number; pest: boolean }>()
   for (const r of rows) for (const l of r.products) {
     if (!l.product) continue
     const k = `${l.product.toLowerCase()}|${unitKey(l.total_unit)}`
     const p = pmap.get(l.product.toLowerCase())
-    const g = t.get(k) ?? t.set(k, { name: l.product, unit: l.total_unit ?? '', total: 0, cost: 0, logs: 0, pest: !!p?.pesticide }).get(k)!
+    const g = tot.get(k) ?? tot.set(k, { name: l.product, unit: l.total_unit ?? '', total: 0, cost: 0, logs: 0, pest: !!p?.pesticide }).get(k)!
     g.total += l.total ?? 0; g.cost += lineCost(l, p) ?? 0; g.logs++
   }
-  const xs = [...t.values()].sort((a, b) => Number(b.pest) - Number(a.pest) || b.cost - a.cost || a.name.localeCompare(b.name))
+  const xs = [...tot.values()].sort((a, b) => Number(b.pest) - Number(a.pest) || b.cost - a.cost || a.name.localeCompare(b.name))
   if (!xs.length) return null
-  return <details className="ptotals"><summary><b>Product totals</b> <span className="muted">· {label} · {xs.length} products{xs.some(x => x.cost) ? ` · ${money(xs.reduce((a, x) => a + x.cost, 0))}` : ''}</span></summary>
-    <div className="cwrap tight"><table className="ctable"><thead><tr><th>Product</th><th className="num">Total</th><th className="num">Logs</th><th className="num">Cost</th></tr></thead>
-      <tbody>{xs.map(x => <tr key={x.name + x.unit}><td>{x.name}{x.pest && <span className="pill warnp"> pesticide</span>}</td><td className="num">{num(x.total, 1)} {x.unit}</td><td className="num">{x.logs}</td><td className="num">{x.cost ? money(x.cost) : ''}</td></tr>)}</tbody>
+  return <details className="ptotals"><summary><b>{t('Product totals')}</b> <span className="muted">· {label} · {t('{n} products', { n: xs.length })}{xs.some(x => x.cost) ? ` · ${money(xs.reduce((a, x) => a + x.cost, 0))}` : ''}</span></summary>
+    <div className="cwrap tight"><table className="ctable"><thead><tr><th>{t('Product')}</th><th className="num">{t('Total')}</th><th className="num">{t('Logs')}</th><th className="num">{t('Cost')}</th></tr></thead>
+      <tbody>{xs.map(x => <tr key={x.name + x.unit}><td>{x.name}{x.pest && <span className="pill warnp"> {t('pesticide')}</span>}</td><td className="num">{num(x.total, 1)} {x.unit}</td><td className="num">{x.logs}</td><td className="num">{x.cost ? money(x.cost) : ''}</td></tr>)}</tbody>
     </table></div></details>
 }
 
 function LaborTotals({ rows, wage }: { rows: OpsLog[]; wage?: number }) {
   const by = new Map<string, { qty: number; hrs: number }>()
   for (const r of rows) { const g = by.get(r.task ?? 'Other') ?? by.set(r.task ?? 'Other', { qty: 0, hrs: 0 }).get(r.task ?? 'Other')!; g.qty += r.qty ?? 0; g.hrs += (r.crew ?? 1) * (r.hours ?? 0) }
-  return <div className="calcbox">{[...by.entries()].map(([t, g]) => <Fragment key={t}><span>{t}</span><b>{num(g.qty)} in {num(g.hrs, 1)} person-hrs{g.hrs && g.qty ? ` · ${num(g.qty / g.hrs)}/hr` : ''}{wage && g.qty ? ` · $${(g.hrs * wage / g.qty).toFixed(3)} each` : ''}</b></Fragment>)}</div>
+  return <div className="calcbox">{[...by.entries()].map(([k, g]) => <Fragment key={k}><span>{t(k)}</span><b>{t('{q} in {h} person-hrs', { q: num(g.qty), h: num(g.hrs, 1) })}{g.hrs && g.qty ? ` · ${num(g.qty / g.hrs)}/${t('hr')}` : ''}{wage && g.qty ? ` · $${(g.hrs * wage / g.qty).toFixed(3)} ${t('each')}` : ''}</b></Fragment>)}</div>
 }
 
 function LogSheet({ sb, x0, field, sites, areas, strains, products, recipes, batches, flash, fieldAcres, onClose, onSaved }: {
@@ -225,15 +226,15 @@ function LogSheet({ sb, x0, field, sites, areas, strains, products, recipes, bat
         batch_id: x.batch_id ?? null, qty: x.qty ?? null, crew: x.crew ?? null, hours: x.hours ?? null, notes: [tag, x.notes].filter(Boolean).join(' ') || null,
         method: x.method || null, acres: x.acres ?? null, run_min: x.run_min ?? null, equipment: x.equipment || null, recipe: x.recipe || null }
       const { error } = x.id ? await sb.from('ops_logs').update(row).eq('id', x.id) : await sb.from('ops_logs').insert(row)
-      if (error) throw new Error(error.message.includes('column') ? 'Run 032_logs_recipes.sql in Supabase first' : error.message)
-      await onSaved(x.id ? 'Log saved' : `${KIND_LABEL[x.kind!]} logged`)
+      if (error) throw new Error(error.message.includes('column') ? t('Run 032_logs_recipes.sql in Supabase first') : error.message)
+      await onSaved(x.id ? t('Log saved') : t(KIND_LABEL[x.kind!] + ' logged'))
     } catch (e) { flash(String((e as Error).message ?? e), true) } finally { setBusy(false) }
   }
   async function del() {
     setBusy(true)
     const { error } = await sb.from('ops_logs').delete().eq('id', x.id!)
     setBusy(false)
-    if (error) flash(error.message, true); else await onSaved('Log deleted')
+    if (error) flash(error.message, true); else await onSaved(t('Log deleted'))
   }
   const inp = (k: keyof OpsLog, type = 'text', ph = '') => <input type={type} value={(x[k] as string | number | null) ?? ''} placeholder={ph}
     onChange={e => set({ [k]: type === 'number' ? n(e.target.value) : e.target.value } as Partial<OpsLog>)} />
@@ -242,50 +243,50 @@ function LogSheet({ sb, x0, field, sites, areas, strains, products, recipes, bat
   return (
     <div className="scrim" onClick={onClose}>
       <div className="sheet form csheet wide" onClick={e => e.stopPropagation()}>
-        <div className="sheet-h"><h2>{x.id ? `${KIND_LABEL[x.kind!]} log` : `New ${KIND_LABEL[x.kind!].toLowerCase()} log`}</h2><button className="ghost" onClick={onClose}>✕</button></div>
+        <div className="sheet-h"><h2>{t(x.id ? KIND_LABEL[x.kind!] + ' log' : 'New ' + KIND_LABEL[x.kind!].toLowerCase() + ' log')}</h2><button className="ghost" onClick={onClose}>✕</button></div>
         <div className="grid3">
-          <div className="field"><label>Date</label>{inp('log_on', 'date')}</div>
-          {sites.length > 1 && <div className="field"><label>Site</label><select value={x.site} onChange={e => set({ site: e.target.value })}>{sites.map(s => <option key={s}>{s}</option>)}</select></div>}
-          {(!labor || field) && <div className="field"><label>{field ? 'Field / block' : 'Where'}</label><input list="ops-areas" value={x.area ?? ''} onChange={e => where(e.target.value)} placeholder={field ? 'Block 6, Field 8A…' : 'Webb, GH, Hoops 1-4…'} />
+          <div className="field"><label>{t('Date')}</label>{inp('log_on', 'date')}</div>
+          {sites.length > 1 && <div className="field"><label>{t('Site')}</label><select value={x.site} onChange={e => set({ site: e.target.value })}>{sites.map(s => <option key={s}>{s}</option>)}</select></div>}
+          {(!labor || field) && <div className="field"><label>{t(field ? 'Field / block' : 'Where')}</label><input list="ops-areas" value={x.area ?? ''} onChange={e => where(e.target.value)} placeholder={field ? t('Block 6, Field 8A…') : t('Webb, GH, Hoops 1-4…')} />
             <datalist id="ops-areas">{areas.map(a => <option key={a} value={a} />)}</datalist></div>}
-          {field && !labor && <div className="field"><label>Acres</label>{inp('acres', 'number')}</div>}
-          {x.kind === 'spray' && <div className="field"><label>Type</label><select value={x.spray_type ?? ''} onChange={e => set({ spray_type: e.target.value })}><option value="">—</option>{SPRAY_TYPES.map(t => <option key={t}>{t}</option>)}</select></div>}
-          {x.kind === 'feed' && <div className="field"><label>Method</label><select value={x.method ?? ''} onChange={e => set({ method: e.target.value })}><option value="">—</option>{FEED_METHODS.map(t => <option key={t}>{t}</option>)}</select></div>}
-          {!labor && myRecipes.length > 0 && <div className="field"><label>Recipe</label><select value={x.recipe ?? ''} onChange={e => e.target.value ? useRecipe(e.target.value) : set({ recipe: null })}><option value="">—</option>{myRecipes.map(r => <option key={r.id}>{r.name}</option>)}</select></div>}
-          {!labor && <div className="field"><label>{x.method === 'Fertigation' ? 'Solution (gal)' : 'Water (gal)'}</label>{inp('water_gal', 'number')}</div>}
-          {x.method === 'Fertigation' && <div className="field"><label>Run time (min)</label>{inp('run_min', 'number')}</div>}
-          {!labor && !field && <div className="field"><label>Start</label>{inp('start_at', 'time')}</div>}
-          {!labor && !field && <div className="field"><label>End</label>{inp('end_at', 'time')}</div>}
-          {!labor && !field && <div className="field"><label>Area (sq ft)</label>{inp('sqft', 'number')}</div>}
-          {!labor && <div className="field"><label>{x.kind === 'spray' ? 'Applicator' : 'By'}</label>{inp('applicator')}</div>}
-          {labor && <div className="field"><label>Task</label><input list="ops-tasks" value={x.task ?? ''} onChange={e => set({ task: e.target.value })} /><datalist id="ops-tasks">{(field ? FIELD_TASKS : TASKS).map(t => <option key={t} value={t} />)}</datalist></div>}
-          {labor && !field && <div className="field"><label>Strain</label><input list="ops-strains" value={x.strain ?? ''} onChange={e => set({ strain: e.target.value })} /><datalist id="ops-strains">{strains.map(s => <option key={s} value={s} />)}</datalist></div>}
-          {labor && batches && <div className="field"><label>Batch</label><select value={x.batch_id ?? ''} onChange={e => { const b = batches.find(v => v.id === Number(e.target.value)); set({ batch_id: b?.id ?? null, ...(b && !x.strain ? { strain: b.strain } : {}) }) }}>
+          {field && !labor && <div className="field"><label>{t('Acres')}</label>{inp('acres', 'number')}</div>}
+          {x.kind === 'spray' && <div className="field"><label>{t('Type')}</label><select value={x.spray_type ?? ''} onChange={e => set({ spray_type: e.target.value })}><option value="">—</option>{SPRAY_TYPES.map(o => <option key={o} value={o}>{t(o)}</option>)}</select></div>}
+          {x.kind === 'feed' && <div className="field"><label>{t('Method')}</label><select value={x.method ?? ''} onChange={e => set({ method: e.target.value })}><option value="">—</option>{FEED_METHODS.map(o => <option key={o} value={o}>{t(o)}</option>)}</select></div>}
+          {!labor && myRecipes.length > 0 && <div className="field"><label>{t('Recipe')}</label><select value={x.recipe ?? ''} onChange={e => e.target.value ? useRecipe(e.target.value) : set({ recipe: null })}><option value="">—</option>{myRecipes.map(r => <option key={r.id}>{r.name}</option>)}</select></div>}
+          {!labor && <div className="field"><label>{t(x.method === 'Fertigation' ? 'Solution (gal)' : 'Water (gal)')}</label>{inp('water_gal', 'number')}</div>}
+          {x.method === 'Fertigation' && <div className="field"><label>{t('Run time (min)')}</label>{inp('run_min', 'number')}</div>}
+          {!labor && !field && <div className="field"><label>{t('Start')}</label>{inp('start_at', 'time')}</div>}
+          {!labor && !field && <div className="field"><label>{t('End')}</label>{inp('end_at', 'time')}</div>}
+          {!labor && !field && <div className="field"><label>{t('Area (sq ft)')}</label>{inp('sqft', 'number')}</div>}
+          {!labor && <div className="field"><label>{t(x.kind === 'spray' ? 'Applicator' : 'By')}</label>{inp('applicator')}</div>}
+          {labor && <div className="field"><label>{t('Task')}</label><input list="ops-tasks" value={x.task ?? ''} onChange={e => set({ task: e.target.value })} /><datalist id="ops-tasks">{(field ? FIELD_TASKS : TASKS).map(o => <option key={o} value={o}>{lang() === 'es' ? t(o) : ''}</option>)}</datalist></div>}
+          {labor && !field && <div className="field"><label>{t('Strain')}</label><input list="ops-strains" value={x.strain ?? ''} onChange={e => set({ strain: e.target.value })} /><datalist id="ops-strains">{strains.map(s => <option key={s} value={s} />)}</datalist></div>}
+          {labor && batches && <div className="field"><label>{t('Batch')}</label><select value={x.batch_id ?? ''} onChange={e => { const b = batches.find(v => v.id === Number(e.target.value)); set({ batch_id: b?.id ?? null, ...(b && !x.strain ? { strain: b.strain } : {}) }) }}>
             <option value="">—</option>{batches.filter(b => !x.strain || b.strain.toLowerCase() === x.strain.toLowerCase()).map(b => <option key={b.id} value={b.id}>{b.label}</option>)}</select></div>}
-          {labor && !field && <div className="field"><label>How many (clones, plants)</label>{inp('qty', 'number')}</div>}
-          {labor && <div className="field"><label>People</label>{inp('crew', 'number')}</div>}
-          {labor && <div className="field"><label>Hours (each)</label>{inp('hours', 'number')}</div>}
-          {labor && field && <div className="field"><label>Equipment / tools</label>{inp('equipment', 'text', '6130M JD / cultivator')}</div>}
+          {labor && !field && <div className="field"><label>{t('How many (clones, plants)')}</label>{inp('qty', 'number')}</div>}
+          {labor && <div className="field"><label>{t('People')}</label>{inp('crew', 'number')}</div>}
+          {labor && <div className="field"><label>{t('Hours (each)')}</label>{inp('hours', 'number')}</div>}
+          {labor && field && <div className="field"><label>{t('Equipment / tools')}</label>{inp('equipment', 'text', '6130M JD / cultivator')}</div>}
         </div>
         {!labor && <>
-          <h3>Products <span className="muted small">rate per {basis === 'acre' ? 'acre' : 'gallon of water'}</span></h3>
+          <h3>{t('Products')} <span className="muted small">{t(basis === 'acre' ? 'rate per acre' : 'rate per gallon of water')}</span></h3>
           <datalist id="ops-products">{products.filter(p => p.active).map(p => <option key={p.id} value={p.name}>{p.manufacturer ?? ''}</option>)}</datalist>
           {(x.products ?? []).map((l, i) => <div key={i} className="row prodline">
-            <input list="ops-products" value={l.product} placeholder="Product" onChange={e => setLine(i, { product: e.target.value })} />
-            <input type="number" value={l.rate ?? ''} placeholder="Rate" onChange={e => setLine(i, { rate: n(e.target.value) })} />
+            <input list="ops-products" value={l.product} placeholder={t('Product')} onChange={e => setLine(i, { product: e.target.value })} />
+            <input type="number" value={l.rate ?? ''} placeholder={t('Rate')} onChange={e => setLine(i, { rate: n(e.target.value) })} />
             <input value={l.unit ?? ''} placeholder={field ? 'gal, lb, fl oz' : 'mL'} onChange={e => setLine(i, { unit: e.target.value })} />
             <span className="muted small">{l.total != null ? `= ${num(l.total, 1)} ${l.total_unit ?? ''}` : ''}{(() => { const c = lineCost(l, pmap.get(l.product.toLowerCase())); return c ? ` · ${money(c)}` : '' })()}</span>
             <button className="ghost small" onClick={() => setX(s => ({ ...s, products: (s.products ?? []).filter((_, j) => j !== i) }))}>✕</button>
           </div>)}
-          <div className="row"><button className="ghost small" onClick={() => setX(s => ({ ...s, products: [...(s.products ?? []), blank()] }))}>+ Product</button>
-            {cost > 0 && <span className="muted small">Cost {money(cost)}{x.acres ? ` · ${money(cost / x.acres)}/acre` : ''}</span>}</div>
-          {pest.length > 0 && <p className="warn-t small-note">Pesticide: {pest.map(l => l.product).join(', ')}. Record the applicator and times for the use report.</p>}
+          <div className="row"><button className="ghost small" onClick={() => setX(s => ({ ...s, products: [...(s.products ?? []), blank()] }))}>{t('+ Product')}</button>
+            {cost > 0 && <span className="muted small">{t('Cost')} {money(cost)}{x.acres ? ` · ${money(cost / x.acres)}/${t('acre')}` : ''}</span>}</div>
+          {pest.length > 0 && <p className="warn-t small-note">{t('Pesticide')}: {pest.map(l => l.product).join(', ')}. {t('Record the applicator and times for the use report.')}</p>}
         </>}
-        <div className="field"><label>Notes</label>{inp('notes')}</div>
+        <div className="field"><label>{t('Notes')}</label>{inp('notes')}</div>
         <div className="row between csave">
-          {x.id ? (sure ? <span className="row"><button className="ghost danger" disabled={busy} onClick={del}>Yes, delete</button><button className="ghost small" onClick={() => setSure(false)}>Keep</button></span>
-            : <button className="ghost" onClick={() => setSure(true)}>Delete</button>) : <span />}
-          <div className="row"><button className="ghost" onClick={onClose}>Cancel</button><button className="primary" disabled={busy || !x.log_on} onClick={save}>{busy ? 'Saving…' : 'Save'}</button></div>
+          {x.id ? (sure ? <span className="row"><button className="ghost danger" disabled={busy} onClick={del}>{t('Yes, delete')}</button><button className="ghost small" onClick={() => setSure(false)}>{t('Keep')}</button></span>
+            : <button className="ghost" onClick={() => setSure(true)}>{t('Delete')}</button>) : <span />}
+          <div className="row"><button className="ghost" onClick={onClose}>{t('Cancel')}</button><button className="primary" disabled={busy || !x.log_on} onClick={save}>{busy ? t('Saving…') : t('Save')}</button></div>
         </div>
       </div>
     </div>
@@ -304,34 +305,34 @@ function Recipes({ sb, module, recipes, products, canEdit, flash, onChanged }: {
       products: (ed!.products ?? []).filter(l => l.product.trim()), active: ed!.active !== false }
     const { error } = ed!.id ? await sb.from('ops_recipes').update(row).eq('id', ed!.id) : await sb.from('ops_recipes').insert(row)
     setBusy(false)
-    if (error) flash(error.message, true); else { setEd(null); onChanged(); flash('Recipe saved') }
+    if (error) flash(error.message, true); else { setEd(null); onChanged(); flash(t('Recipe saved')) }
   }
   return <>
-    <div className="row toolbar between"><span className="muted">Pick a recipe on a log to fill its products and rates.</span>
-      {canEdit && <button className="primary" onClick={() => setEd({ kind: 'feed', products: [{ product: '', rate: null, unit: null, basis: 'acre', total: null, total_unit: null }] })}>+ Recipe</button>}</div>
-    {!recipes.length && <p className="muted">No recipes yet.</p>}
+    <div className="row toolbar between"><span className="muted">{t('Pick a recipe on a log to fill its products and rates.')}</span>
+      {canEdit && <button className="primary" onClick={() => setEd({ kind: 'feed', products: [{ product: '', rate: null, unit: null, basis: 'acre', total: null, total_unit: null }] })}>{t('+ Recipe')}</button>}</div>
+    {!recipes.length && <p className="muted">{t('No recipes yet.')}</p>}
     <div className="dlist">{recipes.map(r => <button key={r.id} className={`drow click ${r.active ? '' : 'off'}`} onClick={() => canEdit && setEd(r)}>
-      <span className="grow"><b>{r.name}</b><span className="muted"> · {r.kind === 'spray' ? 'Spray' : 'Feed'}{r.method ? ` · ${r.method}` : ''}{r.water_per_acre ? ` · ${r.water_per_acre} gal water/acre` : ''}</span>
+      <span className="grow"><b>{r.name}</b><span className="muted"> · {t(r.kind === 'spray' ? 'Spray' : 'Feed')}{r.method ? ` · ${t(r.method)}` : ''}{r.water_per_acre ? ` · ${t('{n} gal water/acre', { n: r.water_per_acre })}` : ''}</span>
         <div className="small muted">{r.products.map(l => `${l.product} ${num(l.rate, 2)} ${l.unit ?? ''}`).join(', ')}</div></span>
-      {perAcre(r) > 0 && <b>{money(perAcre(r))}/acre</b>}</button>)}</div>
+      {perAcre(r) > 0 && <b>{money(perAcre(r))}/{t('acre')}</b>}</button>)}</div>
     {ed && <div className="scrim" onClick={() => setEd(null)}><div className="sheet form csheet wide" onClick={e => e.stopPropagation()}>
-      <div className="sheet-h"><h2>{ed.id ? ed.name : 'New recipe'}</h2><button className="ghost" onClick={() => setEd(null)}>✕</button></div>
+      <div className="sheet-h"><h2>{ed.id ? ed.name : t('New recipe')}</h2><button className="ghost" onClick={() => setEd(null)}>✕</button></div>
       <div className="grid3">
-        <div className="field"><label>Name</label><input value={ed.name ?? ''} onChange={e => setEd({ ...ed, name: e.target.value })} /></div>
-        <div className="field"><label>For</label><select value={ed.kind} onChange={e => setEd({ ...ed, kind: e.target.value as 'spray' | 'feed' })}><option value="feed">Feed</option><option value="spray">Spray</option></select></div>
-        <div className="field"><label>Method</label><input list="r-methods" value={ed.method ?? ''} onChange={e => setEd({ ...ed, method: e.target.value })} /><datalist id="r-methods">{[...FEED_METHODS, 'Foliar'].map(m => <option key={m} value={m} />)}</datalist></div>
-        <div className="field"><label>Stage</label><input value={ed.stage ?? ''} onChange={e => setEd({ ...ed, stage: e.target.value })} placeholder="Vegetative, Flower…" /></div>
-        <div className="field"><label>Water gal / acre</label><input type="number" value={ed.water_per_acre ?? ''} onChange={e => setEd({ ...ed, water_per_acre: n(e.target.value) })} /></div>
+        <div className="field"><label>{t('Name')}</label><input value={ed.name ?? ''} onChange={e => setEd({ ...ed, name: e.target.value })} /></div>
+        <div className="field"><label>{t('For')}</label><select value={ed.kind} onChange={e => setEd({ ...ed, kind: e.target.value as 'spray' | 'feed' })}><option value="feed">{t('Feed')}</option><option value="spray">{t('Spray')}</option></select></div>
+        <div className="field"><label>{t('Method')}</label><input list="r-methods" value={ed.method ?? ''} onChange={e => setEd({ ...ed, method: e.target.value })} /><datalist id="r-methods">{[...FEED_METHODS, 'Foliar'].map(m => <option key={m} value={m} />)}</datalist></div>
+        <div className="field"><label>{t('Stage')}</label><input value={ed.stage ?? ''} onChange={e => setEd({ ...ed, stage: e.target.value })} placeholder={t('Vegetative, Flower…')} /></div>
+        <div className="field"><label>{t('Water gal / acre')}</label><input type="number" value={ed.water_per_acre ?? ''} onChange={e => setEd({ ...ed, water_per_acre: n(e.target.value) })} /></div>
       </div>
       <datalist id="ops-products">{products.map(p => <option key={p.id} value={p.name} />)}</datalist>
       {(ed.products ?? []).map((l, i) => <div key={i} className="row prodline">
-        <input list="ops-products" value={l.product} placeholder="Product" onChange={e => setEd({ ...ed, products: ed.products!.map((z, j) => j === i ? { ...z, product: e.target.value } : z) })} />
-        <input type="number" value={l.rate ?? ''} placeholder="Rate" onChange={e => setEd({ ...ed, products: ed.products!.map((z, j) => j === i ? { ...z, rate: n(e.target.value) } : z) })} />
-        <input value={l.unit ?? ''} placeholder="unit" onChange={e => setEd({ ...ed, products: ed.products!.map((z, j) => j === i ? { ...z, unit: e.target.value } : z) })} />
+        <input list="ops-products" value={l.product} placeholder={t('Product')} onChange={e => setEd({ ...ed, products: ed.products!.map((z, j) => j === i ? { ...z, product: e.target.value } : z) })} />
+        <input type="number" value={l.rate ?? ''} placeholder={t('Rate')} onChange={e => setEd({ ...ed, products: ed.products!.map((z, j) => j === i ? { ...z, rate: n(e.target.value) } : z) })} />
+        <input value={l.unit ?? ''} placeholder={t('unit')} onChange={e => setEd({ ...ed, products: ed.products!.map((z, j) => j === i ? { ...z, unit: e.target.value } : z) })} />
         <button className="ghost small" onClick={() => setEd({ ...ed, products: ed.products!.filter((_, j) => j !== i) })}>✕</button></div>)}
-      <button className="ghost small" onClick={() => setEd({ ...ed, products: [...(ed.products ?? []), { product: '', rate: null, unit: null, basis: module === 'nursery' ? 'gal' : 'acre', total: null, total_unit: null }] })}>+ Product</button>
-      <label className="check"><input type="checkbox" checked={ed.active !== false} onChange={e => setEd({ ...ed, active: e.target.checked })} /> <span>In use</span></label>
-      <div className="row between csave"><span />{<div className="row"><button className="ghost" onClick={() => setEd(null)}>Cancel</button><button className="primary" disabled={busy || !ed.name?.trim()} onClick={save}>Save</button></div>}</div>
+      <button className="ghost small" onClick={() => setEd({ ...ed, products: [...(ed.products ?? []), { product: '', rate: null, unit: null, basis: module === 'nursery' ? 'gal' : 'acre', total: null, total_unit: null }] })}>{t('+ Product')}</button>
+      <label className="check"><input type="checkbox" checked={ed.active !== false} onChange={e => setEd({ ...ed, active: e.target.checked })} /> <span>{t('In use')}</span></label>
+      <div className="row between csave"><span />{<div className="row"><button className="ghost" onClick={() => setEd(null)}>{t('Cancel')}</button><button className="primary" disabled={busy || !ed.name?.trim()} onClick={save}>{t('Save')}</button></div>}</div>
     </div></div>}
   </>
 }

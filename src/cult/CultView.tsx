@@ -16,6 +16,7 @@ import { errText } from './ui'
 import './cult.css'
 
 import { cultLabel } from './tabs'
+import { t } from '../i18n'
 import { ActivityTab, ReviewTab } from './review'
 import { HarvestTab } from './harvest'
 import { OpsLogs } from '../logs'
@@ -48,7 +49,7 @@ export default function CultView({ backend, flash, onPalletsChanged, tab, go }: 
   return (
     <div className="cult">
       <div className="chead">
-        {tab === 'dashboard' ? <span className="dev">in development</span> : <h2>{tab === 'setup' ? 'Production settings' : cultLabel(tab)} <span className="dev">in development</span></h2>}
+        {tab === 'dashboard' ? <span className="dev">{t('in development')}</span> : <h2>{tab === 'setup' ? t('Production settings') : t(cultLabel(tab))} <span className="dev">{t('in development')}</span></h2>}
         <div className="row">
           {tab !== 'plan' && tab !== 'setup' && tab !== 'activity' && tab !== 'logs' && <select value={d.year} onChange={e => setYear(Number(e.target.value))}>
             {[...new Set([...d.years, d.currentYear + 1])].sort((a, b) => b - a).map(y => <option key={y} value={y}>{y} season</option>)}

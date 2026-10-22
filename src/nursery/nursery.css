@@ -64,3 +64,12 @@
 .addpheno { gap: 6px; }
 .addpheno input { width: 120px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
 .huntname { margin: 4px 0 8px; }
+.sortday .seg { margin-bottom: 8px; }
+.sortday .sdbar { gap: 10px; align-items: center; margin-bottom: 6px; }
+.sortday .sddate { gap: 6px; font-size: 14px; }
+.sortday .sddate input { padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+.sdtable input.qty { max-width: 76px; padding: 7px 8px; font-size: 15px; }
+.sdtable tr.edited td { background: color-mix(in srgb, var(--brand) 7%, var(--panel)); }
+.sdtable td { vertical-align: middle; }
+.sheet.form.wide.csheet:has(.sortday) { max-width: min(1180px, 96vw); }
+.sdtable td .small { font-size: 11.5px; }

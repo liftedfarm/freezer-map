@@ -1,0 +1,750 @@
+# English (as written in the code)	Spanish (farm crew). Blank Spanish = shows English. Run tools/i18n_build.py after editing.
+My settings	Mis ajustes
+Your own settings	Tus propios ajustes
+Signed in as {u}. Click to sign out.	Sesión de {u}. Clic para salir.
+More	Más
+Name saved	Nombre guardado
+Just for you. Signed in as {e}	Solo para ti. Sesión de {e}
+viewing as {e}: changes are off	viendo como {e}: no se pueden hacer cambios
+Name	Nombre
+What the app shows	Lo que muestra la app
+Save	Guardar
+Shows on your activity and in the top bar.	Sale en tu actividad y arriba en la barra.
+Language	Idioma
+Screens show in this language. An Admin can also set it for you.	Las pantallas salen en este idioma. Un Admin también lo puede cambiar por ti.
+Look	Apariencia
+Match device	Igual que el aparato
+Light	Claro
+Dark	Oscuro
+When the app opens	Al abrir la app
+Start in	Empezar en
+Where I left off	Donde me quedé
+Freezer site	Sitio de congeladores
+Emails	Correos
+Reserve requests	Solicitudes de reserva
+when a customer asks to change a reserve	cuando un cliente pide cambiar una reserva
+New orders	Pedidos nuevos
+when a customer places an order in the portal	cuando un cliente hace un pedido en el portal
+What you can use	Lo que puedes usar
+Owner: every module, as Admin.	Dueño: todos los módulos, como Admin.
+Nothing yet.	Nada todavía.
+Ask someone with the Admin module if you need more.	Pide a alguien con el módulo Admin si necesitas más.
+On	Sí
+Admin	Admin
+User	Usuario
+Theme saved	Tema guardado
+Cut on	Cortado el
+{n} trays	{n} charolas
+{n} batch	{n} lote
+{n} batches	{n} lotes
+Logs need 031 and 032 run in Supabase.	Los registros necesitan 031 y 032 en Supabase.
+Loading…	Cargando…
+Date	Fecha
+Site	Sitio
+Task	Tarea
+Where	Dónde
+People	Personas
+Hours	Horas
+Person-hrs	Horas-persona
+Equipment	Equipo
+Notes	Notas
+Strain	Variedad
+Qty	Cant.
+Per person-hr	Por hora-persona
+Cost / each	Costo / c.u.
+Acres	Acres
+Products	Productos
+By	Por
+Cost	Costo
+person-hrs	horas-persona
+acres	acres
+Recipes	Recetas
+All	Todo
+Field, product, task	Campo, producto, tarea
+Week {w}	Semana {w}
+{a} to {b}	{a} al {b}
+Product totals	Totales por producto
+{n} products	{n} productos
+Product	Producto
+Total	Total
+Logs	Registros
+pesticide	pesticida
+{q} in {h} person-hrs	{q} en {h} horas-persona
+hr	hr
+each	c/u
+Run 032_logs_recipes.sql in Supabase first	Primero corre 032_logs_recipes.sql en Supabase
+Log saved	Registro guardado
+Log deleted	Registro borrado
+Block 6, Field 8A…	Bloque 6, Campo 8A…
+Webb, GH, Hoops 1-4…	Webb, GH, Hoops 1-4…
+Type	Tipo
+Method	Método
+Recipe	Receta
+Run time (min)	Tiempo de riego (min)
+Start	Inicio
+End	Fin
+Area (sq ft)	Área (pies²)
+Batch	Lote
+How many (clones, plants)	Cuántos (clones, plantas)
+Hours (each)	Horas (cada uno)
+Equipment / tools	Equipo / herramientas
+Rate	Dosis
++ Product	+ Producto
+acre	acre
+Pesticide	Pesticida
+Record the applicator and times for the use report.	Anota quién aplicó y las horas para el reporte de uso.
+Yes, delete	Sí, borrar
+Keep	Dejar
+Delete	Borrar
+Cancel	Cancelar
+Saving…	Guardando…
+Recipe saved	Receta guardada
+Pick a recipe on a log to fill its products and rates.	Escoge una receta en el registro para llenar productos y dosis.
++ Recipe	+ Receta
+No recipes yet.	Todavía no hay recetas.
+{n} gal water/acre	{n} gal de agua/acre
+New recipe	Receta nueva
+For	Para
+Feed	Fertilización
+Spray	Fumigación
+Labor	Trabajo
+Stage	Etapa
+Vegetative, Flower…	Vegetativo, Flor…
+Water gal / acre	Galones de agua / acre
+unit	unidad
+In use	En uso
+{n} log	{n} registro
+{n} logs	{n} registros
+Solution gal	Galones de solución
+Water gal	Galones de agua
+Field / block	Campo / bloque
+Applicator	Aplicador
+rate per acre	dosis por acre
+rate per gallon of water	dosis por galón de agua
+Solution (gal)	Solución (gal)
+Water (gal)	Agua (gal)
++ Spray log	+ Fumigación
++ Feed log	+ Fertilización
++ Labor log	+ Trabajo
+No spray logs in {yr}.	No hay fumigaciones en {yr}.
+No feed logs in {yr}.	No hay fertilizaciones en {yr}.
+No labor logs in {yr}.	No hay registros de trabajo en {yr}.
+Spray log	Registro de fumigación
+Feed log	Registro de fertilización
+Labor log	Registro de trabajo
+New spray log	Fumigación nueva
+New feed log	Fertilización nueva
+New labor log	Trabajo nuevo
+Spray logged	Fumigación registrada
+Feed logged	Fertilización registrada
+Labor logged	Trabajo registrado
+Feed + pesticide	Fertilizante + pesticida
+Sulfur	Azufre
+Other	Otro
+Fertigation	Fertirriego
+Foliar feed	Foliar
+Foliar	Foliar
+Amendment / side dress	Enmienda / abono lateral
+Drench	Drench (al pie)
+Cut	Corte
+Clean / manicure	Limpiar / manicurar
+Stick	Clavar
+Sort	Clasificar
+Transplant	Trasplantar
+Move clones	Mover clones
+Plant	Plantar
+Top	Despuntar
+Bed shaping	Formar camas
+Planting	Siembra
+Cultivation	Cultivar
+Hand weeding	Deshierbe a mano
+Fertilizer side dress	Abono lateral
+Disc dead beds	Rastrear camas muertas
+Male scouting	Buscar machos
+Spraying	Fumigar
+Irrigation repair	Reparar riego
+Harvest	Cosecha
+Done selecting	Listo
+{n} picked	{n} seleccionados
+in development	en desarrollo
+Production settings	Ajustes de Producción
+Late	Atrasado
+Open	Abiertos
+Delivered / cancelled	Entregados / cancelados
++ New order	+ Pedido nuevo
+Production's nursery deliveries for {sites} show up here by themselves. Add orders for outside farms with New order.	Las entregas del vivero que pide Producción para {sites} salen aquí solas. Los pedidos de granjas de afuera se agregan con Pedido nuevo.
+No orders here.	No hay pedidos aquí.
+Deliver	Entregar
+To	Para
+Plants	Plantas
+Delivered	Entregado
+SO	SO
+Status	Estado
+no date	sin fecha
+New clone order	Pedido de clones nuevo
+{n} plants	{n} plantas
+{n} plant	{n} planta
+For an outside farm, or one of ours	Para una granja de afuera, o una de las nuestras
+no SO yet	sin SO todavía
+Cut by	Cortar antes del
+{n} delivered	{n} entregadas
+Cuttings taken for it	Esquejes cortados para esto
+Price	Precio
+Terms	Términos
+PO	PO
+From	De
+Production plan	Plan de Producción
+Production has this planned but hasn't ordered it yet. Confirm it to give it an SO number and start cutting.	Producción lo tiene planeado pero no lo ha pedido. Confírmalo para darle número de SO y empezar a cortar.
+Deliver…	Entregar…
+Confirmed	Confirmado
+Confirm	Confirmar
+Sales order	Orden de venta
+Edit	Editar
+Cancel this order?	¿Cancelar este pedido?
+Cancelled	Cancelado
+Cancel order	Cancelar pedido
+Back on	Activo otra vez
+Put back on	Reactivar
+Deliveries	Entregas
+batch	lote
+no batch	sin lote
+manifest	manifiesto
+no manifest	sin manifiesto
+Invoice	Factura
+Entered by mistake	Metido por error
+Take back this delivery? Its invoice is voided and the plants come off Production's received list.	¿Deshacer esta entrega? Se anula la factura y las plantas salen de la lista de recibidas de Producción.
+Delivery taken back	Entrega deshecha
+Undo	Deshacer
+Pick…	Escoger…
+Our farms	Nuestras granjas
+Outside farms and partners	Granjas de afuera y socios
+Deliver on	Entregar el
+Price each	Precio c/u
+blank	vacío
+Payment terms	Términos de pago
+Default	Normal
+Customer PO	PO del cliente
+Nursery	Vivero
+This came from Production's plan. Changes here show up there too.	Esto viene del plan de Producción. Los cambios aquí también salen allá.
+Add order	Agregar pedido
+Order added (confirmed, SO number given)	Pedido agregado (confirmado, con número de SO)
+Saved	Guardado
+{n} plants delivered	{n} plantas entregadas
+Deliver {strain}	Entregar {strain}
+{n} plants still owed	faltan {n} plantas
+Delivered on	Entregado el
+METRC manifest #	Manifiesto METRC #
+Transfer manifest	Manifiesto de transferencia
+From which batches	De cuáles lotes
+Left	Quedan
+Sending	Mandando
+· for this order	· para este pedido
+Plants not from a batch	Plantas que no son de un lote
+(only if they weren't tracked)	(solo si no se registraron)
+Optional	Opcional
+Sending {n} of {owed} owed	Mandando {n} de {owed} que se deben
+aim: order + {p}%	meta: pedido + {p}%
+This makes the invoice from {who}	Esto hace la factura de {who}
+the nursery	el vivero
+ and adds the plants to {site}'s received list in Production.	 y agrega las plantas a la lista de recibidas de {site} en Producción.
+only has {n} left.	solo le quedan {n}.
+Deliver {n}	Entregar {n}
+Ready	Listo
+Rooting	Enraizando
+Planning numbers	Números para el plan
+(default)	(normal)
+The Plan screen uses these. Cuts per mom can also be set per strain (tap a strain on the Plan). Each clone order can have its own price and terms.	La pantalla de Plan usa estos números. Los cortes por madre también se pueden poner por variedad (toca la variedad en el Plan). Cada pedido de clones puede tener su propio precio y términos.
+Locations	Ubicaciones
++ Add ›	+ Agregar ›
+{n} moms	{n} madres
+Nursery sites	Sitios del vivero
+license	licencia
+none	ninguna
+Invoices for clones come from the nursery license's entity. Edit licenses in Admin → Settings → Licenses.	Las facturas de clones salen a nombre de la licencia del vivero. Las licencias se editan en Admin → Ajustes → Licencias.
+METRC tags	Etiquetas METRC
+Tags updated	Etiquetas actualizadas
+Location	Ubicación
+New location	Ubicación nueva
+Hoop 19	Hoop 19
+Place	Lugar
+Kind	Tipo
+Trays it holds	Charolas que caben
+Beds (plants each)	Camas (plantas en cada una)
+Bed	Cama
++ Bed	+ Cama
+− Bed	− Cama
+Rented space	Espacio rentado
+Location saved	Ubicación guardada
+Location removed	Ubicación quitada
+Greenhouse bench	Mesa del invernadero
+Greenhouse	Invernadero
+Hoop	Hoop
+Rooting trailer	Tráiler de enraizamiento
+Veg	Vegetativo
+Extra cuttings %	% de esquejes extra
+covers losses	cubre las pérdidas
+Deliver over order %	% de más al entregar
+what you aim to send	lo que se quiere mandar
+Cells per tray	Celdas por charola
+Cuts per G3 field mom	Cortes por madre G3 de campo
+Cuts per G2 greenhouse mom	Cortes por madre G2 de invernadero
+Cuts per G1 mom	Cortes por madre G1
+Days to root (G4)	Días para enraizar (G4)
+cut to delivery	del corte a la entrega
+G3 planted → first G4 cut	G3 plantada → primer corte G4
+G3 cut → planted	Corte G3 → plantada
+G2 cut → G3 cut	Corte G2 → corte G3
+G1 cut → G2 cut	Corte G1 → corte G2
+days	días
+Flag ready batches after	Avisar de lotes listos después de
+Hourly wage (labor cost)	Pago por hora (costo de trabajo)
+Price per clone	Precio por clon
+$ (default)	$ (normal)
+{n} positive	{n} positivos
++ Lab test	+ Prueba de laboratorio
+No lab tests yet. Log HLVD rounds here (vials, results, plants culled).	Todavía no hay pruebas. Anota aquí las rondas de HLVD (tubitos, resultados, plantas eliminadas).
+Test	Prueba
+Round	Ronda
+Lot / location	Lote / ubicación
+Tested	Probadas
+Vials	Tubitos
+Result	Resultado
+Culled	Eliminadas
+round	ronda
+New lab test	Prueba nueva
+Mother lot	Lote de madres
+no location	sin ubicación
+Tested on	Probado el
+Plants in group	Plantas en el grupo
+Plants sampled	Plantas muestreadas
+First vial #	Primer tubito #
+Last vial #	Último tubito #
+Plants culled	Plantas eliminadas
+Action taken	Qué se hizo
+Positive: cull the plants and record the loss on the mother lot (Mothers → the lot → Record loss).	Positivo: elimina las plantas y anota la pérdida en el lote de madres (Madres → el lote → Anotar pérdida).
+Test saved	Prueba guardada
+Test deleted	Prueba borrada
+{n} test	{n} prueba
+{n} tests	{n} pruebas
+Pending	Pendiente
+Negative	Negativo
+Positive	Positivo
+Inconclusive	No concluyente
+new	nuevo
+The Nursery needs the database (not available in the demo).	El Vivero necesita la base de datos (no está en el demo).
+Couldn't load the nursery. If this is the first time, run 028_licenses_nursery.sql in Supabase.	No se pudo cargar el vivero. Si es la primera vez, corre 028_licenses_nursery.sql en Supabase.
+Search strain, tag, farm, notes	Buscar variedad, etiqueta, granja, notas
+Lab tests	Pruebas de laboratorio
+Only a Nursery Admin can change Nursery settings.	Solo un Admin del Vivero puede cambiar los ajustes del Vivero.
+Dashboard	Resumen
+Deliveries this week	Entregas esta semana
+plants	plantas
+{n} late	{n} atrasados
+nothing due	nada pendiente
+Ready to go	Listas para salir
+plants in	plantas en
+no batches ready	ningún lote listo
+{n} ready by {date}	{n} listos para el {date}
+nothing rooting	nada enraizando
+To cut this week	Por cortar esta semana
+first by {date}	el primero para el {date}
+all orders covered	todos los pedidos cubiertos
+Mother plants	Plantas madre
+none yet	ninguna todavía
+{n} strains	{n} variedades
+Next deliveries	Próximas entregas
+Orders	Pedidos
+Owed	Se deben
+Ready now	Listas ya
+No open orders. Production's nursery deliveries show up here when it plans them.	No hay pedidos abiertos. Las entregas del vivero que planea Producción salen aquí.
+Cuttings to take	Esquejes por cortar
+Batches	Lotes
+{n} more for {to}	{n} más para {to}
+cut by {date}	cortar para el {date}
+No cuttings due in the next week.	No hay cortes pendientes la próxima semana.
+Ready vs owed, by strain	Listas vs. debidas, por variedad
+rooting	enraizando
+ready	listas
+owed	se deben
+Nothing owed or rooting.	Nada debido ni enraizando.
+Mothers	Madres
++{n} more strains	+{n} variedades más
+No mother plants entered yet.	Todavía no hay plantas madre.
+{n} for {to}	{n} para {to}
+Nothing needs attention in the nursery.	Nada pendiente en el vivero.
+{gen} need {need}, have {have} · cut {cut}	{gen} necesita {need}, hay {have} · cortar {cut}
+positive	positivo
+{n} short	faltan {n}
+ready by {date}	listo para el {date}
+no tag	sin etiqueta
+planted	plantado
+Nothing yet. Everything done in the Nursery shows up here.	Nada todavía. Todo lo que se hace en el Vivero sale aquí.
+{n} cuttings	{n} esquejes
+{n} order	{n} pedido
+{n} orders	{n} pedidos
+Moms to cut soon	Madres por cortar pronto
+From the Plan: a generation is short and its cut-by date is within two weeks (or passed).	Del Plan: a una generación le faltan plantas y la fecha de corte es en dos semanas (o ya pasó).
+Plan	Plan
+Positive lab tests	Pruebas positivas
+Positive and nothing culled yet.	Positivas y nada eliminado todavía.
+Late deliveries	Entregas atrasadas
+The delivery date has passed and plants are still owed.	Ya pasó la fecha de entrega y todavía se deben plantas.
+Short for upcoming deliveries	Faltan para las próximas entregas
+Ready plus rooting isn't enough for what's owed in the next two weeks. Take more cuttings.	Listas más enraizando no alcanza para lo que se debe en dos semanas. Corten más esquejes.
+Not confirmed yet	Sin confirmar
+Production planned these but they aren't confirmed. Confirm them to give them an SO number.	Producción los planeó pero no están confirmados. Confírmalos para darles número de SO.
+Past their ready date	Pasados de su fecha
+Still rooting after the ready-by date. Mark them ready, or record losses.	Siguen enraizando después de la fecha. Márcalos listos o anota pérdidas.
+Ready for a while	Listos desde hace rato
+Ready more than {n} days and not delivered.	Listos hace más de {n} días y sin entregar.
+Batches with no METRC tag	Lotes sin etiqueta METRC
+Every immature plant batch needs a tag (one per 100 plants).	Cada lote de plantas inmaduras necesita etiqueta (una por cada 100 plantas).
+Mother lots with no METRC tag	Lotes de madres sin etiqueta METRC
+Each mother lot needs its plant tag.	Cada lote de madres necesita su etiqueta.
+Deliveries with no manifest	Entregas sin manifiesto
+Plants left the nursery without a METRC manifest number on record.	Salieron plantas del vivero sin número de manifiesto METRC.
+New clone order	Pedido de clones nuevo
+Order changed	Pedido cambiado
+Order confirmed	Pedido confirmado
+Order cancelled	Pedido cancelado
+Order marked ordered	Pedido marcado como pedido
+Order marked delivered	Pedido marcado como entregado
+Batch changed	Lote cambiado
+Mother added	Madre agregada
+Mother changed	Madre cambiada
+Mother removed	Madre quitada
+Setting changed	Ajuste cambiado
+Invoice paid	Factura pagada
+Invoice marked not paid	Factura marcada sin pagar
+Invoice voided	Factura anulada
+Invoice emailed	Factura enviada
+Rooting (past ready date)	Enraizando (pasado de fecha)
+In the nursery ({n})	En el vivero ({n})
+Done	Terminado
+All gens	Todas las gen.
+Sort day	Día de clasificación
++ Cuttings taken	+ Esquejes cortados
+No batches here. When cuttings are taken, add them with "Cuttings taken".	No hay lotes aquí. Cuando se corten esquejes, agrégalos con "Esquejes cortados".
+Gen	Gen
+Cuttings	Esquejes
+Trays	Charolas
+Rooted	Enraizados
+Where / for	Dónde / para
+Tags	Etiquetas
+No plant tags loaded for this nursery yet (Admin → Settings → Licenses).	Todavía no hay etiquetas de plantas para este vivero (Admin → Ajustes → Licencias).
+{n} {strain} {gen} cuttings added	{n} esquejes {strain} {gen} agregados
+{n} cut {date}	{n} cortados el {date}
+Good plants (rooted, ready to go)	Plantas buenas (enraizadas, listas)
+The rest ({n}) count as lost.	El resto ({n}) cuenta como pérdida.
+The sorts say {n} rooted.	Las clasificaciones dicen {n} enraizados.
+Mark ready	Marcar listo
+{n} {strain} ready	{n} {strain} listos
+losses	pérdidas
+{n} left in {batch}	quedan {n} en {batch}
+this batch	este lote
+Plants lost (died, culled)	Plantas perdidas (muertas, eliminadas)
+Record loss	Anotar pérdida
+{n} lost	{n} perdidas
+Sort {n}	Clasificación {n}
+Cuttings taken	Esquejes cortados
+{strain} · {gen} batch	{strain} · lote {gen}
+One batch per strain per cut day	Un lote por variedad por día de corte
+{n} left	quedan {n}
+Mark ready…	Marcar listo…
+Plant as {gen} moms…	Plantar como madres {gen}…
+Record losses…	Anotar pérdidas…
+Back to rooting	Regresar a enraizando
+Generation	Generación
+({n} per tray)	({n} por charola)
+Rooting in	Enraizando en
+Cut from	Cortado de
+({gen} lots)	(lotes {gen})
+Ready by	Listo para el
+({n} days)	({n} días)
+For order	Para pedido
+(optional)	(opcional)
+Not for a particular order	No es para un pedido en particular
+For season	Para temporada
+METRC batch name	Nombre de lote METRC
+({n} of {of}: one per 100 plants)	({n} de {of}: una por cada 100 plantas)
+One tag per line	Una etiqueta por línea
+Fill next tags	Llenar siguientes etiquetas
+First roots seen	Primeras raíces
+Moved outside	Sacado afuera
+Rooted so far	Enraizados hasta ahora
+enter a sort	anota una clasificación
+of	de
+{n} days to first sort	{n} días a la primera clasificación
+Rooted = vigorous at sort 1 + vigorous at sort 2 (sort 2 re-sorts the minimal and no-root ones).	Enraizados = vigorosos en la clasificación 1 + vigorosos en la 2 (la 2 vuelve a revisar los de pocas raíces y sin raíces).
+{n} plants from this batch were delivered.	Se entregaron {n} plantas de este lote.
+Add batch	Agregar lote
+Batch deleted	Lote borrado
+{n} {strain} {gen} moms planted	{n} madres {strain} {gen} plantadas
+That tag is already on another mother lot	Esa etiqueta ya está en otro lote de madres
+Plant {strain} as {gen} moms	Plantar {strain} como madres {gen}
+{n} plants left in {batch}. Plant them in one lot, or a few (one tag each).	Quedan {n} plantas en {batch}. Plántalas en un lote o en varios (una etiqueta cada uno).
+Planted on	Plantado el
+METRC plant tag for this lot	Etiqueta METRC de este lote
+Scan or type	Escanea o escribe
+Next tag	Siguiente etiqueta
+bed	cama
+{n} planted of {cap} spots	{n} plantadas de {cap} lugares
+(this goes over)	(esto se pasa)
+Plant {n}	Plantar {n}
+No roots	Sin raíces
+Dead / contam.	Muertos / contam.
+Vigorous	Vigorosos
+Minimal	Pocas raíces
+Leave without saving the {n} changed rows?	¿Salir sin guardar las {n} filas cambiadas?
+No location	Sin ubicación
+Every rooting batch in one trailer. Type the counts, Enter goes down the column.	Todos los lotes enraizando en un tráiler. Escribe los números; Enter baja a la siguiente fila.
+Cut counts	Conteo de corte
+Sort 1	Clasificación 1
+Sort 2	Clasificación 2
+Sorted on	Clasificado el
+Sort 2 re-sorts the minimal and no-root ones from sort 1.	La clasificación 2 vuelve a revisar los de pocas raíces y sin raíces de la 1.
+Nothing rooting in {room}.	Nada enraizando en {room}.
+To re-sort	Por revisar
+Should add up to {n}	Debe sumar {n}
+Cuttings stuck per batch. Imported Gen 2 batches came in at 36 each until counted.	Esquejes clavados por lote. Los lotes Gen 2 importados entraron con 36 cada uno hasta que se cuenten.
+Rooted = vigorous at sort 1 + vigorous at sort 2. Red totals don't add up to what was sorted.	Enraizados = vigorosos en la 1 + vigorosos en la 2. Los totales en rojo no cuadran con lo que se clasificó.
+{n} changed	{n} cambiados
+Close	Cerrar
+Save {n}	Guardar {n}
+1 batch saved	1 lote guardado
+{n} batches saved	{n} lotes guardados
+cut {n} ({trays} trays) by {date}	cortar {n} ({trays} charolas) para el {date}
+covered	cubierto
+{y} season	temporada {y}
+How the plan works	Cómo funciona el plan
+PLAN_HOWTO_1	Trabaja hacia atrás desde los pedidos de clones de {year} (entregas del vivero que pide Producción y pedidos de afuera): esquejes G4 = pedido + {buffer}% en charolas de {tray}. Madres G3 de campo = esquejes G4 ÷ {g3} cortes por madre. Cada generación de arriba se corta con +{buffer}% y la G2 a {g2} cortes por madre.
+PLAN_HOWTO_2	Fechas de corte: G4 = primera entrega − {root} días, G3 plantada {veg} días antes y cortada {g3root} días antes de plantar, G2 {g2} días antes de la G3, G1 {g1} días antes de la G2.
+PLAN_HOWTO_3	"Hay" cuenta los lotes de madres vivos de la temporada; +N es lo que está enraizando. Cada generación solo cubre lo que le falta a la de abajo. Toca una variedad para cambiar sus cortes por madre.
+No clone orders for {year} yet. They come from Production → Plan → Nursery deliveries (nursery 1PN), or add them under Orders.	Todavía no hay pedidos de clones para {year}. Vienen de Producción → Plan → Entregas del vivero (vivero 1PN), o se agregan en Pedidos.
+G4 production clones	G4 clones de producción
+G3 field moms	G3 madres de campo
+G2 greenhouse moms	G2 madres de invernadero
+G1 starter moms	G1 madres iniciales
+Ordered	Pedidas
+1st delivery	1a entrega
+Need	Necesitan
+Have	Hay
+Short	Faltan
+Custom cuts per mom	Cortes por madre a la medida
+G3 field moms needed	Madres G3 de campo necesarias
+Hoop space at {p}	Espacio en hoops en {p}
+rented	rentado
+G4 trays to root	Charolas G4 por enraizar
+trailers hold {n} at a time	en los tráileres caben {n} a la vez
+{strain} plan saved	Plan de {strain} guardado
+need {n}	faltan {n}
+have {n}	hay {n}
+{n} plants ordered	{n} plantas pedidas
+first delivery	primera entrega
+Plant G3 by	Plantar G3 para el
+G3 field mom	Madre G3 de campo
+default	normal
+G2 greenhouse mom	Madre G2 de invernadero
+e.g. slow rooter, cut twice	ej. enraiza lento, cortar dos veces
+Over by	Se pasa por
+Room left	Lugar que queda
+Breeding needs 034_breeding.sql run in Supabase.	Cruzas necesita 034_breeding.sql en Supabase.
++ Pollination run	+ Polinización
++ Seed lot	+ Lote de semillas
++ Pheno hunt	+ Búsqueda de fenos
+No pollination runs yet.	Todavía no hay polinizaciones.
+Season	Temporada
+Run	Polinización
+Trailer	Tráiler
+Donor	Donador
+Receivers	Receptoras
+Flipped	A flor
+Pollinated	Polinizado
+Seeds harvested	Semillas cosechadas
+Seeds	Semillas
+No seed lots yet. They come from harvesting a run's receivers, or add bought or traded seeds.	Todavía no hay lotes de semillas. Salen de cosechar las receptoras de una polinización, o agrega semillas compradas o cambiadas.
+Code	Código
+Cross (seed parent x pollen)	Cruza (madre x polen)
+Source	Origen
+Harvested	Cosechado
+Sown	Sembradas
+Germ %	% germ.
+In house	De la casa
+Hunt…	Búsqueda…
+No pheno hunts yet. Start one from a seed lot.	Todavía no hay búsquedas de fenos. Empieza una desde un lote de semillas.
+Hunt	Búsqueda
+Cross	Cruza
+Up	Nacieron
+Phenos	Fenos
+Scored	Calificados
+Keepers	Elegidos
+{name} added with {n} receivers	{name} agregada con {n} receptoras
+Seeds harvested from {a} x {b}?	¿Semillas cosechadas de {a} x {b}?
+Enter a number	Escribe un número
+Short code for this cross (e.g. HBxP)	Código corto para esta cruza (ej. HBxP)
+{n} seeds	{n} semillas
+New pollination run	Polinización nueva
+{n} receivers	{n} receptoras
+One trailer: one donor, many receivers	Un tráiler: un donador, muchas receptoras
+2026 Honey Banana run	Polinización Honey Banana 2026
+Receivers flower in	Receptoras florean en
+Donor (pollen) variety	Variedad donadora (polen)
+Donor lot	Lote donador
+Donors start / flower in	Donadores empiezan / florean en
+Donor plants	Plantas donadoras
+Dates	Fechas
+Donors cut	Corte de donadores
+Donors flipped	Donadores a flor
+Receivers cut	Corte de receptoras
+Receivers planted	Receptoras plantadas
+Receivers flipped	Receptoras a flor
+Pollinated (donors in)	Polinizado (donadores adentro)
++ Add receivers…	+ Agregar receptoras…
+Receiver	Receptora
+Lot	Lote
+Tag	Etiqueta
+METRC tag	Etiqueta METRC
+Seeds…	Semillas…
+Add receivers	Agregar receptoras
+Search strains	Buscar variedades
+All shown	Todas las que salen
+Not in the mother lots	No están en los lotes de madres
+(comma separated)	(separadas por coma)
+Strain A, Strain B	Variedad A, Variedad B
+Plants of each	Plantas de cada una
+Add {n}	Agregar {n}
+Seed lot	Lote de semillas
+New seed lot	Lote de semillas nuevo
+HBxP	HBxP
+Seed parent (receiver)	Madre de la semilla (receptora)
+Pollen parent (donor)	Padre del polen (donador)
+Breeder	Criador
+Old Soul Seeds, Bloom Seed Co…	Old Soul Seeds, Bloom Seed Co…
+Germination %	% de germinación
+New pheno hunt	Búsqueda de fenos nueva
+2026 HBxP hunt	Búsqueda HBxP 2026
+Seeds sown	Semillas sembradas
+Came up	Nacieron
+{n} phenos numbered	{n} fenos numerados
+‹ Hunts	‹ Búsquedas
+Edit hunt	Editar búsqueda
+no seed lot	sin lote de semillas
+sown	sembrado
+{n} up	nacieron {n}
+Label (HBxP)	Nombre (HBxP)
+How many	Cuántos
++ Number phenos	+ Numerar fenos
+Everyone scores on their own: vigor, structure, aroma, color, tackiness and the jar test, 1-5. The table shows the group average, best first.	Cada quien califica por su cuenta: vigor, estructura, aroma, color, pegajosidad y la prueba del frasco, del 1 al 5. La tabla muestra el promedio del grupo, los mejores primero.
+Pheno	Feno
+Avg	Prom.
+Scores	Calificaciones
+Name for this keeper (it goes on the Strains list)	Nombre para esta elegida (va a la lista de Variedades)
+{name} is a keeper	{name} es elegida
+Your score	Tu calificación
+Smells like…	Huele a…
+Everyone else	Los demás
+Who	Quién
+Label	Nombre
+Bed / row	Cama / fila
+Save plant details	Guardar datos de la planta
+Maybe	Tal vez
+Cull	Eliminar
+Male	Macho
+Back to growing	Regresar a creciendo
+{n} score	{n} calificación
+{n} scores	{n} calificaciones
+From a pollination run	De una polinización
+Bought or traded seeds	Semillas compradas o cambiadas
+Received	Recibido
+Update my score	Cambiar mi calificación
+Save my score	Guardar mi calificación
+Rename keeper…	Renombrar elegida…
+Keeper…	Elegida…
+Vigor	Vigor
+Structure	Estructura
+Aroma	Aroma
+Color	Color
+Tackiness	Pegajosidad
+Jar test	Prueba del frasco
+Growing	Creciendo
+Keeper	Elegida
+Pollination runs	Polinizaciones
+Seed lots	Lotes de semillas
+Pheno hunts	Búsquedas de fenos
+Planned	Planeado
+Flowering	Floreando
+In-house	De la casa
+Trade	Cambio
+Scoring	Calificando
+Run saved	Polinización guardada
+Run deleted	Polinización borrada
+Seed lot saved	Lote de semillas guardado
+Seed lot deleted	Lote de semillas borrado
+Hunt saved	Búsqueda guardada
+Score saved	Calificación guardada
+Marked maybe	Marcado tal vez
+Marked male	Marcado macho
++ Mother lot	+ Lote de madres
+A lot is one METRC tag with a count of plants, by strain, generation and location (a bench, or a hoop and bed). G3 lots usually come from planting out a G3 batch.	Un lote es una etiqueta METRC con un número de plantas, por variedad, generación y ubicación (una mesa, o un hoop y cama). Los lotes G3 casi siempre salen de plantar un lote G3.
+No mother lots here yet.	Todavía no hay lotes de madres aquí.
+Planted	Plantado
+Cuts/plant	Cortes/planta
+in	en
++ lot	+ lote
+Active	Activo
+Retired / destroyed	Retirados / destruidos
+lot	lote
+Retire	Retirar
+Destroyed	Destruido
+retired	retirados
+marked destroyed	marcados destruidos
+No plant tags loaded for this nursery yet.	Todavía no hay etiquetas de plantas para este vivero.
+New mother lot	Lote de madres nuevo
+One METRC tag, a count of plants	Una etiqueta METRC, un número de plantas
+(crop year)	(año de cosecha)
+Pot	Maceta
+Internal, TC, HVN, seed	Interno, TC, HVN, semilla
+Cuts per plant	Cortes por planta
+(estimate)	(aproximado)
+Retired	Retirado
+Since	Desde
+METRC plant tag	Etiqueta METRC de planta
+{n} lost so far.	{n} perdidas hasta ahora.
+Plants died or culled?	¿Se murieron o eliminaron plantas?
+{strain} {gen} lot added	Lote {strain} {gen} agregado
+Removed (entered by mistake)	Quitado (metido por error)
+{n} lot	{n} lote
+{n} lots	{n} lotes
+Distribution	Distribución
+Sales	Ventas
+Production	Producción
+Freezer map · transit · review	Mapa de congeladores · tránsito · revisar
+Reserves · menu · orders	Reservas · menú · pedidos
+Harvests · fields · plan	Cosechas · campos · plan
+Mothers · cuttings · deliveries	Madres · esquejes · entregas
+Company · users · app settings	Empresa · usuarios · ajustes
+Breeding	Cruzas
+Invoices	Facturas
+Review	Revisar
+Activity	Actividad
+Settings	Ajustes
+Schedule	Calendario
+Week	Semana
+Testing	Pruebas
+Fields	Campos
+Availability	Disponibilidad
+Yields	Rendimientos
+Freezer map, transit, review	Mapa de congeladores, tránsito, revisar
+Move, split, load and ship pallets	Mover, dividir, cargar y mandar tarimas
++ Distribution settings (vehicles, strains)	+ ajustes de Distribución (vehículos, variedades)
+See prices, reserves and orders; confirm orders	Ver precios, reservas y pedidos; confirmar pedidos
++ approve reserve requests, deadlines, customers and terms	+ aprobar solicitudes de reserva, fechas límite, clientes y términos
+Schedule and log harvests, fields, plan	Programar y anotar cosechas, campos, plan
++ Production settings (sites, fields, labs, equipment)	+ ajustes de Producción (sitios, campos, laboratorios, equipo)
+Mothers, batches, deliver clones, invoices	Madres, lotes, entregar clones, facturas
++ Nursery settings (rooms, prices, tag ranges); void invoices	+ ajustes del Vivero (ubicaciones, precios, etiquetas); anular facturas
+Everything in Admin	Todo en Admin
+1 changed	1 cambiado
+One run = one trailer: one donor (pollen) variety and as many receiver varieties as you put in. Donors start and flower separately (Trailer 3).	Una polinización = un tráiler: una variedad donadora (polen) y todas las receptoras que se metan. Los donadores empiezan y florean aparte (Tráiler 3).
+No phenos here yet. Number them above (they get #1, #2… in order).	Todavía no hay fenos aquí. Numéralos arriba (quedan #1, #2… en orden).
+Select	Seleccionar

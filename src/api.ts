@@ -102,6 +102,7 @@ export interface Backend {
   saveUser(u: SaveUser): Promise<void>
   /** top bar ⚙: your own settings */
   setMyPrefs(p: Prefs): Promise<Prefs>
+  setUserLang(email: string, lang: 'en' | 'es'): Promise<void>
   setMyName(name: string): Promise<void>
   /** Fulfillment: open orders with their assigned pallets (no prices) */
   fulfillmentOrders(): Promise<FOrder[]>
@@ -212,6 +213,11 @@ class SupaBackend implements Backend {
     const { error } = await this.sb.rpc('save_user', { p_email: u.email, p_name: u.name || null, p_kind: u.kind, p_customer: u.customerId,
       p_access: u.access, p_owner: u.owner ?? null })
     if (error && /save_user/.test(error.message)) throw new Error('Run 024_module_roles.sql in Supabase first')
+    fail(error)
+  }
+  async setUserLang(email: string, lang: 'en' | 'es') {
+    const { error } = await this.sb.rpc('set_user_lang', { p_email: email, p_lang: lang })
+    if (error && /set_user_lang/.test(error.message)) throw new Error('Run 036_language.sql in Supabase first')
     fail(error)
   }
   async setMyPrefs(p: Prefs) {
@@ -933,6 +939,7 @@ class DemoBackend implements Backend {
   async myTermsFor() { return null }
   async saveUser(u: SaveUser) { const x = this.users.find(y => y.email === u.email); if (x) x.access = u.access }
   async setMyPrefs(p: Prefs) { return p }
+  async setUserLang() { /* demo */ }
   async setMyName() {}
   async getDoc(): Promise<SalesDoc> { throw new Error('Not in demo') }
   async sharedDoc() { return null }

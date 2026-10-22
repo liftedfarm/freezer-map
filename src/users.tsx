@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { Backend } from './api'
 import { MODULES } from './types'
 import type { AppUser, Customer, Level, Me, ModKey } from './types'
+import { LANGS } from './i18n'
 
 type Kind = 'staff' | 'customer' | 'none'
 const KINDS: { k: Kind; label: string; what: string }[] = [
@@ -67,7 +68,7 @@ export function UsersTab({ backend, me, customers, flash }: {
             <button key={u.email} className="li setrow" onClick={() => setEdit({ ...u, access: { ...(u.access ?? {}) } })}>
               <div className="grow">
                 <div><b>{u.display_name || u.email}</b>{u.email === (me.real_email ?? me.email) && <span className="muted"> · you</span>}</div>
-                <div className="muted">{[u.display_name ? u.email : '', u.customer_id ? cust.get(u.customer_id) : '', loginStatus(u), isStaffRole(u.role) ? accessText(u) : '', ago(u.last_seen)].filter(Boolean).join(' · ')}</div>
+                <div className="muted">{[u.display_name ? u.email : '', u.customer_id ? cust.get(u.customer_id) : '', loginStatus(u), isStaffRole(u.role) ? accessText(u) : '', u.prefs?.lang === 'es' ? 'Español' : '', ago(u.last_seen)].filter(Boolean).join(' · ')}</div>
               </div>
             </button>
           ))}
@@ -80,6 +81,7 @@ export function UsersTab({ backend, me, customers, flash }: {
           try {
             await backend.saveUser({ email: u.email!, name: u.display_name ?? '', kind, customerId: kind === 'customer' ? u.customer_id ?? null : null,
               access: kind === 'staff' ? (u.access ?? {}) : {}, owner: me.access.owner ? !!u.owner : undefined })
+            if (kind === 'staff' && (u.prefs?.lang ?? 'en') !== (edit.prefs?.lang ?? 'en')) await backend.setUserLang(u.email!, u.prefs?.lang ?? 'en')
             await load(); flash('Saved')
             // new customer: keep the card open so the invite link can be made right away
             if (kind === 'customer' && !edit.created_at) setEdit({ ...u, role: 'customer', created_at: new Date().toISOString(), added_by: me.email }); else setEdit(null)
@@ -121,6 +123,8 @@ function UserForm({ user, customers, me, isMe, onClose, onSave, onRemove, backen
           <input type="email" value={u.email ?? ''} disabled={!isNew} autoFocus={isNew} onChange={e => set({ email: e.target.value })} placeholder="name@company.com" /></div>
         <div className="field"><label>Name <span className="muted">(what the app shows)</span></label>
           <input value={u.display_name ?? ''} disabled={locked} onChange={e => set({ display_name: e.target.value })} /></div>
+        {kind === 'staff' && <div className="field"><label>Language <span className="muted">(they can change it in My settings too)</span></label>
+          <div className="seg">{LANGS.map(([v, l]) => <button key={v} className={(u.prefs?.lang ?? 'en') === v ? 'on' : ''} disabled={locked} onClick={() => set({ prefs: { ...u.prefs, lang: v } })}>{l}</button>)}</div></div>}
         <div className="field"><label>Type</label>
           <div className="choices col">
             {KINDS.map(k => (

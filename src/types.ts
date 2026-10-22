@@ -95,7 +95,7 @@ export interface Snapshot {
 
 export type Role = 'admin' | 'sales' | 'crew' | 'customer' | 'none'
 export interface Me { email: string; role: Role; display_name: string | null; customer_id: number | null; customer_name: string | null; viewing_as?: boolean; real_email?: string; access: Access }
-export interface AppUser { email: string; role: Role; customer_id: number | null; display_name: string | null; added_by: string | null; created_at: string; last_seen: string | null; modules?: string[]; owner?: boolean; access?: Partial<Record<ModKey, Level>> }
+export interface AppUser { email: string; role: Role; customer_id: number | null; display_name: string | null; added_by: string | null; created_at: string; last_seen: string | null; modules?: string[]; owner?: boolean; access?: Partial<Record<ModKey, Level>>; prefs?: Prefs }
 /** the parts of the app. Levels per person: off (missing), user, admin. Owners are admin everywhere. */
 export type ModKey = 'distribution' | 'sales' | 'cultivation' | 'nursery' | 'admin'
 export type Level = 'user' | 'admin'
@@ -106,7 +106,7 @@ export const MODULES: { key: ModKey; label: string; what: string; user: string; 
   { key: 'nursery', label: 'Nursery', what: 'Mother plants, cuttings, clone orders and deliveries', user: 'Mothers, batches, deliver clones, invoices', admin: '+ Nursery settings (rooms, prices, tag ranges); void invoices' },
   { key: 'admin', label: 'Admin', what: 'Company dashboard, users and access, app settings', user: 'Everything in Admin', admin: 'Everything in Admin' },
 ]
-export interface Prefs { theme?: 'light' | 'dark' | 'system'; start_module?: ModKey; start_site?: Site; notify?: { requests?: boolean; orders?: boolean } }
+export interface Prefs { theme?: 'light' | 'dark' | 'system'; lang?: 'en' | 'es'; start_module?: ModKey; start_site?: Site; notify?: { requests?: boolean; orders?: boolean } }
 export interface Access { owner: boolean; modules: Partial<Record<ModKey, Level>>; prefs: Prefs }
 export interface UserAccess { email: string; module: ModKey; level: Level }
 /** before 023 is run: work it out from the old role */
