@@ -28,6 +28,8 @@ export default function CultView({ backend, flash, onPalletsChanged, tab, go }: 
   const api = useMemo(() => { const sb = backend.client(); return sb ? new CultApi(sb) : null }, [backend])
   const [site, setSiteS] = useState<string | null>(() => remembered('cult.site', '') || null)
   const [year, setYear] = useState<number | null>(null)
+  const [logId, setLogId] = useState<number | null>(null)
+  useEffect(() => { if (tab !== 'harvest') setLogId(null) }, [tab])
   const [d, setD] = useState<CultData | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [q, setQ] = useState('')
@@ -70,7 +72,7 @@ export default function CultView({ backend, flash, onPalletsChanged, tab, go }: 
       {tab === 'plantings' && <PlantingsTab d={d} c={c} site={site} q={q} api={api} flash={flash} onSaved={saved} />}
       {tab === 'yields' && <YieldsTab d={d} c={c} site={site} q={q} api={api} />}
       {tab === 'plan' && <PlanTab d={d} c={c} api={api} flash={flash} q={q} />}
-      {tab === 'harvest' && <HarvestTab d={d} c={c} site={site} api={api} flash={flash} onSaved={async m => { await load(); flash(m) }} />}
+      {tab === 'harvest' && <HarvestTab key={logId ?? 'list'} openFirst={logId} d={d} c={c} site={site} api={api} flash={flash} onSaved={async m => { await load(); flash(m) }} />}
       {tab === 'review' && <ReviewTab d={d} c={c} site={site} onOpen={setOpen} go={go} />}
       {tab === 'activity' && <ActivityTab api={api} />}
       {tab === 'logs' && backend.client() && <OpsLogs sb={backend.client()!} module="cultivation" sites={d.sites.map(s => s.code)} flash={flash}
@@ -78,7 +80,7 @@ export default function CultView({ backend, flash, onPalletsChanged, tab, go }: 
         fieldAcres={Object.fromEntries(d.fields.filter(f => f.acres).flatMap(f => [[`Block ${f.code}`, f.acres!], [`Field ${f.code}`, f.acres!], [f.name, f.acres!]]))} />}
       {tab === 'setup' && <SetupTab d={d} api={api} sb={backend.client()} flash={flash} onSaved={saved} />}
 
-      {open && <HarvestSheet key={open.id ?? 'new'} d={d} c={c} harvest={open} api={api} flash={flash} onClose={() => setOpen(null)}
+      {open && <HarvestSheet key={open.id ?? 'new'} d={d} c={c} harvest={open} api={api} flash={flash} onClose={() => setOpen(null)} onLog={id => { setOpen(null); setLogId(id); go('harvest') }}
         onSaved={async m => { setOpen(null); await saved(m) }} />}
     </div>
   )

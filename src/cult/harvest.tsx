@@ -3,9 +3,11 @@ import type { CultApi } from './api'
 import { calcHarvest, fieldName, fmtD, KIND_LABEL, n0, n1, sum, today } from './calc'
 import type { Ctx } from './calc'
 import type { CWeight, CultData, Harvest } from './types'
-import { DateIn, errText, NumIn } from './ui'
+import { DateIn, errText, F, NumIn, TextIn } from './ui'
 import type { Flash } from './ui'
 import { ScanButton } from '../scan'
+import { isAdminOf } from '../fold'
+import { nextTag } from './schedule'
 
 // Production > Harvest: log a harvest as it happens. Built for a phone in the field or the pack shed.
 // Fresh frozen: raw bins, then each pallet as it's made (it lands in Staging on the freezer map right away).
@@ -14,11 +16,11 @@ import { ScanButton } from '../scan'
 
 const STEP: Record<string, string> = { ff: 'Raw bins, then pallets', dry: 'Raw weight', combine: 'Dry weight per tote', strip: 'Cut, dry, then dry weight' }
 
-export function HarvestTab({ d, c, site, api, flash, onSaved }: { d: CultData; c: Ctx; site: string | null; api: CultApi; flash: Flash; onSaved: (m: string) => Promise<void> }) {
+export function HarvestTab({ d, c, site, api, flash, onSaved, openFirst }: { d: CultData; c: Ctx; site: string | null; api: CultApi; flash: Flash; onSaved: (m: string) => Promise<void>; openFirst?: number | null }) {
   const [day, setDay] = useState(today())
-  const [openId, setOpenId] = useState<number | null>(null)
+  const [openId, setOpenId] = useState<number | null>(openFirst ?? null)
   const hs = d.harvests.filter(h => (!site || h.site === site) && h.status !== 'cancelled')
-  const open = hs.find(h => h.id === openId)
+  const open = d.harvests.find(h => h.id === openId && h.status !== 'cancelled')
   if (open) return <LogPage h={open} d={d} c={c} api={api} flash={flash} onSaved={onSaved} back={() => setOpenId(null)} />
 
   const now = today()
@@ -70,6 +72,10 @@ function LogPage({ h, d, c, api, flash, onSaved, back }: { h: Harvest; d: CultDa
   const raw = (ws ?? []).filter(w => w.kind === 'raw'), totes = (ws ?? []).filter(w => w.kind === 'tote'), dry = (ws ?? []).filter(w => w.kind === 'dry')
   const pallets = k.pallets.filter(p => p.status !== 'archived').sort((a, b) => a.id - b.id)
   const done = h.status === 'done'
+  const admin = isAdminOf('cultivation')
+  const [editing, setEditing] = useState(false)
+  const locked = done && !editing
+  const prefix = c.field.get(h.field_id ?? -1)?.kind === 'trials' ? 'T' : c.site.get(h.site)?.pallet_prefix ?? 'P'
   return (
     <div className="hlog">
       <button className="ghost small hback" onClick={back}>‹ Harvest</button>
@@ -85,28 +91,31 @@ function LogPage({ h, d, c, api, flash, onSaved, back }: { h: Harvest; d: CultDa
           <div><b>{n0(sum(raw.map(w => w.lbs)) || sum(h.raw_bins))}</b><span>lbs raw ({raw.length || h.raw_bins.length} bin{(raw.length || h.raw_bins.length) === 1 ? '' : 's'})</span></div>
           <div><b>{k.palletLbs && (h.plants_harvested ?? h.plants) ? n1(k.palletLbs / (h.plants_harvested ?? h.plants)!) : ''}</b><span>lbs / plant{h.est_lbs_per_plant ? ` (est ${n1(h.est_lbs_per_plant)})` : ''}</span></div>
         </div>
-        <Weights title="Raw bins" kind="raw" rows={raw} busy={busy} done={done} unit="bin" onAdd={lbs => run(() => api.logWeight(h.id, 'raw', lbs), `Bin ${n0(lbs)} lbs`)} onRemove={id => run(() => api.removeWeight(id), 'Removed')} />
-        <PalletLog h={h} api={api} busy={busy} done={done} pallets={pallets} run={run}
-          prefix={c.field.get(h.field_id ?? -1)?.kind === 'trials' ? 'T' : c.site.get(h.site)?.pallet_prefix ?? 'P'} />
+        <Weights title="Raw bins" kind="raw" rows={raw} busy={busy} done={locked} unit="bin" onAdd={lbs => run(() => api.logWeight(h.id, 'raw', lbs), `Bin ${n0(lbs)} lbs`)} onRemove={id => run(() => api.removeWeight(id), 'Removed')} />
+        <PalletLog h={h} api={api} busy={busy} done={locked} pallets={pallets} run={run} prefix={prefix} />
+        {!locked && <BulkPallets h={h} api={api} busy={busy} run={run} prefix={prefix} pallets={pallets} />}
       </>}
 
       {h.kind === 'dry' && <>
         <div className="ckpis hk"><div><b>{n0(sum(raw.map(w => w.lbs)) || sum(h.raw_bins))}</b><span>lbs raw{k.estRaw ? ` of ~${n0(k.estRaw)}` : ''}</span></div><div><b>{raw.length || h.raw_bins.length}</b><span>bin{(raw.length || h.raw_bins.length) === 1 ? '' : 's'}</span></div></div>
-        <Weights title="Raw weight" kind="raw" rows={raw} busy={busy} done={done} unit="bin" onAdd={lbs => run(() => api.logWeight(h.id, 'raw', lbs), `Bin ${n0(lbs)} lbs`)} onRemove={id => run(() => api.removeWeight(id), 'Removed')} />
+        <Weights title="Raw weight" kind="raw" rows={raw} busy={busy} done={locked} unit="bin" onAdd={lbs => run(() => api.logWeight(h.id, 'raw', lbs), `Bin ${n0(lbs)} lbs`)} onRemove={id => run(() => api.removeWeight(id), 'Removed')} />
         <p className="cnote">Only the raw weight is logged here. Bucking and trimming will be logged in Processing.</p>
       </>}
 
       {h.kind === 'combine' && <>
         <div className="ckpis hk"><div><b>{n0(sum(totes.map(w => w.lbs)))}</b><span>lbs dry{k.estBiomass ? ` of ~${n0(k.estBiomass)}` : ''}</span></div><div><b>{totes.length}</b><span>totes</span></div></div>
-        <Weights title="Totes" kind="tote" rows={totes} busy={busy} done={done} unit="tote" withTag
+        <Weights title="Totes" kind="tote" rows={totes} busy={busy} done={locked} unit="tote" withTag
           onAdd={(lbs, tag) => run(() => api.logWeight(h.id, 'tote', lbs, tag), `Tote ${n0(lbs)} lbs`)} onRemove={id => run(() => api.removeWeight(id), 'Removed')} />
       </>}
 
-      {h.kind === 'strip' && <StripLog h={h} api={api} busy={busy} done={done} dry={dry} run={run} estDry={k.estBiomass} />}
+      {h.kind === 'strip' && <StripLog h={h} api={api} busy={busy} done={locked} dry={dry} run={run} estDry={k.estBiomass} />}
 
       {!done && (h.kind !== 'strip' || h.stage === 'drying') && <Finish h={h} busy={busy} run={run} api={api} back={back}
         ready={h.kind === 'ff' ? pallets.length > 0 : h.kind === 'dry' ? raw.length > 0 || h.raw_bins.length > 0 : h.kind === 'combine' ? totes.length > 0 : dry.length > 0} />}
-      {done && <p className="cnote">Finished. To change anything, open the harvest on the Schedule.</p>}
+      {done && !admin && <p className="cnote">Finished. Only a Production Admin can change a finished harvest.</p>}
+      {done && admin && !editing && <div className="row hfin"><button className="ghost" onClick={() => setEditing(true)}>Edit finished harvest…</button>
+        <span className="muted">Fix totals, add a forgotten bin or pallet, or remove one logged by mistake.</span></div>}
+      {done && admin && editing && <FixTotals h={h} api={api} busy={busy} run={run} k={k} onDone={() => setEditing(false)} />}
       {d.year !== d.currentYear && <p className="cnote">This is the {d.year} season.</p>}
     </div>
   )
@@ -218,6 +227,78 @@ function Finish({ h, busy, run, api, back, ready }: { h: Harvest; busy: boolean;
         <div className="row"><button className="ghost" onClick={() => setOpen(false)}>Not yet</button>
           <button className="primary" disabled={busy} onClick={() => run(() => api.finish(h.id, plants, notes || null), 'Harvest finished').then(back)}>Finish</button></div>
       </div>
+    </section>
+  )
+}
+
+/** back-fill: several pallets at once (how many × lbs each, then tags); pallet # comes from each tag */
+function BulkPallets({ h, api, busy, run, prefix, pallets }: { h: Harvest; api: CultApi; busy: boolean; run: (f: () => Promise<unknown>, ok: string) => Promise<void>; prefix: string; pallets: { code: string }[] }) {
+  const [open, setOpen] = useState(false)
+  const [n, setN] = useState<number | null>(null)
+  const [lbs, setLbs] = useState<number | null>(650)
+  const [rows, setRows] = useState<{ lbs: string; tag: string; code: string | null }[]>([])
+  const set = (i: number, v: Partial<{ lbs: string; tag: string; code: string | null }>) => setRows(rs => rs.map((x, j) => (j === i ? { ...x, ...v } : x)))
+  const codeOf = (r: { tag: string; code: string | null }) => r.code ?? palletFromTag(r.tag, prefix)
+  const dup = rows.map(codeOf).filter((c, i, a) => c && (a.indexOf(c) !== i || pallets.some(p => p.code === c)))
+  if (!open) return <div className="row hfin"><button className="ghost" disabled={busy} onClick={() => setOpen(true)}>Back-fill several pallets…</button><span className="muted">From paper, after the fact</span></div>
+  async function make() {
+    const good = rows.filter(r => Number(r.lbs) > 0)
+    await run(() => api.addPallets(h.id, good.map(r => ({ lbs: Number(r.lbs), tag: r.tag.trim(), code: codeOf(r) || undefined }))), `${good.length} pallet${good.length === 1 ? '' : 's'} added, in Staging`)
+    setRows([]); setOpen(false)
+  }
+  return (
+    <section className="dcard">
+      <div className="dcard-h"><h3>Back-fill pallets</h3><button className="linkbtn" onClick={() => { setRows([]); setOpen(false) }}>Close</button></div>
+      <div className="hpal">
+        <label><span>How many</span><NumIn value={n} onChange={setN} /></label>
+        <label><span>Lbs each</span><NumIn value={lbs} onChange={setLbs} /></label>
+        <button className="ghost" disabled={!n || n <= 0} onClick={() => setRows(rs => [...rs, ...Array.from({ length: Math.min(60, n ?? 1) }, () => ({ lbs: lbs ? String(lbs) : '', tag: '', code: null }))])}>Add rows</button>
+      </div>
+      {rows.map((r, i) => (
+        <div key={i} className="palrow bfrow">
+          <span className="muted small">{i + 1}</span>
+          <input inputMode="decimal" placeholder="lbs" value={r.lbs} onChange={e => set(i, { lbs: e.target.value })} />
+          <input className="mono-in" placeholder="METRC tag (blank = pending)" value={r.tag} onChange={e => set(i, { tag: e.target.value.toUpperCase().replace(/\s/g, '') })} />
+          <ScanButton compact onScan={tag => set(i, { tag })} />
+          <input className="bfcode" placeholder={`${prefix}…`} value={codeOf(r)} onChange={e => set(i, { code: e.target.value.toUpperCase().replace(/\s/g, '') || null })} title="Pallet # (from the tag unless you type one)" />
+          <button className="ghost small" onClick={() => setRows(rs => rs.filter((_, j) => j !== i))}>✕</button>
+        </div>
+      ))}
+      {rows.length > 0 && <>
+        {dup.length > 0 && <p className="warn-t small">Already used: {[...new Set(dup)].join(', ')}</p>}
+        <div className="row">
+          {rows[0].tag && rows.length > 1 && <button className="ghost small" onClick={() => setRows(rs => rs.map((x, j) => ({ ...x, tag: nextTag(rs[0].tag, j), code: null })))}>Number the tags in order from the first</button>}
+          <button className="primary" disabled={busy || !rows.some(r => Number(r.lbs) > 0) || dup.length > 0} onClick={make}>Create {rows.length} pallet{rows.length === 1 ? '' : 's'} ({n0(sum(rows.map(r => Number(r.lbs) || 0)))} lbs)</button>
+        </div>
+        <p className="cnote">Pallet # comes from each tag's last 4 digits. Blank tags get the next number and show as tag pending. New pallets go to {h.site} Staging on the freezer map.</p>
+      </>}
+    </section>
+  )
+}
+
+/** Production Admins: fix a finished harvest's totals, or reopen it */
+function FixTotals({ h, api, busy, run, k, onDone }: { h: Harvest; api: CultApi; busy: boolean; run: (f: () => Promise<unknown>, ok: string) => Promise<void>; k: ReturnType<typeof calcHarvest>; onDone: () => void }) {
+  const [x, setX] = useState<Partial<Harvest>>(h)
+  const set = (v: Partial<Harvest>) => setX(s => ({ ...s, ...v }))
+  return (
+    <section className="dcard">
+      <div className="dcard-h"><h3>Fix the totals</h3><span className="muted small">Production Admins only · every change is in Activity</span></div>
+      <div className="grid3">
+        <F label="Harvested on"><DateIn value={x.harvested_on} onChange={v => set({ harvested_on: v })} /></F>
+        <F label="Plants harvested"><NumIn value={x.plants_harvested} onChange={v => set({ plants_harvested: v })} /></F>
+        <F label="METRC harvest name"><TextIn value={x.metrc_name} onChange={v => set({ metrc_name: v })} /></F>
+        {h.kind !== 'combine' && h.kind !== 'strip' && <F label="Raw lbs" hint="(blank = bins)"><NumIn value={x.raw_lbs} placeholder={sum(h.raw_bins) ? n1(sum(h.raw_bins)) : ''} onChange={v => set({ raw_lbs: v })} /></F>}
+        {h.kind === 'ff' && <F label="Fresh frozen lbs" hint="(blank = pallets)"><NumIn value={x.ff_lbs} placeholder={k.palletLbs ? n1(k.palletLbs) : ''} onChange={v => set({ ff_lbs: v })} /></F>}
+        {h.kind === 'dry' && <><F label="Bucked lbs"><NumIn value={x.bucked_lbs} onChange={v => set({ bucked_lbs: v })} /></F>
+          <F label="Trim lbs"><NumIn value={x.trim_lbs} onChange={v => set({ trim_lbs: v })} /></F><F label="Mold lbs"><NumIn value={x.mold_lbs} onChange={v => set({ mold_lbs: v })} /></F></>}
+      </div>
+      <div className="row wrap">
+        <button className="primary" disabled={busy} onClick={() => run(() => api.save<Harvest>('cult_harvests', { id: h.id, harvested_on: x.harvested_on, plants_harvested: x.plants_harvested ?? null, metrc_name: x.metrc_name ?? null,
+          raw_lbs: x.raw_lbs ?? null, ff_lbs: x.ff_lbs ?? null, bucked_lbs: x.bucked_lbs ?? null, trim_lbs: x.trim_lbs ?? null, mold_lbs: x.mold_lbs ?? null }), 'Harvest fixed')}>Save totals</button>
+        <button className="ghost" disabled={busy} onClick={() => run(() => api.reopen(h.id), 'Reopened: back to Harvesting')}>Reopen harvest</button>
+        <button className="ghost" onClick={onDone}>Done editing</button>
+      </div>
+      <p className="cnote">Bins and pallets above are unlocked while you're editing. Reopen puts it back under Harvesting so the crew can keep logging, then Finish it again.</p>
     </section>
   )
 }

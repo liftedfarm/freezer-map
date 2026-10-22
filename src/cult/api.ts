@@ -170,6 +170,7 @@ export class CultApi {
   async startDrying(harvestId: number, date: string | null, acres: number | null) {
     const { error } = await this.sb.rpc('cult_start_drying', { p_harvest: harvestId, p_date: date, p_acres: acres }); fail(error)
   }
+  async reopen(harvestId: number) { const { error } = await this.sb.rpc('cult_reopen', { p_harvest: harvestId }); if (error) throw new Error(/cult_reopen/.test(error.message) ? 'Run 042_finished_harvests.sql in Supabase first' : error.message) }
   async finish(harvestId: number, plants: number | null, notes: string | null) {
     const { error } = await this.sb.rpc('cult_finish', { p_harvest: harvestId, p_plants: plants, p_notes: notes }); fail(error)
   }

@@ -100,8 +100,8 @@ export function nextTag(tag: string, by = 1) {
   return m[1] + n
 }
 
-export function HarvestSheet({ d, c, harvest, api, flash, onClose, onSaved }: {
-  d: CultData; c: Ctx; harvest: Partial<Harvest>; api: CultApi; flash: Flash; onClose: () => void; onSaved: (msg: string) => Promise<void>
+export function HarvestSheet({ d, c, harvest, api, flash, onClose, onSaved, onLog }: {
+  d: CultData; c: Ctx; harvest: Partial<Harvest>; api: CultApi; flash: Flash; onClose: () => void; onSaved: (msg: string) => Promise<void>; onLog?: (id: number) => void
 }) {
   const [h, setH] = useState<Partial<Harvest>>({ raw_bins: [], ...harvest })
   const [busy, setBusy] = useState(false)
@@ -186,24 +186,16 @@ export function HarvestSheet({ d, c, harvest, api, flash, onClose, onSaved }: {
       )}
 
       {logging && <>
-        <h3>What came in</h3>
-        <div className="grid3">
-          <F label="Harvested on"><DateIn value={h.harvested_on} onChange={v => set({ harvested_on: v })} /></F>
-          <F label="Plants harvested"><NumIn value={h.plants_harvested} onChange={v => set({ plants_harvested: v })} /></F>
-          <F label="METRC harvest name"><TextIn value={h.metrc_name} onChange={v => set({ metrc_name: v })} /></F>
+        <div className="row between"><h3>What came in</h3>{onLog && h.id != null && <button className="ghost small" onClick={() => onLog(h.id!)}>Open harvest log ›</button>}</div>
+        <div className="calcbox">
+          <span>Harvested</span><b>{fmtD(h.harvested_on, true) || '—'}</b>
+          <span>Plants harvested</span><b>{n0(h.plants_harvested ?? h.plants)}</b>
+          {h.metrc_name && <><span>METRC harvest</span><b>{h.metrc_name}</b></>}
+          {!isBiomass(h.kind as HarvestKind) && <><span>Raw</span><b>{n0(h.raw_lbs ?? sum(h.raw_bins ?? []))} lbs{(h.raw_bins ?? []).length ? ` · ${(h.raw_bins ?? []).length} bins` : ''}</b></>}
+          {h.kind === 'ff' && <><span>Fresh frozen</span><b>{n0(h.ff_lbs ?? k.palletLbs)} lbs</b></>}
+          {h.kind === 'dry' && <><span>Bucked / trim / mold</span><b>{[h.bucked_lbs, h.trim_lbs, h.mold_lbs].map(v => (v == null ? '—' : n0(v))).join(' / ')} lbs</b></>}
         </div>
-        {!isBiomass(h.kind as HarvestKind) && (h.raw_bins ?? []).length > 0 && (
-          <F label="Raw bins" hint={`${(h.raw_bins ?? []).length} bins · ${n1(sum(h.raw_bins ?? []))} lbs`}>
-            <div className="binrow">{(h.raw_bins ?? []).map((b, i) => <span key={i}>{b}</span>)}</div>
-          </F>
-        )}
-        <div className="grid3">
-          <F label="Raw lbs" hint={(h.raw_bins ?? []).length ? '(blank = bins)' : ''}><NumIn value={h.raw_lbs} placeholder={(h.raw_bins ?? []).length ? n1(sum(h.raw_bins ?? [])) : ''} onChange={v => set({ raw_lbs: v })} /></F>
-          {h.kind === 'ff' && <F label="Fresh frozen lbs" hint={pallets.length ? '(blank = pallets)' : ''}><NumIn value={h.ff_lbs} placeholder={pallets.length ? n1(k.palletLbs) : ''} onChange={v => set({ ff_lbs: v })} /></F>}
-          {h.kind === 'dry' && <><F label="Bucked lbs"><NumIn value={h.bucked_lbs} onChange={v => set({ bucked_lbs: v })} /></F>
-            <F label="Trim lbs"><NumIn value={h.trim_lbs} onChange={v => set({ trim_lbs: v })} /></F>
-            <F label="Mold lbs"><NumIn value={h.mold_lbs} onChange={v => set({ mold_lbs: v })} /></F></>}
-        </div>
+        <p className="cnote">Results are logged and fixed in the harvest log (fixing a finished harvest is for Production Admins).</p>
         {h.kind === 'ff' && k.actFF != null && k.actPlants ? <p className="cnote">{n2(k.actFF / k.actPlants)} lbs/plant fresh frozen{h.est_lbs_per_plant ? ` (estimate was ${n2(h.est_lbs_per_plant)})` : ''}{k.actRaw ? ` · ${pct(k.actFF / k.actRaw)} of raw` : ''}</p> : null}
 
         {h.kind === 'ff' && !isNew && <>

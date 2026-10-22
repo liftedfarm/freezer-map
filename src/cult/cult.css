@@ -125,3 +125,10 @@
 .hlog .binrow span { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px; font-size: 14px; font-variant-numeric: tabular-nums; }
 .hlog .binrow a { margin-left: 6px; color: var(--muted); cursor: pointer; text-decoration: none; }
 .hpal label.check { display: flex; } .hpal label.check input { width: 20px; height: 20px; }
+.bfrow { display: flex; gap: 6px; align-items: center; margin: 4px 0; }
+.bfrow input { padding: 7px 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); min-width: 0; }
+.bfrow input[inputmode="decimal"] { width: 80px; }
+.bfrow .mono-in { flex: 1; }
+.bfrow .bfcode { width: 80px; }
+.hlog .grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 10px; }
+@media (max-width: 640px) { .hlog .grid3 { grid-template-columns: 1fr 1fr; } }
