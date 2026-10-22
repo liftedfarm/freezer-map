@@ -723,7 +723,7 @@ export default function App() {
         {view === 'load' && loadId != null && <LoadView ctx={ctx} loadId={loadId} onBack={() => setView('transit')} onEdit={() => setLoadForm({ load: (snap.loads ?? []).find(l => l.id === loadId) })} />}
         {view === 'cult' && inCult && <Suspense fallback={<p className="muted">Loading…</p>}><CultView backend={backend} flash={flash} tab={cultTab} go={setCultTab} onPalletsChanged={() => { reload() }} /></Suspense>}
         {view === 'cult' && inCult && cultTab === 'setup' && <div className="modset"><SettingsView backend={backend} flash={flash} onChanged={() => { reload() }} inventoryStrains={invStrains} title="Strains" lists={['strains']} /></div>}
-        {view === 'nursery' && cur === 'nurs' && <Suspense fallback={<p className="muted">Loading…</p>}><NurseryView backend={backend} flash={flash} tab={nurTab} go={setNurTab} customers={snap.customers ?? []} isAdmin={isAdminOf('nurs')} sender={me?.display_name} /></Suspense>}
+        {view === 'nursery' && cur === 'nurs' && <Suspense fallback={<p className="muted">Loading…</p>}><NurseryView backend={backend} flash={flash} tab={nurTab} go={setNurTab} customers={snap.customers ?? []} isAdmin={isAdminOf('nurs')} sender={me?.display_name} me={me?.email} /></Suspense>}
         {view === 'admin' && cur === 'admin' && adminTab === 'dash' && <AdminDashboard backend={backend} open={jump} />}
         {view === 'admin' && cur === 'admin' && adminTab === 'review' && <AdminReview backend={backend} open={jump} />}
         {view === 'admin' && cur === 'admin' && adminTab === 'activity' && <ActivityView ix={ix} module="all" />}

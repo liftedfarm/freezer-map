@@ -53,3 +53,14 @@
 .ptotals summary { cursor: pointer; padding: 6px 0; }
 .opslogs .toolbar select { padding: 7px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); font-size: 14px; }
 .csheet.wide { max-width: 860px; }
+.pickgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 4px 10px; max-height: 46vh; overflow: auto; margin: 8px 0; padding: 4px; border: 1px solid var(--line); border-radius: 10px; }
+.pickgrid .pick { padding: 4px 6px; border-radius: 8px; font-size: 14px; }
+.pickgrid .pick.on { background: color-mix(in srgb, var(--brand) 12%, var(--panel)); }
+.scoregrid { display: grid; grid-template-columns: 110px 1fr; gap: 6px 10px; align-items: center; margin: 6px 0 10px; }
+.scoregrid .choices { margin: 0; }
+.scoregrid .choices button { min-width: 44px; }
+.tagin, .ctable input.qty { width: 100%; max-width: 150px; padding: 5px 7px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); font-size: 13px; }
+.ctable input.qty { max-width: 70px; text-align: right; }
+.addpheno { gap: 6px; }
+.addpheno input { width: 120px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+.huntname { margin: 4px 0 8px; }
