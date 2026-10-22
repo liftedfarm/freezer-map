@@ -5,7 +5,7 @@ import { FREEZER_STATUSES } from './types'
 import { MergeForm, MergeHere, MixedBuilder, NewPalletChooser, PickMixed, SingleForm, SplitForm, TagForm, WeightForm, lbs } from './forms'
 import { SettingsView } from './settings'
 import { UsersTab } from './users'
-import { AdminDashboard, AppSettingsPanel } from './admin'
+import { AdminDashboard, AdminReview, AppSettingsPanel } from './admin'
 import type { Jump } from './admin'
 import { DeadlinesPanel, SalesDashboard, SalesReview } from './salesdash'
 import { MySettings } from './mine'
@@ -36,7 +36,7 @@ const KEY_MOD: Record<ModKey, Mod> = { distribution: 'dist', sales: 'sales', cul
 const MOD_LABEL: Record<Mod, string> = { dist: 'Distribution', sales: 'Sales', cult: 'Production', admin: 'Admin' }
 const MOD_WHAT: Record<Mod, string> = { dist: 'Freezer map · transit · review', sales: 'Reserves · menu · orders', cult: 'Harvests · fields · plan', admin: 'Company · users · app settings' }
 type SalesTab = 'dash' | SalesMode | 'review' | 'activity' | 'settings'
-type AdminTab = 'dash' | 'activity' | 'settings'
+type AdminTab = 'dash' | 'review' | 'activity' | 'settings'
 interface NavItem { k: string; l: ReactNode; on: boolean; go: () => void }
 const MOD_ICON: Record<Mod, ReactNode> = {
   dist: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><rect x="1" y="7" width="14" height="10" /><path d="M15 10h4l3 3v4h-7" /><circle cx="6" cy="19" r="2" /><circle cx="18" cy="19" r="2" /></svg>,
@@ -505,7 +505,7 @@ export default function App() {
   const cultMain = CULT_TABS.map(t => cItem(t.t, t.l))
   const cultTail = CULT_TAIL.filter(t => t.t !== 'setup' || isAdminOf('cult')).map(t => cItem(t.t, t.l))
   const aItem = (t: AdminTab, l: string): NavItem => ({ k: t, l, on: view === 'admin' && adminTab === t, go: () => setAdminTab(t) })
-  const adminMain = [aItem('dash', 'Dashboard')], adminTail = [aItem('activity', 'Activity'), aItem('settings', 'Settings')]
+  const adminMain = [aItem('dash', 'Dashboard')], adminTail = [aItem('review', 'Review'), aItem('activity', 'Activity'), aItem('settings', 'Settings')]
   const NAV: Record<Mod, { main: NavItem[]; tail: NavItem[] }> = {
     dist: { main: distMain, tail: distTail }, sales: { main: salesMain, tail: salesTail }, cult: { main: cultMain, tail: cultTail }, admin: { main: adminMain, tail: adminTail } }
   const nav = NAV[cur]
@@ -663,6 +663,7 @@ export default function App() {
         {view === 'cult' && inCult && <Suspense fallback={<p className="muted">Loading…</p>}><CultView backend={backend} flash={flash} tab={cultTab} go={setCultTab} onPalletsChanged={() => { reload() }} /></Suspense>}
         {view === 'cult' && inCult && cultTab === 'setup' && <div className="modset"><SettingsView backend={backend} flash={flash} onChanged={() => { reload() }} inventoryStrains={invStrains} title="Strains" lists={['strains']} /></div>}
         {view === 'admin' && cur === 'admin' && adminTab === 'dash' && <AdminDashboard backend={backend} open={jump} />}
+        {view === 'admin' && cur === 'admin' && adminTab === 'review' && <AdminReview backend={backend} open={jump} />}
         {view === 'admin' && cur === 'admin' && adminTab === 'activity' && <ActivityView ix={ix} module="all" />}
         {view === 'admin' && cur === 'admin' && adminTab === 'settings' && <SettingsView backend={backend} flash={flash} onChanged={() => { reload() }} inventoryStrains={invStrains} title="Admin settings"
           lists={[]} extra={[{ k: 'users', l: 'Users and access', node: <UsersTab backend={backend} me={me!} customers={snap.customers ?? []} flash={flash} /> },

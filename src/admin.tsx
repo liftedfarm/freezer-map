@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { Backend, Overview } from './api'
 import { MODULES } from './types'
+import type { AppUser } from './types'
 import { Card, Cards, DashHead, Empty, Meter, Tile, Tiles } from './dash'
 
 const n0 = (x: number) => Math.round(Number(x)).toLocaleString()
@@ -96,6 +97,53 @@ export function AppSettingsPanel({ backend, flash }: { backend: Backend; flash: 
       ))}
       <p className="muted">Each module's own settings (vehicles, customers, deadlines, sites, fields) are under Settings in that module.</p>
       <button className="primary" disabled={busy || !changed.length} onClick={save}>Save{changed.length ? ` ${changed.length} change${changed.length > 1 ? 's' : ''}` : ''}</button>
+    </div>
+  )
+}
+
+/** Admin > Review: what's stuck anywhere in the company, plus people and logins that need a look */
+export function AdminReview({ backend, open }: { backend: Backend; open: (j: Jump) => void }) {
+  const [o, setO] = useState<Overview | null>(null)
+  const [users, setUsers] = useState<AppUser[] | null>(null)
+  const [logins, setLogins] = useState<Map<string, { claimed: boolean; invited_at: string | null }>>(new Map())
+  const [err, setErr] = useState<string | null>(null)
+  useEffect(() => {
+    backend.adminOverview().then(setO).catch(e => setErr(String(e?.message ?? e)))
+    Promise.all([backend.listUsers(), backend.userLogins()]).then(([u, l]) => { setUsers(u); setLogins(l) }).catch(() => setUsers([]))
+  }, [backend])
+  if (err) return <div className="list"><h2>Review</h2><div className="warnbox">{err}</div></div>
+  if (!o || !users) return <p className="muted">Loading…</p>
+  const staff = users.filter(u => ['admin', 'sales', 'crew'].includes(u.role))
+  const noMods = staff.filter(u => !u.owner && !Object.keys(u.access ?? {}).length)
+  const never = staff.filter(u => !u.last_seen)
+  const custs = users.filter(u => u.role === 'customer')
+  const notInvited = custs.filter(u => !logins.get(u.email)?.invited_at && !logins.get(u.email)?.claimed)
+  const notSetUp = custs.filter(u => logins.get(u.email)?.invited_at && !logins.get(u.email)?.claimed)
+  const work: [number, string, string, Jump][] = [
+    [o.sales.to_confirm, 'Orders to confirm', 'Sales', 'sales.orders'],
+    [o.sales.requests, 'Reserve requests to approve', 'Sales', 'sales.requests'],
+    [o.needs_spot, 'Pallets that need a spot', 'Distribution', 'dist.review'],
+    [o.season.unlogged, 'Harvests not logged', 'Production', 'cult.review'],
+  ]
+  const stuck = work.filter(w => w[0] > 0)
+  const people: [AppUser[], string, string][] = [
+    [noMods, 'Staff with no modules', 'They can sign in but see nothing. Give them a module or set them to No access.'],
+    [never, 'Never signed in', 'Added but haven\'t used the app yet.'],
+    [notInvited, 'Customers not invited', 'No portal invite link made yet.'],
+    [notSetUp, 'Customers invited, not set up', 'Link sent but no password yet. Links work for 14 days.'],
+  ]
+  const nothing = !stuck.length && people.every(p => !p[0].length)
+  return (
+    <div className="list dash">
+      <h2>Review</h2>
+      {nothing && <p className="muted">Nothing needs attention anywhere.</p>}
+      {stuck.length > 0 && <section className="dcard"><div className="dcard-h"><h3>Waiting in the modules</h3></div>
+        <div className="dlist">{stuck.map(([n, l, m, j]) => <button key={l} className="drow click" onClick={() => open(j)}><span><b>{l}</b><span className="muted"> · {m}</span></span><span className="pill warnp">{n}</span></button>)}</div></section>}
+      {people.filter(p => p[0].length).map(([list, l, note]) => (
+        <section key={l} className="dcard"><div className="dcard-h"><h3>{l} <span className="side-badge">{list.length}</span></h3><button className="linkbtn" onClick={() => open('admin.users')}>Users ›</button></div>
+          <p className="muted">{note}</p>
+          <div className="dlist">{list.map(u => <div key={u.email} className="drow"><span><b>{u.display_name || u.email}</b>{u.display_name && <span className="muted"> · {u.email}</span>}</span></div>)}</div></section>
+      ))}
     </div>
   )
 }
