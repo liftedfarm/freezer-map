@@ -7,10 +7,10 @@ export interface DocLine { id: number; kind: 'product' | 'charge'; item: string 
 export interface SalesDoc {
   kind: 'invoice' | 'so'; id: number; number: string; so: string | null; po: string | null; date: string | null; due?: string | null; wanted?: string | null
   terms: string | null; terms_code: string | null; schedule?: { pct: number; amount: number; due: string }[]; total: number; status: string; notes: string | null
-  ship_date?: string | null; token: string; acct_status?: string; sent_at?: string | null
+  ship_date?: string | null; token: string; acct_status?: string; sent_at?: string | null; nursery?: boolean
   company: { legal: string; address: string; email: string; phone: string; web: string; license: string | null; remit: string; crypto: string; late: string }
   customer: { id: number; name: string; legal_name: string | null; license: string | null; billing_address: string | null; billing_contact: string | null; billing_email: string | null
-    billing_phone: string | null; ship_to_name: string | null; ship_to_address: string | null; receiving_contact: string | null; terms: string | null }
+    billing_phone: string | null; ship_to_name: string | null; ship_to_address: string | null; receiving_contact: string | null; terms: string | null; kind?: string | null }
   lines: DocLine[]
 }
 
@@ -39,7 +39,7 @@ export async function makePdf(d: SalesDoc): Promise<Blob> {
   let y = M
 
   // ---- header: logo + company (left), title + details box (right)
-  const logo = await logoData()
+  const logo = d.nursery ? null : await logoData()   // clone invoices come from the nursery's own entity
   if (logo) { const h = 46, w = h * logo.w / logo.h; pdf.addImage(logo.data, 'PNG', M, y, w, h); y += h + 8 }
   pdf.setFont('helvetica', 'bold').setFontSize(10).setTextColor(...ink).text(d.company.legal, M, y + 4)
   pdf.setFont('helvetica', 'normal').setFontSize(8.5).setTextColor(...mute)
@@ -73,7 +73,7 @@ export async function makePdf(d: SalesDoc): Promise<Blob> {
     })
     return yy
   }
-  const b1 = block(M, 'BILL TO', [c.legal_name || c.name, c.legal_name && c.legal_name !== c.name ? `dba ${c.name}` : '', ...(c.billing_address ?? '').split('\n'),
+  const b1 = block(M, 'BILL TO', [c.legal_name || c.name, c.legal_name && c.legal_name !== c.name && c.kind !== 'internal' ? `dba ${c.name}` : '', ...(c.billing_address ?? '').split('\n'),
     c.billing_contact ? `Billing contact: ${c.billing_contact}` : '', c.billing_phone ?? '', c.billing_email ?? ''])
   const b2 = block(M + colW + 20, 'SHIP TO', [c.ship_to_name || c.name, ...(c.ship_to_address ?? '').split('\n'), c.license ? `Premises DCC License: ${c.license}` : '',
     c.receiving_contact ? `Receiving contact: ${c.receiving_contact}` : ''])
@@ -127,7 +127,7 @@ export async function makePdf(d: SalesDoc): Promise<Blob> {
   const n = pdf.getNumberOfPages()
   for (let i = 1; i <= n; i++) {
     pdf.setPage(i); pdf.setFont('helvetica', 'normal').setFontSize(7.5).setTextColor(...mute)
-    pdf.text(`Lifted Farms - ${docTitle(d)} ${d.number}`, M, pdf.internal.pageSize.getHeight() - 24)
+    pdf.text(`${d.nursery ? d.company.legal : 'Lifted Farms'} - ${docTitle(d)} ${d.number}`, M, pdf.internal.pageSize.getHeight() - 24)
     pdf.text(`Page ${i} of ${n}`, W - M, pdf.internal.pageSize.getHeight() - 24, { align: 'right' })
   }
   return pdf.output('blob')
@@ -145,9 +145,9 @@ export function emailHref(d: SalesDoc, from?: string | null) {
   const what = d.kind === 'invoice' ? `Invoice ${d.number}` : `Sales Order ${d.number}`
   const body = [`Hi${d.customer.billing_contact ? ` ${d.customer.billing_contact.split(/[ ,]/)[0]}` : ''},`, '',
     d.kind === 'invoice' ? `Here's ${what} for ${money(d.total)}${d.due ? `, due ${dfmt(d.due)}` : ''} (${d.terms ?? ''}).` : `Here's ${what} for your records (${money(d.total)}, ${d.terms ?? ''}).`,
-    `View or download it here: ${shareUrl(d)}`, '', 'Thank you,', from ?? 'Lifted Farms'].join('\n')
-  return `mailto:${encodeURIComponent(d.customer.billing_email ?? '')}?subject=${encodeURIComponent(`${what} from Lifted Farms`)}&body=${encodeURIComponent(body)}`
+    `View or download it here: ${shareUrl(d)}`, '', 'Thank you,', from ?? (d.nursery ? d.company.legal : 'Lifted Farms')].join('\n')
+  return `mailto:${encodeURIComponent(d.customer.billing_email ?? '')}?subject=${encodeURIComponent(`${what} from ${d.nursery ? d.company.legal : 'Lifted Farms'}`)}&body=${encodeURIComponent(body)}`
 }
 export function textHref(d: SalesDoc) {
-  return `sms:?&body=${encodeURIComponent(`Lifted Farms ${d.kind === 'invoice' ? 'invoice' : 'sales order'} ${d.number}: ${shareUrl(d)}`)}`
+  return `sms:?&body=${encodeURIComponent(`${d.nursery ? d.company.legal : 'Lifted Farms'} ${d.kind === 'invoice' ? 'invoice' : 'sales order'} ${d.number}: ${shareUrl(d)}`)}`
 }

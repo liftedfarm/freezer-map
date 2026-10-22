@@ -113,14 +113,14 @@ export interface Backend {
   orderToLoad(orderId: number, loadId: number): Promise<void>
   orderOffLoad(orderId: number): Promise<void>
   /** Sales orders and invoices (027) */
-  getDoc(kind: 'invoice' | 'so', id: number): Promise<SalesDoc>
+  getDoc(kind: 'invoice' | 'so' | 'nso', id: number): Promise<SalesDoc>
   sharedDoc(token: string): Promise<SalesDoc | null>
   paymentTerms(): Promise<PaymentTerm[]>
   setPaymentTerm(t: { code: string; label: string; schedule: { pct: number; days: number }[]; cod: boolean; active: boolean }): Promise<void>
   createOrder(customerId: number, lines: NewOrderLine[], po: string, wanted: string | null, notes: string, terms: string | null): Promise<{ id: number; so_number: string }>
   setOrderTerms(orderId: number, terms: string | null): Promise<void>
   makeInvoice(orderId: number): Promise<Invoice>
-  listInvoices(): Promise<Invoice[]>
+  listInvoices(scope?: 'sales' | 'nursery'): Promise<Invoice[]>
   setInvoiceTerms(id: number, terms: string): Promise<void>
   setInvoiceInfo(id: number, date: string | null, po: string, notes: string): Promise<void>
   setInvoiceLine(id: number, lineId: number | null, description: string, qty: number | null, price: number | null, uom?: string): Promise<void>
@@ -233,7 +233,7 @@ class SupaBackend implements Backend {
   async approveFill(orderId: number, note?: string) { const { data, error } = await this.sb.rpc('approve_fill', { p_order: orderId, p_note: note ?? null }); fail(error); return Number(data ?? 0) }
   async orderToLoad(orderId: number, loadId: number) { const { error } = await this.sb.rpc('order_to_load', { p_order: orderId, p_load: loadId }); fail(error) }
   async orderOffLoad(orderId: number) { const { error } = await this.sb.rpc('order_off_load', { p_order: orderId }); fail(error) }
-  async getDoc(kind: 'invoice' | 'so', id: number) {
+  async getDoc(kind: 'invoice' | 'so' | 'nso', id: number) {
     const { data, error } = await this.sb.rpc('get_doc', { p_kind: kind, p_id: id })
     if (error && /get_doc/.test(error.message)) throw new Error('Run 027_sales_docs.sql in Supabase first')
     fail(error); return data as SalesDoc
@@ -254,8 +254,12 @@ class SupaBackend implements Backend {
   }
   async setOrderTerms(orderId: number, terms: string | null) { const { error } = await this.sb.rpc('set_order_terms', { p_order: orderId, p_terms: terms }); fail(error) }
   async makeInvoice(orderId: number) { const { data, error } = await this.sb.rpc('make_invoice', { p_order: orderId }); fail(error); return data as Invoice }
-  async listInvoices() {
-    const { data, error } = await this.sb.from('invoices').select('*').order('invoice_date', { ascending: false }).order('id', { ascending: false }).limit(500)
+  async listInvoices(scope: 'sales' | 'nursery' = 'sales') {
+    let q = this.sb.from('invoices').select('*').order('invoice_date', { ascending: false }).order('id', { ascending: false }).limit(500)
+    q = scope === 'nursery' ? q.not('nursery_order_id', 'is', null) : q.is('nursery_order_id', null)
+    let { data, error } = await q
+    // before 028 there's no nursery_order_id column: Sales sees every invoice
+    if (error && /nursery_order_id/.test(error.message) && scope === 'sales') ({ data, error } = await this.sb.from('invoices').select('*').order('invoice_date', { ascending: false }).order('id', { ascending: false }).limit(500))
     if (error && /invoices/.test(error.message)) throw new Error('Invoices aren\'t set up in the database yet. Run 027_sales_docs.sql in Supabase, then refresh.')
     fail(error); return ((data ?? []) as Invoice[]).map(i => ({ ...i, total: Number(i.total) }))
   }

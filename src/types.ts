@@ -97,12 +97,13 @@ export type Role = 'admin' | 'sales' | 'crew' | 'customer' | 'none'
 export interface Me { email: string; role: Role; display_name: string | null; customer_id: number | null; customer_name: string | null; viewing_as?: boolean; real_email?: string; access: Access }
 export interface AppUser { email: string; role: Role; customer_id: number | null; display_name: string | null; added_by: string | null; created_at: string; last_seen: string | null; modules?: string[]; owner?: boolean; access?: Partial<Record<ModKey, Level>> }
 /** the parts of the app. Levels per person: off (missing), user, admin. Owners are admin everywhere. */
-export type ModKey = 'distribution' | 'sales' | 'cultivation' | 'admin'
+export type ModKey = 'distribution' | 'sales' | 'cultivation' | 'nursery' | 'admin'
 export type Level = 'user' | 'admin'
 export const MODULES: { key: ModKey; label: string; what: string; user: string; admin: string }[] = [
   { key: 'distribution', label: 'Distribution', what: 'Freezer map, transit, review', user: 'Move, split, load and ship pallets', admin: '+ Distribution settings (vehicles, strains)' },
   { key: 'sales', label: 'Sales', what: 'Reserves, open menu, orders, prices', user: 'See prices, reserves and orders; confirm orders', admin: '+ approve reserve requests, deadlines, customers and terms' },
   { key: 'cultivation', label: 'Production', what: 'Harvest schedule, testing, fields, planning', user: 'Schedule and log harvests, fields, plan', admin: '+ Production settings (sites, fields, labs, equipment)' },
+  { key: 'nursery', label: 'Nursery', what: 'Mother plants, cuttings, clone orders and deliveries', user: 'Mothers, batches, deliver clones, invoices', admin: '+ Nursery settings (rooms, prices, tag ranges); void invoices' },
   { key: 'admin', label: 'Admin', what: 'Company dashboard, users and access, app settings', user: 'Everything in Admin', admin: 'Everything in Admin' },
 ]
 export interface Prefs { theme?: 'light' | 'dark' | 'system'; start_module?: ModKey; start_site?: Site; notify?: { requests?: boolean; orders?: boolean } }
@@ -153,6 +154,6 @@ export interface Invoice {
   id: number; inv_number: string; order_id: number | null; customer_id: number; invoice_date: string; terms_code: string | null; terms_label: string | null
   schedule: { pct: number; amount: number; due: string }[]; due_date: string | null; total: number; status: 'open' | 'paid' | 'void'; po_number: string | null
   notes: string | null; share_token: string; sent_at: string | null; acct_status: 'pending' | 'sent' | 'error' | 'skip'; acct_ref: string | null; acct_error: string | null
-  paid_at: string | null; created_at: string
+  paid_at: string | null; created_at: string; seller_license?: string | null; nursery_order_id?: number | null
 }
 export interface NewOrderLine { strain: string; lbs: number; price?: number | null; crop_year?: number }

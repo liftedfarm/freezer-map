@@ -22,6 +22,9 @@ import { Portal, PortalLink, PortalLogin } from './portal'
 import { DistDashboard } from './distdash'
 import { CULT_TABS, CULT_TAIL } from './cult/tabs'
 import type { CultTab } from './cult/tabs'
+import { NURSERY_TABS, NURSERY_TAIL } from './nursery/tabs'
+import type { NTab } from './nursery/tabs'
+import { LicensesPanel } from './licenses'
 import { LoadForm, LoadView, PickLoad, TransitView, stopColor } from './loads'
 import type { LoadCtx } from './loads'
 import type { FOrder, ModKey, UnmatchedTag, ShippedCheck, Freezer, Me, FreezerStatus, InvEvent, Load, LoadItem, LoadStop, Pallet, Site, Slot, Snapshot } from './types'
@@ -29,14 +32,15 @@ import type { FOrder, ModKey, UnmatchedTag, ShippedCheck, Freezer, Me, FreezerSt
 const backend: Backend = makeBackend()
 // Cultivation module: its own bundle, only loaded for users who have it switched on
 const CultView = lazy(() => import('./cult/CultView'))
+const NurseryView = lazy(() => import('./nursery/NurseryView'))
 
-type View = 'dash' | 'fulfill' | 'map' | 'freezer' | 'transit' | 'load' | 'review' | 'activity' | 'settings' | 'sales' | 'cult' | 'admin' | 'mine'
+type View = 'dash' | 'fulfill' | 'map' | 'freezer' | 'transit' | 'load' | 'review' | 'activity' | 'settings' | 'sales' | 'cult' | 'nursery' | 'admin' | 'mine'
 // modules: each person has a level (User / Admin) per module; Owners have all of them (Admin > Settings > Users)
-type Mod = 'dist' | 'sales' | 'cult' | 'admin'
-const MOD_KEY: Record<Mod, ModKey> = { dist: 'distribution', sales: 'sales', cult: 'cultivation', admin: 'admin' }
-const KEY_MOD: Record<ModKey, Mod> = { distribution: 'dist', sales: 'sales', cultivation: 'cult', admin: 'admin' }
-const MOD_LABEL: Record<Mod, string> = { dist: 'Distribution', sales: 'Sales', cult: 'Production', admin: 'Admin' }
-const MOD_WHAT: Record<Mod, string> = { dist: 'Freezer map · transit · review', sales: 'Reserves · menu · orders', cult: 'Harvests · fields · plan', admin: 'Company · users · app settings' }
+type Mod = 'dist' | 'sales' | 'cult' | 'nurs' | 'admin'
+const MOD_KEY: Record<Mod, ModKey> = { dist: 'distribution', sales: 'sales', cult: 'cultivation', nurs: 'nursery', admin: 'admin' }
+const KEY_MOD: Record<ModKey, Mod> = { distribution: 'dist', sales: 'sales', cultivation: 'cult', nursery: 'nurs', admin: 'admin' }
+const MOD_LABEL: Record<Mod, string> = { dist: 'Distribution', sales: 'Sales', cult: 'Production', nurs: 'Nursery', admin: 'Admin' }
+const MOD_WHAT: Record<Mod, string> = { dist: 'Freezer map · transit · review', sales: 'Reserves · menu · orders', cult: 'Harvests · fields · plan', nurs: 'Mothers · cuttings · deliveries', admin: 'Company · users · app settings' }
 type SalesTab = 'dash' | SalesMode | 'invoices' | 'review' | 'activity' | 'settings'
 type AdminTab = 'dash' | 'review' | 'activity' | 'settings'
 interface NavItem { k: string; l: ReactNode; on: boolean; go: () => void }
@@ -44,6 +48,7 @@ const MOD_ICON: Record<Mod, ReactNode> = {
   dist: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><rect x="1" y="7" width="14" height="10" /><path d="M15 10h4l3 3v4h-7" /><circle cx="6" cy="19" r="2" /><circle cx="18" cy="19" r="2" /></svg>,
   sales: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z" /><circle cx="7.5" cy="7.5" r="1.5" /></svg>,
   cult: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M12 22V12M12 12C12 7 8 4 3 4c0 5 4 8 9 8zM12 12c0-4 3-7 8-7 0 4-3 7-8 7z" /></svg>,
+  nurs: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M7 20h10l-1.5-6h-7z" /><path d="M12 14V9" /><path d="M12 9c0-3-2-5-5-5 0 3 2 5 5 5zM12 9c0-2.5 2-4.5 5-4.5 0 2.5-2 4.5-5 4.5z" /></svg>,
   admin: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M12 2 4 5v6c0 5 3.4 9.3 8 11 4.6-1.7 8-6 8-11V5l-8-3z" /><path d="m9 12 2 2 4-4" /></svg>,
 }
 const stored = (k: string) => { try { return localStorage.getItem(k) } catch { return null } }
@@ -238,17 +243,19 @@ export default function App() {
   const [site, setSite] = useState<Site>('OHR')
   useEffect(() => { if (GO) history.replaceState(null, '', location.pathname) }, [])
   const storedMod = stored('fm.mod') as Mod | null
-  const [view, setView] = useState<View>(GO_TAB ? 'sales' : storedMod === 'cult' ? 'cult' : storedMod === 'sales' ? 'sales' : storedMod === 'admin' ? 'admin' : 'dash')
+  const [view, setView] = useState<View>(GO_TAB ? 'sales' : storedMod === 'cult' ? 'cult' : storedMod === 'nurs' ? 'nursery' : storedMod === 'sales' ? 'sales' : storedMod === 'admin' ? 'admin' : 'dash')
   const [mod, setModS] = useState<Mod>(GO_TAB ? 'sales' : storedMod && storedMod in MOD_KEY ? storedMod : 'dist')
   const [cultTab, setCultTabS] = useState<CultTab>(() => ([...CULT_TABS, ...CULT_TAIL].find(t => t.t === stored('cult.tab'))?.t ?? 'dashboard'))
   const [salesTab, setSalesTabS] = useState<SalesTab>(GO_TAB ?? 'dash')
   const [adminTab, setAdminTabS] = useState<AdminTab>('dash')
+  const [nurTab, setNurTabS] = useState<NTab>(() => ([...NURSERY_TABS, ...NURSERY_TAIL].find(t => t.t === stored('nur.tab'))?.t ?? 'dashboard'))
   const [modMenu, setModMenu] = useState(false)
   const [more, setMore] = useState(false)
   const top = () => { setMore(false); window.scrollTo(0, 0) }
   const setCultTab = (t: CultTab) => { setCultTabS(t); store('cult.tab', t); setView('cult'); top() }
   const setSalesTab = (t: SalesTab) => { setSalesTabS(t); setView('sales'); top() }
   const setAdminTab = (t: AdminTab) => { setAdminTabS(t); setView('admin'); top() }
+  const setNurTab = (t: NTab) => { setNurTabS(t); store('nur.tab', t); setView('nursery'); top() }
   const go = (v: View) => { setView(v); top() }
   const [freezerId, setFreezerId] = useState<number | null>(null)
   const [palletId, setPalletId] = useState<number | null>(null)
@@ -298,7 +305,7 @@ export default function App() {
   const isAdminOf = (m: Mod) => lv[MOD_KEY[m]] === 'admin'
   const goMod = (m: Mod) => {
     setModS(m); store('fm.mod', m); setModMenu(false)
-    if (m === 'cult') setCultTab('dashboard'); else if (m === 'sales') setSalesTab('dash'); else if (m === 'admin') setAdminTab('dash'); else go('dash')
+    if (m === 'cult') setCultTab('dashboard'); else if (m === 'nurs') setNurTab('dashboard'); else if (m === 'sales') setSalesTab('dash'); else if (m === 'admin') setAdminTab('dash'); else go('dash')
   }
   // signed in: personal settings (theme, where to start, which site)
   useEffect(() => {
@@ -540,8 +547,11 @@ export default function App() {
   const cultTail = CULT_TAIL.filter(t => t.t !== 'setup' || isAdminOf('cult')).map(t => cItem(t.t, t.l))
   const aItem = (t: AdminTab, l: string): NavItem => ({ k: t, l, on: view === 'admin' && adminTab === t, go: () => setAdminTab(t) })
   const adminMain = [aItem('dash', 'Dashboard')], adminTail = [aItem('review', 'Review'), aItem('activity', 'Activity'), aItem('settings', 'Settings')]
+  const nItem = (t: NTab, l: string): NavItem => ({ k: t, l, on: view === 'nursery' && nurTab === t, go: () => setNurTab(t) })
+  const nurMain = NURSERY_TABS.map(t => nItem(t.t, t.l))
+  const nurTail = NURSERY_TAIL.filter(t => t.t !== 'settings' || isAdminOf('nurs')).map(t => nItem(t.t, t.l))
   const NAV: Record<Mod, { main: NavItem[]; tail: NavItem[] }> = {
-    dist: { main: distMain, tail: distTail }, sales: { main: salesMain, tail: salesTail }, cult: { main: cultMain, tail: cultTail }, admin: { main: adminMain, tail: adminTail } }
+    dist: { main: distMain, tail: distTail }, sales: { main: salesMain, tail: salesTail }, cult: { main: cultMain, tail: cultTail }, nurs: { main: nurMain, tail: nurTail }, admin: { main: adminMain, tail: adminTail } }
   const nav = NAV[cur]
   const all = [...nav.main, ...nav.tail]
   const bottomFit = all.length <= 5 ? all : nav.main.slice(0, 4)
@@ -552,7 +562,7 @@ export default function App() {
     const [m, t] = j.split('.') as [Mod, string]
     if (!lv[MOD_KEY[m]]) { flash(`You don't have ${MOD_LABEL[m]}`, true); return }
     setModS(m); store('fm.mod', m)
-    if (m === 'dist') go(t as View); else if (m === 'sales') setSalesTab(t as SalesTab); else if (m === 'cult') setCultTab(t as CultTab); else setAdminTab(t === 'users' ? 'settings' : t as AdminTab)
+    if (m === 'dist') go(t as View); else if (m === 'sales') setSalesTab(t as SalesTab); else if (m === 'cult') setCultTab(t as CultTab); else if (m === 'nurs') setNurTab(t as NTab); else setAdminTab(t === 'users' ? 'settings' : t as AdminTab)
   }
   const appName = MOD_LABEL[cur]
   document.title = noMods ? 'Lifted Farms' : `${view === 'mine' ? 'My settings' : MOD_LABEL[cur]} · Lifted Farms`
@@ -713,11 +723,13 @@ export default function App() {
         {view === 'load' && loadId != null && <LoadView ctx={ctx} loadId={loadId} onBack={() => setView('transit')} onEdit={() => setLoadForm({ load: (snap.loads ?? []).find(l => l.id === loadId) })} />}
         {view === 'cult' && inCult && <Suspense fallback={<p className="muted">Loading…</p>}><CultView backend={backend} flash={flash} tab={cultTab} go={setCultTab} onPalletsChanged={() => { reload() }} /></Suspense>}
         {view === 'cult' && inCult && cultTab === 'setup' && <div className="modset"><SettingsView backend={backend} flash={flash} onChanged={() => { reload() }} inventoryStrains={invStrains} title="Strains" lists={['strains']} /></div>}
+        {view === 'nursery' && cur === 'nurs' && <Suspense fallback={<p className="muted">Loading…</p>}><NurseryView backend={backend} flash={flash} tab={nurTab} go={setNurTab} customers={snap.customers ?? []} isAdmin={isAdminOf('nurs')} sender={me?.display_name} /></Suspense>}
         {view === 'admin' && cur === 'admin' && adminTab === 'dash' && <AdminDashboard backend={backend} open={jump} />}
         {view === 'admin' && cur === 'admin' && adminTab === 'review' && <AdminReview backend={backend} open={jump} />}
         {view === 'admin' && cur === 'admin' && adminTab === 'activity' && <ActivityView ix={ix} module="all" />}
         {view === 'admin' && cur === 'admin' && adminTab === 'settings' && <SettingsView backend={backend} flash={flash} onChanged={() => { reload() }} inventoryStrains={invStrains} title="Admin settings"
           lists={[]} extra={[{ k: 'users', l: 'Users and access', node: <UsersTab backend={backend} me={me!} customers={snap.customers ?? []} flash={flash} /> },
+            { k: 'licenses', l: 'Licenses', node: <LicensesPanel backend={backend} flash={flash} /> },
             { k: 'app', l: 'App settings', node: <AppSettingsPanel backend={backend} flash={flash} /> }]} />}
         {view === 'settings' && cur === 'dist' && <SettingsView backend={backend} flash={flash} onChanged={() => { reload() }} inventoryStrains={invStrains} title="Distribution settings" lists={['vehicles', 'strains']} />}
       </main>
@@ -1171,15 +1183,18 @@ function ListView({ title, note, empty, items, ix, where, onPallet, showReason }
 }
 
 /** which module an activity line belongs to */
-function eventModule(e: InvEvent): 'distribution' | 'sales' | 'admin' {
+function eventModule(e: InvEvent): 'distribution' | 'sales' | 'admin' | 'nursery' {
   const t = e.type, d = e.details as { list?: string } | null
+  if (/^nursery/.test(t)) return 'nursery'
+  if (/^invoice/.test(t)) return 'sales'
+  if (/^license/.test(t)) return 'admin'
   if (/^(reserve|order|terms|customer_terms)/.test(t) || (t === 'settings' && /^(customers|reserve deadlines|terms)/.test(d?.list ?? ''))) return 'sales'
   if (/^(user_|app_setting|view_as|login_|password_)/.test(t)) return 'admin'
   return 'distribution'
 }
 const CULT_TBL: Record<string, string> = { cult_harvests: 'Harvest', cult_plantings: 'Planting', cult_tests: 'Test', cult_flower_picks: 'Dry flower pick', cult_demand: 'Plan strain',
   cult_plan: 'Plan row', cult_nursery_orders: 'Nursery delivery', cult_receipts: 'Plants received', app_settings: 'Production setting' }
-interface Line { id: string; at: string; who: string | null; text: ReactNode; note?: string | null; mod: 'distribution' | 'sales' | 'admin' | 'cultivation' }
+interface Line { id: string; at: string; who: string | null; text: ReactNode; note?: string | null; mod: 'distribution' | 'sales' | 'admin' | 'cultivation' | 'nursery' }
 
 /** Activity: each module shows its own; Admin shows everything with a filter */
 /** loading screen: the logo and a quiet spinner, same for every module */
@@ -1208,7 +1223,7 @@ function ActivityView({ ix, module }: { ix: Index; module: 'distribution' | 'sal
   const lines: Line[] = [...(events ?? []).map(e => ({ id: `e${e.id}`, at: e.at, who: e.user_email, text: describe(ix, e, names), note: e.note, mod: eventModule(e) } as Line)), ...cult]
     .filter(l => module === 'all' ? only === 'all' || l.mod === only : l.mod === module)
     .sort((a, b) => b.at.localeCompare(a.at))
-  const CH: [string, string][] = [['all', 'Everything'], ['distribution', 'Distribution'], ['sales', 'Sales'], ['cultivation', 'Production'], ['admin', 'Admin']]
+  const CH: [string, string][] = [['all', 'Everything'], ['distribution', 'Distribution'], ['sales', 'Sales'], ['cultivation', 'Production'], ['nursery', 'Nursery'], ['admin', 'Admin']]
   return (
     <div className="list">
       <h2>Activity</h2>

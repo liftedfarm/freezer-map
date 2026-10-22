@@ -1,0 +1,16 @@
+/* Nursery module (shares the Production styles in cult.css) */
+.pill.okp { background: color-mix(in srgb, var(--ok, #16a34a) 16%, var(--panel)); color: var(--ok, #16a34a); white-space: nowrap; }
+.nursery .seg { flex-wrap: wrap; }
+.nursery .toolbar.between { gap: 8px; flex-wrap: wrap; }
+.nursery .drow.off, .dcard.off, .licenses .drow.off { opacity: .55; }
+.tagranges { margin-top: 6px; }
+.tagranges .drow { font-size: 14px; }
+.tagadd { gap: 6px; margin-top: 6px; }
+.tagadd input { flex: 1 1 200px; min-width: 0; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); font: inherit; font-size: 13px; font-family: ui-monospace, monospace; }
+.tagadd select { padding: 7px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); font-size: 13px; }
+.licenses .lic { margin: 10px 0; }
+.licenses .lic .small { font-size: 13px; margin-top: 4px; }
+.licenses .licfz { margin-top: 12px; }
+.licenses .licfz select { padding: 5px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); font-size: 13px; }
+.nset { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0 10px; }
+.nursery .csheet textarea { font-family: ui-monospace, monospace; font-size: 13px; }

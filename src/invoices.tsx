@@ -12,7 +12,7 @@ const ACCT: Record<string, string> = { pending: 'Not in accounting yet', sent: '
 
 /** one SO or invoice: preview, download, email, text, link; invoices can be adjusted until they're in accounting */
 export function DocSheet({ backend, kind, id, flash, onClose, onChanged, canEdit, canVoid, sender }: {
-  backend: Backend; kind: 'invoice' | 'so'; id: number; flash: Flash; onClose: () => void; onChanged?: () => void
+  backend: Backend; kind: 'invoice' | 'so' | 'nso'; id: number; flash: Flash; onClose: () => void; onChanged?: () => void
   canEdit: boolean; canVoid: boolean; sender?: string | null
 }) {
   const [d, setD] = useState<SalesDoc | null>(null)
@@ -52,7 +52,7 @@ export function DocSheet({ backend, kind, id, flash, onClose, onChanged, canEdit
             <button className="ghost" onClick={copy}>Copy link</button>
             {editable && <button className="ghost" onClick={() => setEdit(!edit)}>{edit ? 'Done editing' : 'Edit'}</button>}
           </div>
-          {!d.customer.billing_email && <p className="muted">No billing email for {d.customer.name}. Add it in Sales → Settings → Customers.</p>}
+          {!d.customer.billing_email && <p className="muted">No billing email for {d.customer.name}. A Sales Admin can add it in Sales → Settings → Customers.</p>}
           <p className="muted small">Email opens your own mail app with the link filled in. Attach the PDF too if the customer prefers it.</p>
           {edit && editable && <InvoiceEditor d={d} terms={terms} busy={busy} run={run} backend={backend} />}
           {d.kind === 'invoice' && canEdit && d.status !== 'void' && (
@@ -110,13 +110,13 @@ function LineRow({ l, busy, onPrice, onRemove }: { l: SalesDoc['lines'][number];
 }
 
 /** Sales > Invoices */
-export function InvoicesView({ backend, customers, flash, isAdmin, sender }: { backend: Backend; customers: Customer[]; flash: Flash; isAdmin: boolean; sender?: string | null }) {
+export function InvoicesView({ backend, customers, flash, isAdmin, sender, scope = 'sales' }: { backend: Backend; customers: Customer[]; flash: Flash; isAdmin: boolean; sender?: string | null; scope?: 'sales' | 'nursery' }) {
   const [rows, setRows] = useState<Invoice[] | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [f, setF] = useState<'open' | 'overdue' | 'paid' | 'void' | 'all'>('open')
   const [q, setQ] = useState('')
   const [open, setOpen] = useState<number | null>(null)
-  const load = () => backend.listInvoices().then(r => { setRows(r); setErr(null) }).catch(e => setErr(String(e?.message ?? e)))
+  const load = () => backend.listInvoices(scope).then(r => { setRows(r); setErr(null) }).catch(e => setErr(String(e?.message ?? e)))
   useEffect(() => { load() }, [])
   const cname = useMemo(() => { const m = new Map(customers.map(c => [c.id, c.name])); return (id: number) => m.get(id) ?? `#${id}` }, [customers])
   if (err) return <div className="list"><h2>Invoices</h2><div className="warnbox">{err}</div></div>
@@ -140,7 +140,7 @@ export function InvoicesView({ backend, customers, flash, isAdmin, sender }: { b
         <div className="seg">{(['open', 'overdue', 'paid', 'void', 'all'] as const).map(k => <button key={k} className={f === k ? 'on' : ''} onClick={() => setF(k)}>{k[0].toUpperCase() + k.slice(1)}</button>)}</div>
         <input className="search" type="search" placeholder="Invoice #, customer or PO" value={q} onChange={e => setQ(e.target.value)} />
       </div>
-      {!shown.length && <p className="muted">No invoices here. Invoices are made when an order's stop is delivered, or from the order with "Make invoice".</p>}
+      {!shown.length && <p className="muted">{scope === 'nursery' ? 'No invoices here. A clone invoice is made each time plants are delivered on an order.' : 'No invoices here. Invoices are made when an order\'s stop is delivered, or from the order with "Make invoice".'}</p>}
       {shown.map(i => (
         <button key={i.id} className="li setrow" onClick={() => setOpen(i.id)}>
           <div className="grow"><div><b>{i.inv_number}</b> <span className={`pill inv-${overdue(i) ? 'overdue' : i.status}`}>{overdue(i) ? 'Overdue' : STATUS[i.status]}</span></div>

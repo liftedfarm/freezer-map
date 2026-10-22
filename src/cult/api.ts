@@ -70,7 +70,7 @@ export class CultApi {
     const [demand, plan, orders, receipts, history, actuals] = await Promise.all([
       all<Demand>((a, b) => this.sb.from('cult_demand').select('*').eq('crop_year', year).order('strain').range(a, b)),
       all<PlanRow>((a, b) => this.sb.from('cult_plan').select('*').eq('crop_year', year).order('strain').range(a, b)),
-      all<NurseryOrder>((a, b) => this.sb.from('cult_nursery_orders').select('*').eq('crop_year', year).order('deliver_on').range(a, b)),
+      all<NurseryOrder>((a, b) => this.sb.from('cult_nursery_orders').select('*').eq('crop_year', year).not('site', 'is', null).order('deliver_on').range(a, b)),
       all<Receipt>((a, b) => this.sb.from('cult_receipts').select('*').eq('crop_year', year).order('received_on').range(a, b)),
       all<YieldHist>((a, b) => this.sb.from('cult_yield_history').select('*').range(a, b)),
       all<{ strain: string; crop_year: number; kind: string; plants: number | null; ff_lbs: number | null }>((a, b) =>
