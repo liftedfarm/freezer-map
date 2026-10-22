@@ -136,7 +136,7 @@ function DeliverSheet({ d, c, o, api, flash, onClose, onDone }: { d: NData; c: N
   const batches = useMemo(() => d.batches.filter(b => strainKey(b.strain) === strainKey(o.strain) && (b.stage === 'ready' || b.stage === 'rooting') && c.left(b) > 0)
     .sort((a, b) => (a.order_id === o.id ? 0 : 1) - (b.order_id === o.id ? 0 : 1) || (a.stage === 'ready' ? 0 : 1) - (b.stage === 'ready' ? 0 : 1) || a.cut_on.localeCompare(b.cut_on)), [d, c, o])
   const [qty, setQty] = useState<Record<string, number | null>>(() => {
-    const q: Record<string, number | null> = {}; let need = owed
+    const q: Record<string, number | null> = {}; let need = Math.max(owed, Math.ceil(o.plants * (1 + d.settings.deliverPct / 100)) - (c.delivered.get(o.id) ?? 0))
     for (const b of batches) { if (b.stage !== 'ready' && b.order_id !== o.id) continue; const n = Math.min(need, c.left(b)); if (n > 0) { q[b.id] = n; need -= n } }
     return q
   })
@@ -171,7 +171,7 @@ function DeliverSheet({ d, c, o, api, flash, onClose, onDone }: { d: NData; c: N
       </table></div>}
       <F label="Plants not from a batch" hint="(only if they weren't tracked)"><NumIn value={loose} onChange={setLoose} /></F>
       <F label="Notes"><input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optional" /></F>
-      <p className="muted small-note">Sending {n0(total)} of {n0(owed)}.{total > owed ? ' That\'s more than the order; the extra still counts as delivered.' : ''}{' '}
+      <p className="muted small-note">Sending {n0(total)} of {n0(owed)} owed{d.settings.deliverPct ? ` (aim: order + ${d.settings.deliverPct}%)` : ''}.{' '}
         This makes the invoice from {d.licenses.find(l => l.license_no === d.sites.find(s => s.code === o.nursery_site)?.license)?.entity ?? 'the nursery'}
         {o.site ? ` and adds the plants to ${o.site}'s received list in Production.` : '.'}</p>
       {over && <p className="warn-t">{over.name ?? `#${over.id}`} only has {n0(c.left(over))} left.</p>}

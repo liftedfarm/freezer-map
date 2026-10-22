@@ -2,13 +2,16 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Backend } from '../api'
 import type { Customer, PaymentTerm } from '../types'
 import { NurseryApi } from './api'
-import { STAGE_LABEL, addDays, dueWithin, fmtD, makeCtx, n0, strainKey, sum, today } from './calc'
+import { GEN_LABEL, STAGE_LABEL, addDays, dueWithin, fmtD, live, makeCtx, n0, planSeason, strainKey, sum, today } from './calc'
 import type { NCtx } from './calc'
 import type { Batch, Mother, NData, NOrder, NTab } from './types'
 import { nurseryLabel } from './tabs'
 import { OrderSheet, OrdersTab, statusPill } from './orders'
 import { BatchSheet, BatchesTab } from './batches'
-import { AddMothers, MotherSheet, MothersTab } from './mothers'
+import { MotherSheet, MothersTab } from './mothers'
+import { PlanTab } from './plan'
+import { LabTests } from './tests'
+import { OpsLogs } from '../logs'
 import { SetupTab } from './setup'
 import { Card, Cards, DashHead, Empty, Meter, Tile, Tiles } from '../dash'
 import { DocSheet, InvoicesView } from '../invoices'
@@ -27,8 +30,7 @@ export default function NurseryView({ backend, flash, tab, go, customers, isAdmi
   const [terms, setTerms] = useState<PaymentTerm[]>([])
   const [order, setOrder] = useState<Partial<NOrder> | null>(null)
   const [batch, setBatch] = useState<Partial<Batch> | null>(null)
-  const [mother, setMother] = useState<Mother | null>(null)
-  const [addM, setAddM] = useState<{ strain?: string } | null>(null)
+  const [mother, setMother] = useState<Partial<Mother> | null>(null)
   const [doc, setDoc] = useState<{ kind: 'invoice' | 'nso'; id: number } | null>(null)
 
   const load = useCallback(async () => {
@@ -46,6 +48,7 @@ export default function NurseryView({ backend, flash, tab, go, customers, isAdmi
   if (!d || !c) return <div className="list"><h2>Nursery</h2><p className="muted">Loading…</p></div>
 
   const search = ['orders', 'batches', 'mothers'].includes(tab)
+  const areas = [...new Set(['Webb', 'GH', ...d.rooms.filter(r => r.active).map(r => r.name), ...d.rooms.map(r => r.place)])]
   return (
     <div className="cult nursery">
       {tab !== 'dashboard' && tab !== 'invoices' && <div className="chead">{title}</div>}
@@ -54,7 +57,11 @@ export default function NurseryView({ backend, flash, tab, go, customers, isAdmi
       {tab === 'dashboard' && <NurseryDashboard d={d} c={c} go={go} onOrder={setOrder} onBatch={setBatch} />}
       {tab === 'orders' && <OrdersTab d={d} c={c} q={q} onOpen={setOrder} onNew={() => setOrder({ nursery_site: d.sites[0]?.code, status: 'confirmed' })} />}
       {tab === 'batches' && <BatchesTab d={d} c={c} q={q} onOpen={setBatch} onNew={() => setBatch({})} />}
-      {tab === 'mothers' && <MothersTab d={d} c={c} q={q} api={api} flash={flash} onSaved={saved} onOpen={setMother} onAdd={s => setAddM({ strain: s })} />}
+      {tab === 'plan' && <PlanTab d={d} c={c} api={api} flash={flash} onSaved={saved} />}
+      {tab === 'mothers' && <MothersTab d={d} c={c} q={q} api={api} flash={flash} onSaved={saved} onOpen={setMother} onAdd={v => setMother(v ?? {})} />}
+      {tab === 'logs' && <OpsLogs sb={sb} module="nursery" sites={d.sites.map(s => s.code)} areas={areas} strains={[...new Set([...d.mothers.map(m => m.strain), ...d.strains])]} flash={flash}
+        wage={d.settings.wage} batches={d.batches.filter(b => b.stage !== 'cancelled').slice(0, 300).map(b => ({ id: b.id, strain: b.strain, label: `${fmtD(b.cut_on)} ${b.strain} ${GEN_LABEL[b.gen]} · ${n0(b.cuttings)}` }))}
+        extraTab={{ k: 'lab', l: 'Lab tests', node: <LabTests d={d} c={c} api={api} flash={flash} onSaved={saved} /> }} />}
       {tab === 'invoices' && <InvoicesView backend={backend} customers={customers} flash={flash} isAdmin={isAdmin} sender={sender} scope="nursery" />}
       {tab === 'review' && <NurseryReview d={d} c={c} onOrder={setOrder} onBatch={setBatch} onMother={setMother} go={go} />}
       {tab === 'activity' && <NurseryActivity api={api} />}
@@ -63,8 +70,7 @@ export default function NurseryView({ backend, flash, tab, go, customers, isAdmi
       {order && <OrderSheet key={order.id ?? 'new'} d={d} c={c} o={order} customers={customers} terms={terms} api={api} flash={flash} isAdmin={isAdmin}
         onClose={() => setOrder(null)} onSaved={async m => { await saved(m) }} onDoc={(kind, id) => setDoc({ kind, id })} />}
       {batch && <BatchSheet key={batch.id ?? 'new'} d={d} c={c} b={batch} api={api} flash={flash} onClose={() => setBatch(null)} onSaved={saved} />}
-      {mother && <MotherSheet key={mother.id} d={d} m={mother} api={api} flash={flash} onClose={() => setMother(null)} onSaved={saved} />}
-      {addM && <AddMothers d={d} strain={addM.strain} api={api} flash={flash} onClose={() => setAddM(null)} onSaved={saved} />}
+      {mother && <MotherSheet key={mother.id ?? 'new'} d={d} c={c} m={mother} api={api} flash={flash} onClose={() => setMother(null)} onSaved={saved} />}
       {doc && <DocSheet backend={backend} kind={doc.kind} id={doc.id} flash={flash} onClose={() => setDoc(null)} onChanged={load} canEdit canVoid={isAdmin} sender={sender} />}
     </div>
   )
@@ -73,8 +79,9 @@ export default function NurseryView({ backend, flash, tab, go, customers, isAdmi
 /** what needs doing this week, what's ready, and the mother stock */
 function NurseryDashboard({ d, c, go, onOrder, onBatch }: { d: NData; c: NCtx; go: (t: NTab) => void; onOrder: (o: NOrder) => void; onBatch: (b: Partial<Batch>) => void }) {
   const now = today(), wk = addDays(now, 6)
-  const mothers = d.mothers.filter(m => m.status === 'active')
+  const mothers = d.mothers.filter(m => m.status === 'active' && live(m) > 0)
   const mStrains = new Set(mothers.map(m => strainKey(m.strain)))
+  const gN = (g: number) => sum(mothers.filter(m => m.gen === g).map(live))
   const rooting = d.batches.filter(b => b.stage === 'rooting')
   const ready = d.batches.filter(b => b.stage === 'ready' && c.left(b) > 0)
   const readySoon = rooting.filter(b => b.ready_on && b.ready_on <= wk)
@@ -86,7 +93,7 @@ function NurseryDashboard({ d, c, go, onOrder, onBatch }: { d: NData; c: NCtx; g
   const strains = [...c.byStrain.entries()].filter(([, v]) => v.owed || v.ready || v.rooting).sort((a, b) => b[1].owed - a[1].owed).slice(0, 10)
   const name = (k: string) => d.batches.find(b => strainKey(b.strain) === k)?.strain ?? d.orders.find(o => strainKey(o.strain) === k)?.strain ?? d.mothers.find(m => strainKey(m.strain) === k)?.strain ?? k
   const mBy = new Map<string, number>()
-  for (const m of mothers) mBy.set(m.strain, (mBy.get(m.strain) ?? 0) + 1)
+  for (const m of mothers) mBy.set(m.strain, (mBy.get(m.strain) ?? 0) + live(m))
   return (
     <div className="dash">
       <DashHead title="Dashboard" sub={`Nursery · ${d.sites.map(s => s.name).join(', ')} · ${new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}`} />
@@ -95,7 +102,7 @@ function NurseryDashboard({ d, c, go, onOrder, onBatch }: { d: NData; c: NCtx; g
         <Tile label="Ready to go" value={n0(sum(ready.map(c.left)))} sub={ready.length ? `plants in ${ready.length} ${ready.length === 1 ? 'batch' : 'batches'}` : 'no batches ready'} tone={ready.length ? 'ok' : undefined} onClick={() => go('batches')} />
         <Tile label="Rooting" value={n0(sum(rooting.map(c.left)))} sub={rooting.length ? `${rooting.length} ${rooting.length === 1 ? 'batch' : 'batches'}${readySoon.length ? ` · ${readySoon.length} ready by ${fmtD(wk, true)}` : ''}` : 'nothing rooting'} onClick={() => go('batches')} />
         <Tile label="To cut this week" value={toCut.length} sub={toCut.length ? `first by ${fmtD(toCut[0].cut_on, true)}` : 'all orders covered'} tone={toCut.some(o => o.cut_on! < now) ? 'bad' : toCut.length ? 'warn' : 'ok'} onClick={() => go('orders')} />
-        <Tile label="Mother plants" value={n0(mothers.length)} sub={`${mStrains.size} strains`} onClick={() => go('mothers')} />
+        <Tile label="Mother plants" value={n0(sum(mothers.map(live)))} sub={`${[1, 2, 3].filter(gN).map(g => `${GEN_LABEL[g]} ${n0(gN(g))}`).join(' · ') || 'none yet'} · ${mStrains.size} strains`} onClick={() => go('mothers')} />
       </Tiles>
       <Cards>
         <Card title="Next deliveries" action="Orders" onAction={() => go('orders')} wide>
@@ -135,9 +142,13 @@ function NurseryReview({ d, c, onOrder, onBatch, onMother, go }: { d: NData; c: 
   const stuck = d.batches.filter(b => b.stage === 'rooting' && b.ready_on && b.ready_on < now)
   const stale = d.batches.filter(b => b.stage === 'ready' && c.left(b) > 0 && b.ready_on && b.ready_on < addDays(now, -d.settings.readyWarn))
   const noTags = d.batches.filter(b => (b.stage === 'rooting' || b.stage === 'ready') && !b.tags.length)
-  const motherNoTag = d.mothers.filter(m => m.status === 'active' && !m.plant_tag)
+  const motherNoTag = d.mothers.filter(m => m.status === 'active' && live(m) > 0 && !m.plant_tag)
   const noManifest = [...new Map(d.deliveries.filter(x => !x.manifest).map(x => [x.ref, x])).values()]
-  const total = late.length + unconfirmed.length + shortStrains.length + stuck.length + stale.length + noTags.length + motherNoTag.length + noManifest.length
+  const yr = now.slice(0, 4), plan = [...planSeason(d, c, Number(yr)), ...planSeason(d, c, Number(yr) + 1)]
+  const behind = plan.flatMap(r => ([['G3', r.g3], ['G2', r.g2], ['G1', r.g1]] as const).filter(([, g]) => g.cutBy && g.cutBy <= addDays(now, 14) && g.need > g.have + g.rooting)
+    .map(([n, g]) => ({ r, n, g })))
+  const positives = d.tests.filter(t => t.result === 'positive' && !t.culled)
+  const total = behind.length + positives.length + late.length + unconfirmed.length + shortStrains.length + stuck.length + stale.length + noTags.length + motherNoTag.length + noManifest.length
   const oRow = (o: NOrder, tag: string, bad = true) => <button key={o.id} className="drow click" onClick={() => onOrder(o)}>
     <span><b>{o.strain}</b><span className="muted"> · {n0(c.owed(o))} for {c.to(o)}</span></span><span className={`pill ${bad ? 'badp' : 'warnp'}`}>{tag}</span></button>
   const bRow = (b: Batch, tag: string) => <button key={b.id} className="drow click" onClick={() => onBatch(b)}>
@@ -148,6 +159,11 @@ function NurseryReview({ d, c, onOrder, onBatch, onMother, go }: { d: NData; c: 
   return (
     <div className="dash">
       {total === 0 && <p className="muted">Nothing needs attention in the nursery.</p>}
+      {sec('Moms to cut soon', behind.length, 'From the Plan: a generation is short and its cut-by date is within two weeks (or passed).', behind.map(({ r, n, g }) => (
+        <button key={r.strain + n} className="drow click" onClick={() => go('plan')}><span><b>{r.strain}</b><span className="muted"> · {n} need {n0(g.need)}, have {n0(g.have + g.rooting)} · cut {n0(g.cut)}</span></span>
+          <span className={`pill ${g.cutBy! < now ? 'badp' : 'warnp'}`}>cut by {fmtD(g.cutBy, true)}</span></button>)), ['Plan', 'plan'])}
+      {sec('Positive lab tests', positives.length, 'Positive and nothing culled yet.', positives.map(t => <button key={t.id} className="drow click" onClick={() => go('logs')}>
+        <span><b>{t.strain}</b><span className="muted"> · {t.test} round {t.round} · {fmtD(t.tested_on)}</span></span><span className="pill badp">positive</span></button>), ['Logs', 'logs'])}
       {sec('Late deliveries', late.length, 'The delivery date has passed and plants are still owed.', late.map(o => oRow(o, fmtD(o.deliver_on, true))))}
       {sec('Short for upcoming deliveries', shortStrains.length, 'Ready plus rooting isn\'t enough for what\'s owed in the next two weeks. Take more cuttings.',
         shortStrains.map(o => oRow(o, `${n0(c.short.get(o.id))} short · ${fmtD(o.deliver_on, true)}`)))}
@@ -155,8 +171,8 @@ function NurseryReview({ d, c, onOrder, onBatch, onMother, go }: { d: NData; c: 
       {sec('Past their ready date', stuck.length, 'Still rooting after the ready-by date. Mark them ready, or record losses.', stuck.map(b => bRow(b, `ready by ${fmtD(b.ready_on, true)}`)))}
       {sec('Ready for a while', stale.length, `Ready more than ${d.settings.readyWarn} days and not delivered.`, stale.map(b => bRow(b, `ready ${fmtD(b.ready_on, true)}`)))}
       {sec('Batches with no METRC tag', noTags.length, 'Every immature plant batch needs a tag (one per 100 plants).', noTags.map(b => bRow(b, 'no tag')))}
-      {sec('Mothers with no METRC tag', motherNoTag.length, 'Each mother plant needs its own plant tag.', motherNoTag.slice(0, 30).map(m => <button key={m.id} className="drow click" onClick={() => onMother(m)}>
-        <span><b>{m.strain}</b><span className="muted"> · started {fmtD(m.started_on)}</span></span><span className="pill warnp">no tag</span></button>), ['Mothers', 'mothers'])}
+      {sec('Mother lots with no METRC tag', motherNoTag.length, 'Each mother lot needs its plant tag.', motherNoTag.slice(0, 30).map(m => <button key={m.id} className="drow click" onClick={() => onMother(m)}>
+        <span><b>{m.strain}</b><span className="muted"> · {GEN_LABEL[m.gen]} · {n0(live(m))} plants · planted {fmtD(m.started_on)}</span></span><span className="pill warnp">no tag</span></button>), ['Mothers', 'mothers'])}
       {sec('Deliveries with no manifest', noManifest.length, 'Plants left the nursery without a METRC manifest number on record.', noManifest.slice(0, 30).map(x => {
         const o = d.orders.find(v => v.id === x.order_id)
         return o ? oRow(o, fmtD(x.delivered_on, true), false) : null

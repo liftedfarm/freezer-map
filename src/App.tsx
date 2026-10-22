@@ -1183,9 +1183,10 @@ function ListView({ title, note, empty, items, ix, where, onPallet, showReason }
 }
 
 /** which module an activity line belongs to */
-function eventModule(e: InvEvent): 'distribution' | 'sales' | 'admin' | 'nursery' {
+function eventModule(e: InvEvent): 'distribution' | 'sales' | 'admin' | 'nursery' | 'cultivation' {
   const t = e.type, d = e.details as { list?: string } | null
   if (/^nursery/.test(t)) return 'nursery'
+  if (/^cult_log/.test(t)) return 'cultivation'
   if (/^invoice/.test(t)) return 'sales'
   if (/^license/.test(t)) return 'admin'
   if (/^(reserve|order|terms|customer_terms)/.test(t) || (t === 'settings' && /^(customers|reserve deadlines|terms)/.test(d?.list ?? ''))) return 'sales'

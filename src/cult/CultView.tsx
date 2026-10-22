@@ -18,6 +18,7 @@ import './cult.css'
 import { cultLabel } from './tabs'
 import { ActivityTab, ReviewTab } from './review'
 import { HarvestTab } from './harvest'
+import { OpsLogs } from '../logs'
 import type { CultTab as Tab } from './tabs'
 const remembered = <T extends string>(k: string, d: T): T => { try { return (localStorage.getItem(k) as T) || d } catch { return d } }
 const remember = (k: string, v: string) => { try { localStorage.setItem(k, v) } catch { /* private mode */ } }
@@ -49,10 +50,10 @@ export default function CultView({ backend, flash, onPalletsChanged, tab, go }: 
       <div className="chead">
         {tab === 'dashboard' ? <span className="dev">in development</span> : <h2>{tab === 'setup' ? 'Production settings' : cultLabel(tab)} <span className="dev">in development</span></h2>}
         <div className="row">
-          {tab !== 'plan' && tab !== 'setup' && tab !== 'activity' && <select value={d.year} onChange={e => setYear(Number(e.target.value))}>
+          {tab !== 'plan' && tab !== 'setup' && tab !== 'activity' && tab !== 'logs' && <select value={d.year} onChange={e => setYear(Number(e.target.value))}>
             {[...new Set([...d.years, d.currentYear + 1])].sort((a, b) => b - a).map(y => <option key={y} value={y}>{y} season</option>)}
           </select>}
-          {tab !== 'plan' && tab !== 'setup' && tab !== 'activity' && <div className="seg">
+          {tab !== 'plan' && tab !== 'setup' && tab !== 'activity' && tab !== 'logs' && <div className="seg">
             {[null, ...d.sites.map(s => s.code)].map(s => <button key={s ?? 'all'} className={site === s ? 'on' : ''} onClick={() => setSite(s)}>{s ?? 'Both'}</button>)}
           </div>}
         </div>
@@ -71,6 +72,8 @@ export default function CultView({ backend, flash, onPalletsChanged, tab, go }: 
       {tab === 'harvest' && <HarvestTab d={d} c={c} site={site} api={api} flash={flash} onSaved={async m => { await load(); flash(m) }} />}
       {tab === 'review' && <ReviewTab d={d} c={c} site={site} onOpen={setOpen} go={go} />}
       {tab === 'activity' && <ActivityTab api={api} />}
+      {tab === 'logs' && backend.client() && <OpsLogs sb={backend.client()!} module="cultivation" sites={d.sites.map(s => s.code)} flash={flash}
+        areas={[...new Set(d.fields.filter(f => f.active).map(f => `${f.site} ${f.name}`))]} strains={[...new Set(d.harvests.map(h => h.strain))].sort()} />}
       {tab === 'setup' && <SetupTab d={d} api={api} flash={flash} onSaved={saved} />}
 
       {open && <HarvestSheet key={open.id ?? 'new'} d={d} c={c} harvest={open} api={api} flash={flash} onClose={() => setOpen(null)}

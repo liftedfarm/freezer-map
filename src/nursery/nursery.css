@@ -17,3 +17,33 @@
 .tagset { margin: 6px 0; }
 .tagset summary { cursor: pointer; padding: 6px 0; font-size: 14px; }
 .tagranges .mono { font-family: ui-monospace, monospace; font-size: 13px; }
+.ok-t { color: var(--ok, #16a34a); }
+.bad-t { color: var(--bad); font-weight: 600; }
+.gpill { display: inline-block; font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 6px; white-space: nowrap; }
+.gpill.g1 { background: #fef3c7; color: #92400e; }
+.gpill.g2 { background: #e0e7ff; color: #3730a3; }
+.gpill.g3 { background: #dcfce7; color: #166534; }
+.gpill.g4 { background: #fce7f3; color: #9d174d; }
+.plantable tr.grp th { text-align: center; font-size: 11px; letter-spacing: .03em; border-bottom: 0; }
+.plantable th.g4, .plantable th.g3, .plantable th.g2, .plantable th.g1 { border-left: 2px solid var(--line); }
+.plantable td:nth-child(4), .plantable td:nth-child(7), .plantable td:nth-child(11), .plantable td:nth-child(15) { border-left: 2px solid var(--line); }
+.plantable .cwrap, .cwrap .plantable { min-width: 1100px; }
+.spacebox { margin-top: 8px; max-width: 640px; }
+.sortrow { display: grid; grid-template-columns: 1.3fr repeat(4, 1fr); gap: 0 8px; }
+.calcline { padding: 10px 0; font-size: 14px; }
+.lossrow { gap: 8px; align-items: center; margin: 6px 0; flex-wrap: wrap; }
+.lossrow input { width: 110px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+.locgroup { margin: 8px 0 12px; }
+.locgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 6px; margin-top: 6px; }
+.locgrid .loc { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); text-align: left; font-size: 13px; }
+.locgrid .loc.off { opacity: .5; }
+.prodline { gap: 6px; margin: 4px 0; flex-wrap: wrap; align-items: center; }
+.prodline input { padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); font-size: 14px; min-width: 0; }
+.prodline input:first-child { flex: 2 1 180px; }
+.prodline input:nth-child(2) { flex: 0 1 80px; }
+.prodline input:nth-child(3) { flex: 0 1 90px; }
+.opslogs .seg { flex-wrap: wrap; }
+.csheet .grid3 input, .csheet .grid3 select { width: 100%; }
+@media (max-width: 640px) { .sortrow { grid-template-columns: 1fr 1fr; } .csheet .grid3 { grid-template-columns: 1fr 1fr; } }
+.nset select { width: 100%; }
+.howto { margin: 4px 0 8px; } .howto summary { cursor: pointer; }
