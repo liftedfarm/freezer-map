@@ -91,16 +91,29 @@ export interface Snapshot {
 }
 
 export type Role = 'admin' | 'sales' | 'crew' | 'customer' | 'none'
-export interface Me { email: string; role: Role; display_name: string | null; customer_id: number | null; customer_name: string | null; viewing_as?: boolean; real_email?: string }
-export interface AppUser { email: string; role: Role; customer_id: number | null; display_name: string | null; added_by: string | null; created_at: string; last_seen: string | null; modules?: string[]; hidden_modules?: string[] }
-/** modules an Admin can switch on or hide per user. byDefault = on for every staff user unless hidden */
-export const MODULES: { key: string; label: string; what: string; byDefault?: boolean }[] = [
-  { key: 'distribution', label: 'Distribution', what: 'Freezer map, transit, sales, review', byDefault: true },
-  { key: 'cultivation', label: 'Production', what: 'Plantings, harvest schedule, testing, harvests, planning (in development)' },
+export interface Me { email: string; role: Role; display_name: string | null; customer_id: number | null; customer_name: string | null; viewing_as?: boolean; real_email?: string; access: Access }
+export interface AppUser { email: string; role: Role; customer_id: number | null; display_name: string | null; added_by: string | null; created_at: string; last_seen: string | null; modules?: string[]; owner?: boolean; access?: Partial<Record<ModKey, Level>> }
+/** the parts of the app. Levels per person: off (missing), user, admin. Owners are admin everywhere. */
+export type ModKey = 'distribution' | 'sales' | 'cultivation' | 'admin'
+export type Level = 'user' | 'admin'
+export const MODULES: { key: ModKey; label: string; what: string; user: string; admin: string }[] = [
+  { key: 'distribution', label: 'Distribution', what: 'Freezer map, transit, review', user: 'Move, split, load and ship pallets', admin: '+ Distribution settings (vehicles, strains)' },
+  { key: 'sales', label: 'Sales', what: 'Reserves, open menu, orders, prices', user: 'See prices, reserves and orders; confirm orders', admin: '+ approve reserve requests, deadlines, customers and terms' },
+  { key: 'cultivation', label: 'Production', what: 'Harvest schedule, testing, fields, planning', user: 'Schedule and log harvests, fields, plan', admin: '+ Production settings (sites, fields, labs, equipment)' },
+  { key: 'admin', label: 'Admin', what: 'Company dashboard, users and access, app settings', user: 'Everything in Admin', admin: 'Everything in Admin' },
 ]
-/** what a user ends up seeing, from their row (Settings > Users) */
-export const userModules = (u: Pick<AppUser, 'modules' | 'hidden_modules'>) =>
-  MODULES.filter(m => (m.byDefault || (u.modules ?? []).includes(m.key)) && !(u.hidden_modules ?? []).includes(m.key)).map(m => m.key)
+export interface Prefs { theme?: 'light' | 'dark' | 'system'; start_module?: ModKey; start_site?: Site; notify?: { requests?: boolean; orders?: boolean } }
+export interface Access { owner: boolean; modules: Partial<Record<ModKey, Level>>; prefs: Prefs }
+export interface UserAccess { email: string; module: ModKey; level: Level }
+/** before 023 is run: work it out from the old role */
+export function accessFromRole(role: Role, extra: string[] = []): Access {
+  const m: Partial<Record<ModKey, Level>> = {}
+  if (role === 'admin') { m.distribution = 'admin'; m.sales = 'admin'; m.admin = 'admin' }
+  if (role === 'sales') { m.distribution = 'user'; m.sales = 'user' }
+  if (role === 'crew') m.distribution = 'user'
+  if (['admin', 'sales', 'crew'].includes(role) && extra.includes('cultivation')) m.cultivation = role === 'admin' ? 'admin' : 'user'
+  return { owner: false, modules: m, prefs: {} }
+}
 export const canSales = (r?: Role) => r === 'admin' || r === 'sales'
 export interface LinkInfo { kind: 'invite' | 'reset'; email: string; display_name: string | null; customer_name: string | null }
 export interface Reserve { id: number; customer_id: number; strain: string; product: string; lbs: number; notes: string | null; updated_by: string | null; updated_at: string; crop_year?: number }

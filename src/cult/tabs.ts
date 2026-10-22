@@ -1,6 +1,10 @@
 // Production (Cultivation) screens: shared by the app's navigation and the module itself
-export type CultTab = 'dashboard' | 'schedule' | 'week' | 'testing' | 'avail' | 'plantings' | 'yields' | 'plan' | 'setup'
-export const CULT_TABS: { t: CultTab; l: string; bottom?: boolean }[] = [
-  { t: 'dashboard', l: 'Dashboard', bottom: true }, { t: 'schedule', l: 'Schedule', bottom: true }, { t: 'week', l: 'Week', bottom: true }, { t: 'testing', l: 'Testing', bottom: true },
-  { t: 'plantings', l: 'Fields' }, { t: 'avail', l: 'Availability' }, { t: 'yields', l: 'Yields' }, { t: 'plan', l: 'Plan' }, { t: 'setup', l: 'Setup' },
+export type CultTab = 'dashboard' | 'schedule' | 'week' | 'testing' | 'avail' | 'plantings' | 'yields' | 'plan' | 'review' | 'activity' | 'setup'
+/** main screens, top of the menu */
+export const CULT_TABS: { t: CultTab; l: string }[] = [
+  { t: 'dashboard', l: 'Dashboard' }, { t: 'schedule', l: 'Schedule' }, { t: 'week', l: 'Week' }, { t: 'testing', l: 'Testing' },
+  { t: 'plantings', l: 'Fields' }, { t: 'avail', l: 'Availability' }, { t: 'yields', l: 'Yields' }, { t: 'plan', l: 'Plan' },
 ]
+/** bottom of the menu, same in every module ('setup' is Production settings, Admins only) */
+export const CULT_TAIL: { t: CultTab; l: string }[] = [{ t: 'review', l: 'Review' }, { t: 'activity', l: 'Activity' }, { t: 'setup', l: 'Settings' }]
+export const cultLabel = (t: CultTab) => [...CULT_TABS, ...CULT_TAIL].find(x => x.t === t)?.l ?? 'Production'

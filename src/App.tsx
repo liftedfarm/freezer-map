@@ -4,27 +4,46 @@ import { Backend, CONFIG_MISSING, IS_PORTAL, makeBackend, portalUrl } from './ap
 import { FREEZER_STATUSES } from './types'
 import { MergeForm, MergeHere, MixedBuilder, NewPalletChooser, PickMixed, SingleForm, SplitForm, TagForm, WeightForm, lbs } from './forms'
 import { SettingsView } from './settings'
+import { UsersTab } from './users'
+import { AdminDashboard, AppSettingsPanel } from './admin'
+import type { Jump } from './admin'
+import { DeadlinesPanel, SalesDashboard, SalesReview } from './salesdash'
+import { MySettings } from './mine'
+import { applyTheme } from './theme'
 import { EMPTY, active, addMoves, addToTray, backToTray, dropFromPlan, fillStaging, laneShuffle, occupants, place, slotView, suggestions, toSave } from './plan'
 import type { Layout, Plan, PlanMove, PlaceMode } from './plan'
 import { DragGhost, draggable, onDrop } from './drag'
 import { ChooseDialog, PlanBar, RemoveForm, SelectBar, UndoPill } from './planui'
-import { ReservesView } from './reserves'
+import { ReservesView, SALES_TITLES } from './reserves'
+import type { SalesMode } from './reserves'
 import { Portal, PortalLink, PortalLogin } from './portal'
 import { DistDashboard } from './distdash'
-import { CULT_TABS } from './cult/tabs'
+import { CULT_TABS, CULT_TAIL } from './cult/tabs'
 import type { CultTab } from './cult/tabs'
 import { LoadForm, LoadView, PickLoad, TransitView, stopColor } from './loads'
 import type { LoadCtx } from './loads'
-import { canSales } from './types'
-import type { UnmatchedTag, ShippedCheck, Freezer, Me, FreezerStatus, InvEvent, Load, LoadItem, LoadStop, Pallet, Site, Slot, Snapshot } from './types'
+import type { ModKey, UnmatchedTag, ShippedCheck, Freezer, Me, FreezerStatus, InvEvent, Load, LoadItem, LoadStop, Pallet, Site, Slot, Snapshot } from './types'
 
 const backend: Backend = makeBackend()
 // Cultivation module: its own bundle, only loaded for users who have it switched on
 const CultView = lazy(() => import('./cult/CultView'))
 
-type View = 'dash' | 'map' | 'freezer' | 'transit' | 'load' | 'review' | 'activity' | 'settings' | 'reserves' | 'cult'
-// modules: Distribution (the freezer app) for every staff user, others switched on per user
-type Mod = 'dist' | 'cult'
+type View = 'dash' | 'map' | 'freezer' | 'transit' | 'load' | 'review' | 'activity' | 'settings' | 'sales' | 'cult' | 'admin' | 'mine'
+// modules: each person has a level (User / Admin) per module; Owners have all of them (Admin > Settings > Users)
+type Mod = 'dist' | 'sales' | 'cult' | 'admin'
+const MOD_KEY: Record<Mod, ModKey> = { dist: 'distribution', sales: 'sales', cult: 'cultivation', admin: 'admin' }
+const KEY_MOD: Record<ModKey, Mod> = { distribution: 'dist', sales: 'sales', cultivation: 'cult', admin: 'admin' }
+const MOD_LABEL: Record<Mod, string> = { dist: 'Distribution', sales: 'Sales', cult: 'Production', admin: 'Admin' }
+const MOD_WHAT: Record<Mod, string> = { dist: 'Freezer map · transit · review', sales: 'Reserves · menu · orders', cult: 'Harvests · fields · plan', admin: 'Company · users · app settings' }
+type SalesTab = 'dash' | SalesMode | 'review' | 'activity' | 'settings'
+type AdminTab = 'dash' | 'activity' | 'settings'
+interface NavItem { k: string; l: ReactNode; on: boolean; go: () => void }
+const MOD_ICON: Record<Mod, ReactNode> = {
+  dist: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><rect x="1" y="7" width="14" height="10" /><path d="M15 10h4l3 3v4h-7" /><circle cx="6" cy="19" r="2" /><circle cx="18" cy="19" r="2" /></svg>,
+  sales: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z" /><circle cx="7.5" cy="7.5" r="1.5" /></svg>,
+  cult: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M12 22V12M12 12C12 7 8 4 3 4c0 5 4 8 9 8zM12 12c0-4 3-7 8-7 0 4-3 7-8 7z" /></svg>,
+  admin: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M12 2 4 5v6c0 5 3.4 9.3 8 11 4.6-1.7 8-6 8-11V5l-8-3z" /><path d="m9 12 2 2 4-4" /></svg>,
+}
 const stored = (k: string) => { try { return localStorage.getItem(k) } catch { return null } }
 const store = (k: string, v: string) => { try { localStorage.setItem(k, v) } catch { /* private mode */ } }
 
@@ -173,6 +192,9 @@ function describe(ix: Index, e: InvEvent, names?: Map<number, string>) {
     case 'reserve_approved': case 'reserve_declined': { const d = e.details as { customer?: string; strain?: string; from?: number; to?: number } | null
       return `Reserve request ${e.type === 'reserve_approved' ? 'approved' : 'declined'}: ${d?.customer} · ${d?.strain} ${lbs(Number(d?.from ?? 0))} → ${lbs(Number(d?.to ?? 0))}` }
     case 'user_removed': return `${e.note} removed from users`
+    case 'user_access': { const d = e.details as { email?: string; owner?: boolean; kind?: string; access?: Record<string, string> } | null
+      return `${d?.email}: ${d?.kind !== 'staff' ? d?.kind : d?.owner ? 'Owner' : Object.entries(d?.access ?? {}).map(([m, l]) => `${m === 'cultivation' ? 'production' : m} ${l}`).join(', ') || 'no modules'}` }
+    case 'app_setting': { const d = e.details as { key?: string; value?: string } | null; return `App setting ${d?.key} set to ${d?.value}` }
     case 'user_hidden_modules': { const d = e.details as { email?: string; hidden?: string[] } | null
       return `${d?.email} hidden modules: ${(d?.hidden ?? []).join(', ') || 'none'}` }
     case 'user_modules': { const d = e.details as { email?: string; modules?: string[] } | null
@@ -202,12 +224,19 @@ export default function App() {
   const [snap, setSnap] = useState<Snapshot | null>(null)
   const [site, setSite] = useState<Site>('OHR')
   useEffect(() => { if (GO) history.replaceState(null, '', location.pathname) }, [])
-  const [view, setView] = useState<View>(GO_TAB ? 'reserves' : stored('fm.mod') === 'cult' ? 'cult' : 'dash')
-  const [mod, setModS] = useState<Mod>(GO_TAB ? 'dist' : stored('fm.mod') === 'cult' ? 'cult' : 'dist')
-  const [cultTab, setCultTabS] = useState<CultTab>(() => (CULT_TABS.find(t => t.t === stored('cult.tab'))?.t ?? 'schedule'))
+  const storedMod = stored('fm.mod') as Mod | null
+  const [view, setView] = useState<View>(GO_TAB ? 'sales' : storedMod === 'cult' ? 'cult' : storedMod === 'sales' ? 'sales' : storedMod === 'admin' ? 'admin' : 'dash')
+  const [mod, setModS] = useState<Mod>(GO_TAB ? 'sales' : storedMod && storedMod in MOD_KEY ? storedMod : 'dist')
+  const [cultTab, setCultTabS] = useState<CultTab>(() => ([...CULT_TABS, ...CULT_TAIL].find(t => t.t === stored('cult.tab'))?.t ?? 'dashboard'))
+  const [salesTab, setSalesTabS] = useState<SalesTab>(GO_TAB ?? 'dash')
+  const [adminTab, setAdminTabS] = useState<AdminTab>('dash')
   const [modMenu, setModMenu] = useState(false)
   const [more, setMore] = useState(false)
-  const setCultTab = (t: CultTab) => { setCultTabS(t); store('cult.tab', t); setView('cult'); setMore(false); window.scrollTo(0, 0) }
+  const top = () => { setMore(false); window.scrollTo(0, 0) }
+  const setCultTab = (t: CultTab) => { setCultTabS(t); store('cult.tab', t); setView('cult'); top() }
+  const setSalesTab = (t: SalesTab) => { setSalesTabS(t); setView('sales'); top() }
+  const setAdminTab = (t: AdminTab) => { setAdminTabS(t); setView('admin'); top() }
+  const go = (v: View) => { setView(v); top() }
   const [freezerId, setFreezerId] = useState<number | null>(null)
   const [palletId, setPalletId] = useState<number | null>(null)
   const [plan, setPlan] = useState<Plan>(EMPTY)
@@ -229,10 +258,11 @@ export default function App() {
   const [pool, setPool] = useState<Pallet[]>([])
   const [loadId, setLoadId] = useState<number | null>(null)
   const [counts, setCounts] = useState({ orders: 0, requests: 0 })
-  const isSales = !!me && canSales(me.role)
+  const isSales = !!me?.access?.modules.sales
+  const salesAdmin = me?.access?.modules.sales === 'admin'
   const refreshCounts = useCallback(() => { if (isSales) backend.salesCounts().then(setCounts).catch(() => {}) }, [isSales])
   useEffect(() => { refreshCounts(); if (!isSales) return; const t = setInterval(refreshCounts, 60000); return () => clearInterval(t) }, [isSales, refreshCounts])
-  const salesBadge = counts.orders + (me?.role === 'admin' ? counts.requests : 0)
+  const salesBadge = counts.orders + (salesAdmin ? counts.requests : 0)
   const [loadForm, setLoadForm] = useState<{ load?: Load } | null>(null)
   const [pickLoad, setPickLoad] = useState<Pallet | null>(null)
 
@@ -246,22 +276,27 @@ export default function App() {
     backend.me().then(setMe).catch(e => setLoadError(String(e?.message ?? e)))
   }, [user])
   const staff = !!me && ['admin', 'sales', 'crew'].includes(me.role)
-  const [modules, setModules] = useState<string[] | null>(null)
-  useEffect(() => { if (staff) backend.myModules().then(setModules).catch(() => setModules([])); else setModules([]) }, [staff, me?.email, me?.viewing_as])
-  const hasCult = (modules ?? []).includes('cultivation')
-  // Distribution is on for everyone unless an Admin hid it (shown while modules load)
-  const hasDist = modules == null || modules.includes('distribution')
-  const MODS: { m: Mod; l: string; on: boolean }[] = [{ m: 'dist', l: 'Distribution', on: hasDist }, { m: 'cult', l: 'Production', on: hasCult }]
+  const lv = me?.access?.modules ?? {}
+  const MODS = (Object.keys(MOD_KEY) as Mod[]).map(m => ({ m, l: MOD_LABEL[m], on: !!lv[MOD_KEY[m]] }))
   const myMods = MODS.filter(x => x.on)
-  const noMods = !!modules && staff && myMods.length === 0
-  const inCult = hasCult && (mod === 'cult' || !hasDist)
-  const goMod = (m: Mod) => { setModS(m); store('fm.mod', m); setModMenu(false); if (m === 'cult') setCultTab('dashboard'); else setView('dash'); window.scrollTo(0, 0) }
-  // modules loaded and the one we're in isn't on for this user: go to one that is
+  const noMods = staff && myMods.length === 0
+  const cur: Mod = myMods.some(x => x.m === mod) ? mod : myMods[0]?.m ?? 'dist'
+  const inCult = cur === 'cult'
+  const isAdminOf = (m: Mod) => lv[MOD_KEY[m]] === 'admin'
+  const goMod = (m: Mod) => {
+    setModS(m); store('fm.mod', m); setModMenu(false)
+    if (m === 'cult') setCultTab('dashboard'); else if (m === 'sales') setSalesTab('dash'); else if (m === 'admin') setAdminTab('dash'); else go('dash')
+  }
+  // signed in: personal settings (theme, where to start, which site)
   useEffect(() => {
-    if (!modules || !staff) return
-    if (!hasCult && (mod === 'cult' || view === 'cult')) { setModS('dist'); if (view === 'cult') setView('dash') }
-    else if (!hasDist && hasCult && mod !== 'cult') { setModS('cult'); if (view !== 'settings') setView('cult') }
-  }, [me, staff, hasCult, hasDist, modules])
+    if (!me || !staff) return
+    const p = me.access?.prefs ?? {}
+    if (p.theme) applyTheme(p.theme)
+    if (p.start_site) setSite(p.start_site)
+    if (!GO_TAB && p.start_module && lv[p.start_module]) goMod(KEY_MOD[p.start_module])
+  }, [me?.email])
+  // the module we're in isn't on for this person: go to one that is
+  useEffect(() => { if (staff && cur !== mod && myMods.length) goMod(cur) }, [cur, mod, staff, myMods.length])
   useEffect(() => {
     if (!staff) return
     reload().then(() => setLoadError(null)).catch(e => setLoadError(String(e?.message ?? e)))
@@ -446,10 +481,49 @@ export default function App() {
     setPlan(pl => ls.reduce((acc, l) => addMoves(acc, l!.moves), pl))
     flash('Shuffle added to the plan. Tap Apply to save.')
   }
+  const invStrains = snap.pallets.reduce((m, p) => p.strain ? m.set(p.strain, (m.get(p.strain) ?? 0) + 1) : m, new Map<string, number>())
   const selWeight = sel.reduce((a, id) => { const p = ix.pallet.get(id); return a + (p ? weightOf(ix, p) : 0) }, 0)
 
+  // ---------- navigation: the same shape in every module ----------
+  // main screens at the top (Dashboard first), then Review, Activity and Settings at the bottom
+  const badge = (n: number, warn = false) => n > 0 ? <span className={`badge ${warn ? 'warn' : ''}`}>{n}</span> : null
+  const distMain: NavItem[] = [
+    { k: 'dash', l: 'Dashboard', on: view === 'dash', go: () => go('dash') },
+    { k: 'map', l: 'Map', on: view === 'map' || view === 'freezer', go: () => go(view !== 'map' && view !== 'freezer' && freezerId != null ? 'freezer' : 'map') },
+    { k: 'transit', l: <>Transit{badge(openLoads.length)}</>, on: view === 'transit' || view === 'load', go: () => go('transit') },
+  ]
+  const distTail: NavItem[] = [
+    { k: 'review', l: <>Review{badge(reviewCount, true)}</>, on: view === 'review', go: () => go('review') },
+    { k: 'activity', l: 'Activity', on: view === 'activity', go: () => go('activity') },
+    ...(isAdminOf('dist') ? [{ k: 'settings', l: 'Settings', on: view === 'settings', go: () => go('settings') }] : []),
+  ]
+  const sItem = (t: SalesTab, l: ReactNode): NavItem => ({ k: t, l, on: view === 'sales' && salesTab === t, go: () => setSalesTab(t) })
+  const salesMain: NavItem[] = [sItem('dash', 'Dashboard'), sItem('menu', SALES_TITLES.menu), sItem('orders', <>Orders{badge(counts.orders, true)}</>),
+    sItem('requests', <>Requests{badge(counts.requests, salesAdmin)}</>), sItem('customer', 'Reserves'), sItem('strain', 'By strain')]
+  const salesTail: NavItem[] = [sItem('review', <>Review{badge(salesBadge, true)}</>), sItem('activity', 'Activity'), ...(isAdminOf('sales') ? [sItem('settings', 'Settings')] : [])]
+  const cItem = (t: CultTab, l: string): NavItem => ({ k: t, l, on: view === 'cult' && cultTab === t, go: () => setCultTab(t) })
+  const cultMain = CULT_TABS.map(t => cItem(t.t, t.l))
+  const cultTail = CULT_TAIL.filter(t => t.t !== 'setup' || isAdminOf('cult')).map(t => cItem(t.t, t.l))
+  const aItem = (t: AdminTab, l: string): NavItem => ({ k: t, l, on: view === 'admin' && adminTab === t, go: () => setAdminTab(t) })
+  const adminMain = [aItem('dash', 'Dashboard')], adminTail = [aItem('activity', 'Activity'), aItem('settings', 'Settings')]
+  const NAV: Record<Mod, { main: NavItem[]; tail: NavItem[] }> = {
+    dist: { main: distMain, tail: distTail }, sales: { main: salesMain, tail: salesTail }, cult: { main: cultMain, tail: cultTail }, admin: { main: adminMain, tail: adminTail } }
+  const nav = NAV[cur]
+  const all = [...nav.main, ...nav.tail]
+  const bottomFit = all.length <= 5 ? all : nav.main.slice(0, 4)
+  const bottomRest = all.length <= 5 ? [] : all.filter(x => !bottomFit.includes(x))
+  const restOn = bottomRest.find(x => x.on)
+  const restBadge = cur === 'dist' ? reviewCount : cur === 'sales' ? salesBadge : 0
+  const jump = (j: Jump) => {
+    const [m, t] = j.split('.') as [Mod, string]
+    if (!lv[MOD_KEY[m]]) { flash(`You don't have ${MOD_LABEL[m]}`, true); return }
+    setModS(m); store('fm.mod', m)
+    if (m === 'dist') go(t as View); else if (m === 'sales') setSalesTab(t as SalesTab); else if (m === 'cult') setCultTab(t as CultTab); else setAdminTab(t === 'users' ? 'settings' : t as AdminTab)
+  }
+  const appName = cur === 'dist' ? 'Inventory Management' : MOD_LABEL[cur]
+
   return (
-    <div className={`app ${noMods ? '' : 'with-rail'} ${myMods.length > 1 ? 'with-mods' : ''} ${banner ? 'is-moving' : ''} ${inCult ? 'mod-cult' : ''}`}
+    <div className={`app ${noMods ? '' : 'with-rail'} ${myMods.length > 1 ? 'with-mods' : ''} ${banner ? 'is-moving' : ''} mod-${cur}`}
       style={{ ['--navw' as string]: myMods.length > 1 ? '284px' : '200px' }}>
       {viewBar}
       {!noMods && (
@@ -457,63 +531,47 @@ export default function App() {
           {myMods.length > 1 && <div className="rail-mods">
             <div className="rail-logo">Lifted</div>
             {myMods.map(x => (
-              <button key={x.m} className={`rail-mod ${mod === x.m ? 'on' : ''}`} onClick={() => goMod(x.m)}>
-                {x.m === 'dist'
-                  ? <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><rect x="1" y="7" width="14" height="10" /><path d="M15 10h4l3 3v4h-7" /><circle cx="6" cy="19" r="2" /><circle cx="18" cy="19" r="2" /></svg>
-                  : <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M12 22V12M12 12C12 7 8 4 3 4c0 5 4 8 9 8zM12 12c0-4 3-7 8-7 0 4-3 7-8 7z" /></svg>}
-                <span>{x.l}</span>
+              <button key={x.m} className={`rail-mod ${cur === x.m ? 'on' : ''}`} onClick={() => goMod(x.m)}>
+                {MOD_ICON[x.m]}<span>{x.l}</span>
               </button>
             ))}
           </div>}
-          {!inCult && hasDist && (
-            <nav className="rail-screens" aria-label="Distribution screens">
-              <div className="rail-h">DISTRIBUTION</div>
-              <button className={view === 'dash' ? 'on' : ''} onClick={() => setView('dash')}>Dashboard</button>
-              <button className={view === 'map' || view === 'freezer' ? 'on' : ''} onClick={() => setView(view !== 'map' && view !== 'freezer' && freezerId != null ? 'freezer' : 'map')}>Map</button>
-              <button className={view === 'transit' || view === 'load' ? 'on' : ''} onClick={() => setView('transit')}>Transit{openLoads.length > 0 && <span className="badge">{openLoads.length}</span>}</button>
-              {canSales(me?.role) && <button className={view === 'reserves' ? 'on' : ''} onClick={() => setView('reserves')}>Sales{salesBadge > 0 && <span className="badge warn">{salesBadge}</span>}</button>}
-              <button className={view === 'activity' ? 'on' : ''} onClick={() => setView('activity')}>Activity</button>
-              <button className={view === 'review' ? 'on' : ''} onClick={() => setView('review')}>Review{reviewCount > 0 && <span className="badge warn">{reviewCount}</span>}</button>
-              <div className="rail-sep" />
-              <button className={view === 'settings' ? 'on' : ''} onClick={() => setView('settings')}>Settings</button>
-            </nav>
-          )}
-          {inCult && (
-            <nav className="rail-screens" aria-label="Production screens">
-              <div className="rail-h">PRODUCTION</div>
-              {CULT_TABS.map(t => <button key={t.t} className={view === 'cult' && cultTab === t.t ? 'on' : ''} onClick={() => setCultTab(t.t)}>{t.l}</button>)}
-            </nav>
-          )}
+          <nav className="rail-screens" aria-label={`${MOD_LABEL[cur]} screens`}>
+            <div className="rail-h">{MOD_LABEL[cur].toUpperCase()}</div>
+            {nav.main.map(x => <button key={x.k} className={x.on ? 'on' : ''} onClick={x.go}>{x.l}</button>)}
+            {nav.tail.length > 0 && <div className="rail-sep" />}
+            {nav.tail.map(x => <button key={x.k} className={x.on ? 'on' : ''} onClick={x.go}>{x.l}</button>)}
+          </nav>
         </aside>
       )}
       <header className="top">
-        <div className="brand" onClick={() => { if (inCult) setCultTab('dashboard'); else if (hasDist) { setView('dash'); setFreezerId(null) } }}>
-          <img className="logo-img" src="/logo.png" alt="Lifted Farms" /> <span className="app-name">{inCult ? 'Production' : 'Inventory Management'}</span> {backend.demo && <span className="demo">DEMO</span>}
+        <div className="brand" onClick={() => nav.main[0]?.go()}>
+          <img className="logo-img" src="/logo.png" alt="Lifted Farms" /> <span className="app-name">{appName}</span> {backend.demo && <span className="demo">DEMO</span>}
         </div>
         {myMods.length > 1 && (
           <div className="modpick">
-            <button className={`modpill m-${mod}`} aria-haspopup="menu" aria-expanded={modMenu} onClick={() => setModMenu(!modMenu)}>
-              {MODS.find(x => x.m === mod)?.l} <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
+            <button className={`modpill m-${cur}`} aria-haspopup="menu" aria-expanded={modMenu} onClick={() => setModMenu(!modMenu)}>
+              {MOD_LABEL[cur]} <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
             </button>
             {modMenu && <>
               <div className="modscrim" onClick={() => setModMenu(false)} />
               <div className="modmenu" role="menu">
-                {myMods.map(x => <button key={x.m} role="menuitem" className={mod === x.m ? 'on' : ''} onClick={() => goMod(x.m)}>
-                  <b>{x.l}</b><span className="muted">{x.m === 'dist' ? 'Dashboard · Map · Transit · Sales' : 'Dashboard · Harvests · fields · plan'}</span></button>)}
+                {myMods.map(x => <button key={x.m} role="menuitem" className={cur === x.m ? 'on' : ''} onClick={() => goMod(x.m)}>
+                  <b>{x.l}</b><span className="muted">{MOD_WHAT[x.m]}</span></button>)}
               </div>
             </>}
           </div>
         )}
-        {!inCult && hasDist && <div className="seg">
+        {cur === 'dist' && !noMods && <div className="seg">
           {(['OHR', 'GVR'] as Site[]).map(s => (
             <button key={s} className={s === site ? 'on' : ''} onClick={() => { setSite(s); if (view === 'freezer') setView('map') }}>{s}</button>
           ))}
         </div>}
-        {!inCult && hasDist && <input className="search" type="search" placeholder="Pallet, strain or tag" value={query}
-          onChange={e => { setQuery(e.target.value); if (view === 'freezer' || view === 'activity' || view === 'dash') setView('map') }} />}
-        {(inCult || !hasDist) && <span className="grow" />}
-        <button className={`ghost small ${view === 'settings' ? 'on-btn' : ''}`} title="Settings" onClick={() => setView('settings')}>⚙ Settings</button>
-        <button className="ghost small" title={`Signed in as ${user} (${me?.role ?? ''}). Click to sign out.`} onClick={() => backend.signOut().then(() => setUser(null))}>{who(user)} ⏏</button>
+        {cur === 'dist' && !noMods && <input className="search" type="search" placeholder="Pallet, strain or tag" value={query}
+          onChange={e => { setQuery(e.target.value); if (view === 'freezer' || view === 'activity' || view === 'dash' || view === 'mine') setView('map') }} />}
+        {(cur !== 'dist' || noMods) && <span className="grow" />}
+        <button className={`ghost small ${view === 'mine' ? 'on-btn' : ''}`} title="Your own settings" onClick={() => go('mine')}>⚙<span className="hide-phone"> My settings</span></button>
+        <button className="ghost small" title={`Signed in as ${user}. Click to sign out.`} onClick={() => backend.signOut().then(() => setUser(null))}>{who(user)} ⏏</button>
       </header>
 
       {banner && (
@@ -524,10 +582,10 @@ export default function App() {
       )}
 
       <main>
-        {noMods && view !== 'settings' && <div className="list"><h2>No modules</h2><p className="muted">No parts of the app are switched on for your account yet. Ask an Admin to turn one on in Settings → Users.</p></div>}
-        {view === 'dash' && !inCult && hasDist && (
+        {view === 'mine' && <MySettings backend={backend} me={me!} flash={flash} onSaved={(p, name) => setMe(m => m && ({ ...m, display_name: name ?? m.display_name, access: { ...m.access, prefs: p } }))} />}
+        {noMods && view !== 'mine' && <div className="list"><h2>No modules</h2><p className="muted">No parts of the app are switched on for your account yet. Ask someone with the Admin module to give you access.</p></div>}
+        {view === 'dash' && cur === 'dist' && (
           <DistDashboard goMap={() => { setView('map'); setFreezerId(null) }}
-            sales={isSales ? { orders: counts.orders, requests: counts.requests, isAdmin: me?.role === 'admin', go: () => setView('reserves') } : undefined}
             ctx={{
               snap, site, backend,
               slotsOf: id => ix.slotsOf.get(id) ?? [], inSlot: id => ix.inSlot.get(id) ?? [], weight: p => weightOf(ix, p),
@@ -588,15 +646,28 @@ export default function App() {
             note="Flagged during import from the spreadsheet: duplicates, items not in the pallet list, or missing data. Fix the info and clear the flag."
             items={review} ix={ix} where={where} onPallet={setPalletId} showReason />
         </>)}
-        {view === 'activity' && <ActivityView ix={ix} />}
-        {view === 'reserves' && canSales(me?.role) && <ReservesView backend={backend} flash={flash} role={me!.role} onCounts={refreshCounts} initialMode={GO_TAB ?? undefined} customers={snap.customers ?? []} strains={snap.strains ?? []}
-          onHand={snap.pallets.reduce((m, p) => (p.kind !== 'mixed' && p.strain && (p.status === 'in_freezer' || p.status === 'unslotted'))
-            ? m.set(p.strain.toLowerCase(), (m.get(p.strain.toLowerCase()) ?? 0) + Number(p.current_weight ?? 0)) : m, new Map<string, number>())} />}
+        {view === 'activity' && cur === 'dist' && <ActivityView ix={ix} module="distribution" />}
+        {view === 'sales' && cur === 'sales' && (() => {
+          const goS = (m: SalesMode) => setSalesTab(m)
+          if (salesTab === 'dash') return <SalesDashboard backend={backend} customers={snap.customers ?? []} isAdmin={salesAdmin} go={goS} />
+          if (salesTab === 'review') return <SalesReview backend={backend} customers={snap.customers ?? []} isAdmin={salesAdmin} go={goS} />
+          if (salesTab === 'activity') return <ActivityView ix={ix} module="sales" />
+          if (salesTab === 'settings') return <SettingsView backend={backend} flash={flash} onChanged={() => { reload() }} inventoryStrains={invStrains} title="Sales settings"
+            lists={['customers', 'strains']} canTerms={salesAdmin} extra={[{ k: 'deadlines', l: 'Reserve deadlines', node: <DeadlinesPanel backend={backend} flash={flash} /> }]} />
+          return <ReservesView backend={backend} flash={flash} isAdmin={salesAdmin} mode={salesTab} onCounts={refreshCounts} customers={snap.customers ?? []} strains={snap.strains ?? []}
+            onHand={snap.pallets.reduce((m, p) => (p.kind !== 'mixed' && p.strain && (p.status === 'in_freezer' || p.status === 'unslotted'))
+              ? m.set(p.strain.toLowerCase(), (m.get(p.strain.toLowerCase()) ?? 0) + Number(p.current_weight ?? 0)) : m, new Map<string, number>())} />
+        })()}
         {view === 'transit' && <TransitView ctx={ctx} onOpen={id => { setLoadId(id); setView('load'); window.scrollTo(0, 0) }} onNew={() => setLoadForm({})} />}
         {view === 'load' && loadId != null && <LoadView ctx={ctx} loadId={loadId} onBack={() => setView('transit')} onEdit={() => setLoadForm({ load: (snap.loads ?? []).find(l => l.id === loadId) })} />}
         {view === 'cult' && inCult && <Suspense fallback={<p className="muted">Loading…</p>}><CultView backend={backend} flash={flash} tab={cultTab} go={setCultTab} onPalletsChanged={() => { reload() }} /></Suspense>}
-        {view === 'settings' && <SettingsView backend={backend} flash={flash} me={me!} onChanged={() => { reload() }}
-          inventoryStrains={snap.pallets.reduce((m, p) => p.strain ? m.set(p.strain, (m.get(p.strain) ?? 0) + 1) : m, new Map<string, number>())} />}
+        {view === 'cult' && inCult && cultTab === 'setup' && <div className="modset"><SettingsView backend={backend} flash={flash} onChanged={() => { reload() }} inventoryStrains={invStrains} title="Strains" lists={['strains']} /></div>}
+        {view === 'admin' && cur === 'admin' && adminTab === 'dash' && <AdminDashboard backend={backend} open={jump} />}
+        {view === 'admin' && cur === 'admin' && adminTab === 'activity' && <ActivityView ix={ix} module="all" />}
+        {view === 'admin' && cur === 'admin' && adminTab === 'settings' && <SettingsView backend={backend} flash={flash} onChanged={() => { reload() }} inventoryStrains={invStrains} title="Admin settings"
+          lists={[]} extra={[{ k: 'users', l: 'Users and access', node: <UsersTab backend={backend} me={me!} customers={snap.customers ?? []} flash={flash} /> },
+            { k: 'app', l: 'App settings', node: <AppSettingsPanel backend={backend} flash={flash} /> }]} />}
+        {view === 'settings' && cur === 'dist' && <SettingsView backend={backend} flash={flash} onChanged={() => { reload() }} inventoryStrains={invStrains} title="Distribution settings" lists={['vehicles', 'strains']} />}
       </main>
 
       {active(plan) && L && (
@@ -620,47 +691,20 @@ export default function App() {
           onUndo={() => { const b = lastBatch; setLastBatch(null); act(() => backend.undoBatch(b.id), 'Undone') }} />
       )}
       <DragGhost />
-      {inCult && (
+      {!noMods && <>
         <nav className="bottom">
-          {CULT_TABS.filter(t => t.bottom).map(t => <button key={t.t} className={view === 'cult' && cultTab === t.t ? 'on' : ''} onClick={() => setCultTab(t.t)}>{t.l}</button>)}
-          <button className={view === 'cult' && !CULT_TABS.find(t => t.t === cultTab)?.bottom ? 'on' : ''} onClick={() => setMore(true)}>
-            {view === 'cult' && !CULT_TABS.find(t => t.t === cultTab)?.bottom ? CULT_TABS.find(t => t.t === cultTab)?.l : 'More'}</button>
+          {bottomFit.map(x => <button key={x.k} className={x.on ? 'on' : ''} onClick={x.go}>{x.l}</button>)}
+          {bottomRest.length > 0 && <button className={restOn ? 'on' : ''} onClick={() => setMore(true)}>{restOn ? restOn.l : <>More{badge(restBadge, true)}</>}</button>}
         </nav>
-      )}
-      {inCult && more && (
-        <div className="scrim" onClick={() => setMore(false)}>
-          <div className="sheet" onClick={e => e.stopPropagation()}>
-            <div className="sheet-h"><h2>Production</h2><button className="ghost" onClick={() => setMore(false)}>✕</button></div>
-            <div className="choices col">{CULT_TABS.filter(t => !t.bottom).map(t => <button key={t.t} className={cultTab === t.t ? 'on' : ''} onClick={() => setCultTab(t.t)}>{t.l}</button>)}</div>
-          </div>
-        </div>
-      )}
-      {!inCult && hasDist && (() => {
-        const items: { k: string; l: ReactNode; on: boolean; go: () => void }[] = [
-          { k: 'dash', l: 'Dashboard', on: view === 'dash', go: () => setView('dash') },
-          { k: 'map', l: 'Map', on: view === 'map' || view === 'freezer', go: () => setView(view !== 'map' && view !== 'freezer' && freezerId != null ? 'freezer' : 'map') },
-          { k: 'transit', l: <>Transit{openLoads.length > 0 && <span className="badge">{openLoads.length}</span>}</>, on: view === 'transit' || view === 'load', go: () => setView('transit') },
-          ...(canSales(me?.role) ? [{ k: 'sales', l: <>Sales{salesBadge > 0 && <span className="badge warn">{salesBadge}</span>}</>, on: view === 'reserves', go: () => setView('reserves') }] : []),
-          { k: 'review', l: <>Review{reviewCount > 0 && <span className="badge warn">{reviewCount}</span>}</>, on: view === 'review', go: () => setView('review') },
-          { k: 'activity', l: 'Activity', on: view === 'activity', go: () => setView('activity') },
-        ]
-        const fit = items.length <= 5 ? items : items.slice(0, 4), rest = items.length <= 5 ? [] : items.slice(4)
-        const restOn = rest.find(x => x.on)
-        return <>
-          <nav className="bottom">
-            {fit.map(x => <button key={x.k} className={x.on ? 'on' : ''} onClick={x.go}>{x.l}</button>)}
-            {rest.length > 0 && <button className={restOn ? 'on' : ''} onClick={() => setMore(true)}>{restOn ? restOn.l : <>More{rest.some(x => x.k === 'review') && reviewCount > 0 && <span className="badge warn">{reviewCount}</span>}</>}</button>}
-          </nav>
-          {more && rest.length > 0 && (
-            <div className="scrim" onClick={() => setMore(false)}>
-              <div className="sheet" onClick={e => e.stopPropagation()}>
-                <div className="sheet-h"><h2>Distribution</h2><button className="ghost" onClick={() => setMore(false)}>✕</button></div>
-                <div className="choices col">{rest.map(x => <button key={x.k} className={x.on ? 'on' : ''} onClick={() => { x.go(); setMore(false); window.scrollTo(0, 0) }}>{x.l}</button>)}</div>
-              </div>
+        {more && bottomRest.length > 0 && (
+          <div className="scrim" onClick={() => setMore(false)}>
+            <div className="sheet" onClick={e => e.stopPropagation()}>
+              <div className="sheet-h"><h2>{MOD_LABEL[cur]}</h2><button className="ghost" onClick={() => setMore(false)}>✕</button></div>
+              <div className="choices col">{bottomRest.map(x => <button key={x.k} className={x.on ? 'on' : ''} onClick={x.go}>{x.l}</button>)}</div>
             </div>
-          )}
-        </>
-      })()}
+          </div>
+        )}
+      </>}
 
       {selected && !banner && (
         <PalletSheet ix={ix} p={selected} busy={busy} where={where}
@@ -1069,24 +1113,49 @@ function ListView({ title, note, empty, items, ix, where, onPallet, showReason }
   )
 }
 
-function ActivityView({ ix }: { ix: Index }) {
+/** which module an activity line belongs to */
+function eventModule(e: InvEvent): 'distribution' | 'sales' | 'admin' {
+  const t = e.type, d = e.details as { list?: string } | null
+  if (/^(reserve|order|terms|customer_terms)/.test(t) || (t === 'settings' && /^(customers|reserve deadlines|terms)/.test(d?.list ?? ''))) return 'sales'
+  if (/^(user_|app_setting|view_as|login_|password_)/.test(t)) return 'admin'
+  return 'distribution'
+}
+const CULT_TBL: Record<string, string> = { cult_harvests: 'Harvest', cult_plantings: 'Planting', cult_tests: 'Test', cult_flower_picks: 'Dry flower pick', cult_demand: 'Plan strain',
+  cult_plan: 'Plan row', cult_nursery_orders: 'Nursery delivery', cult_receipts: 'Plants received', app_settings: 'Production setting' }
+interface Line { id: string; at: string; who: string | null; text: ReactNode; note?: string | null; mod: 'distribution' | 'sales' | 'admin' | 'cultivation' }
+
+/** Activity: each module shows its own; Admin shows everything with a filter */
+function ActivityView({ ix, module }: { ix: Index; module: 'distribution' | 'sales' | 'all' }) {
   const [events, setEvents] = useState<InvEvent[] | null>(null)
+  const [cult, setCult] = useState<Line[]>([])
   const [names, setNames] = useState<Map<number, string>>(new Map())
+  const [only, setOnly] = useState<string>('all')
   useEffect(() => {
-    backend.recentEvents(300).then(async evs => {
+    backend.recentEvents(module === 'all' ? 500 : 300).then(async evs => {
       setEvents(evs)
       const missing = [...new Set(evs.map(e => e.pallet_id).filter((id): id is number => id != null && !ix.pallet.has(id)))]
       if (missing.length) setNames(new Map((await backend.byIds(missing)).map(p => [p.id, p.code])))
     })
-  }, [ix])
+    const sb = backend.client()
+    if (module === 'all' && sb) sb.from('cult_log').select('*').order('at', { ascending: false }).limit(300).then(({ data }) => setCult(((data ?? []) as { id: number; at: string; user_email: string | null; tbl: string; op: string; data: Record<string, unknown> | null; was: Record<string, unknown> | null }[]).map(r => {
+      const name = (r.data?.strain ?? r.was?.strain ?? '') as string
+      return { id: `c${r.id}`, at: r.at, who: r.user_email, mod: 'cultivation' as const,
+        text: `${CULT_TBL[r.tbl] ?? r.tbl} ${r.op === 'insert' ? 'added' : r.op === 'delete' ? 'deleted' : 'changed'}${name ? `: ${name}` : ''}` }
+    })))
+  }, [ix, module])
+  const lines: Line[] = [...(events ?? []).map(e => ({ id: `e${e.id}`, at: e.at, who: e.user_email, text: describe(ix, e, names), note: e.note, mod: eventModule(e) } as Line)), ...cult]
+    .filter(l => module === 'all' ? only === 'all' || l.mod === only : l.mod === module)
+    .sort((a, b) => b.at.localeCompare(a.at))
+  const CH: [string, string][] = [['all', 'Everything'], ['distribution', 'Distribution'], ['sales', 'Sales'], ['cultivation', 'Production'], ['admin', 'Admin']]
   return (
     <div className="list">
       <h2>Activity</h2>
-      {events?.length === 0 && <p className="muted">No moves yet. Everything people do in the app shows up here.</p>}
-      {events?.map(e => (
-        <div key={e.id} className="li static">
-          <div>{describe(ix, e, names)}</div>
-          <div className="muted">{when(e.at)} · {who(e.user_email)}{e.note && <> · "{e.note}"</>}</div>
+      {module === 'all' && <div className="seg tabs">{CH.map(([k, l]) => <button key={k} className={only === k ? 'on' : ''} onClick={() => setOnly(k)}>{l}</button>)}</div>}
+      {events && lines.length === 0 && <p className="muted">Nothing yet. Everything people do here shows up in this list.</p>}
+      {lines.map(l => (
+        <div key={l.id} className="li static">
+          <div>{module === 'all' && only === 'all' && <span className="pill">{CH.find(c => c[0] === l.mod)?.[1]}</span>} {l.text}</div>
+          <div className="muted">{when(l.at)} · {who(l.who)}{l.note && <> · "{l.note}"</>}</div>
         </div>
       ))}
     </div>

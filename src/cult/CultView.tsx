@@ -15,7 +15,8 @@ import { CultDashboard } from './dash'
 import { errText } from './ui'
 import './cult.css'
 
-import { CULT_TABS } from './tabs'
+import { cultLabel } from './tabs'
+import { ActivityTab, ReviewTab } from './review'
 import type { CultTab as Tab } from './tabs'
 const remembered = <T extends string>(k: string, d: T): T => { try { return (localStorage.getItem(k) as T) || d } catch { return d } }
 const remember = (k: string, v: string) => { try { localStorage.setItem(k, v) } catch { /* private mode */ } }
@@ -45,12 +46,12 @@ export default function CultView({ backend, flash, onPalletsChanged, tab, go }: 
   return (
     <div className="cult">
       <div className="chead">
-        {tab === 'dashboard' ? <span className="dev">in development</span> : <h2>{CULT_TABS.find(x => x.t === tab)?.l ?? 'Production'} <span className="dev">in development</span></h2>}
+        {tab === 'dashboard' ? <span className="dev">in development</span> : <h2>{tab === 'setup' ? 'Production settings' : cultLabel(tab)} <span className="dev">in development</span></h2>}
         <div className="row">
-          {tab !== 'plan' && tab !== 'setup' && <select value={d.year} onChange={e => setYear(Number(e.target.value))}>
+          {tab !== 'plan' && tab !== 'setup' && tab !== 'activity' && <select value={d.year} onChange={e => setYear(Number(e.target.value))}>
             {[...new Set([...d.years, d.currentYear + 1])].sort((a, b) => b - a).map(y => <option key={y} value={y}>{y} season</option>)}
           </select>}
-          {tab !== 'plan' && tab !== 'setup' && <div className="seg">
+          {tab !== 'plan' && tab !== 'setup' && tab !== 'activity' && <div className="seg">
             {[null, ...d.sites.map(s => s.code)].map(s => <button key={s ?? 'all'} className={site === s ? 'on' : ''} onClick={() => setSite(s)}>{s ?? 'Both'}</button>)}
           </div>}
         </div>
@@ -66,6 +67,8 @@ export default function CultView({ backend, flash, onPalletsChanged, tab, go }: 
       {tab === 'plantings' && <PlantingsTab d={d} c={c} site={site} q={q} api={api} flash={flash} onSaved={saved} />}
       {tab === 'yields' && <YieldsTab d={d} c={c} site={site} q={q} api={api} />}
       {tab === 'plan' && <PlanTab d={d} c={c} api={api} flash={flash} q={q} />}
+      {tab === 'review' && <ReviewTab d={d} c={c} site={site} onOpen={setOpen} go={go} />}
+      {tab === 'activity' && <ActivityTab api={api} />}
       {tab === 'setup' && <SetupTab d={d} api={api} flash={flash} onSaved={saved} />}
 
       {open && <HarvestSheet key={open.id ?? 'new'} d={d} c={c} harvest={open} api={api} flash={flash} onClose={() => setOpen(null)}

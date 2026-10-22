@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import type { CultApi } from './api'
 import { n0, n2, pct } from './calc'
 import type { CField, CSite, CultData, LogRow } from './types'
@@ -10,14 +10,20 @@ const TABLE_LABEL: Record<string, string> = {
   cult_plan: 'Plan row', cult_nursery_orders: 'Nursery delivery', cult_receipts: 'Plants received', app_settings: 'Setting',
 }
 
+/** one line for a Production change log row */
+export function describeLog(r: LogRow) {
+  const what = TABLE_LABEL[r.tbl] ?? r.tbl
+  const name = (r.data?.strain ?? r.was?.strain ?? '') as string
+  const keys = r.op === 'update' ? Object.keys(r.data ?? {}).filter(k => !['updated_by', 'updated_at'].includes(k)) : []
+  return `${what} ${r.op === 'insert' ? 'added' : r.op === 'delete' ? 'deleted' : 'changed'}${name ? `: ${name}` : ''}${keys.length ? ` (${keys.join(', ').replace(/_/g, ' ')})` : ''}`
+}
+
 export function SetupTab({ d, api, flash, onSaved }: { d: CultData; api: CultApi; flash: Flash; onSaved: (m: string) => Promise<void> }) {
   const [site, setSite] = useState<CSite | null>(null)
   const [field, setField] = useState<Partial<CField> | null>(null)
-  const [log, setLog] = useState<LogRow[] | null>(null)
   const [labs, setLabs] = useState(d.settings.labs.join(', '))
   const [eq, setEq] = useState(d.settings.equipment.join(', '))
   const [ready, setReady] = useState<number | null>(d.settings.readyDays)
-  useEffect(() => { api.log(150).then(setLog).catch(() => setLog([])) }, [api, d])
   async function saveSettings() {
     try {
       await api.setSetting('cult.labs', labs.split(',').map(s => s.trim()).filter(Boolean).join('|'))
@@ -26,13 +32,6 @@ export function SetupTab({ d, api, flash, onSaved }: { d: CultData; api: CultApi
       await onSaved('Settings saved')
     } catch (e) { flash(errText(e), true) }
   }
-  const describe = (r: LogRow) => {
-    const what = TABLE_LABEL[r.tbl] ?? r.tbl
-    const name = (r.data?.strain ?? r.was?.strain ?? '') as string
-    const keys = r.op === 'update' ? Object.keys(r.data ?? {}).filter(k => !['updated_by', 'updated_at'].includes(k)) : []
-    return `${what} ${r.op === 'insert' ? 'added' : r.op === 'delete' ? 'deleted' : 'changed'}${name ? `: ${name}` : ''}${keys.length ? ` (${keys.join(', ').replace(/_/g, ' ')})` : ''}`
-  }
-
   return (
     <>
       <h3 className="csec">Sites</h3>
@@ -63,13 +62,7 @@ export function SetupTab({ d, api, flash, onSaved }: { d: CultData; api: CultApi
       <F label="Days from harvest to ready" hint="(availability)"><NumIn value={ready} onChange={setReady} /></F>
       <button className="primary" onClick={saveSettings}>Save lists</button>
 
-      <h3 className="csec">Recent changes</h3>
-      {!log ? <p className="muted">Loading…</p> : !log.length ? <p className="muted">No changes yet.</p> : (
-        <div className="cwrap tight"><table className="ctable"><tbody>
-          {log.map(r => <tr key={r.id}><td className="nowrap small">{new Date(r.at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</td>
-            <td className="small">{(r.user_email ?? '').split('@')[0]}</td><td className="small">{describe(r)}</td></tr>)}
-        </tbody></table></div>
-      )}
+      <p className="cnote">Every change in Production is listed under Activity.</p>
 
       {site && <SiteSheet s={site} api={api} flash={flash} onClose={() => setSite(null)} onSaved={async m => { setSite(null); await onSaved(m) }} />}
       {field && <FieldSheet d={d} f={field} api={api} flash={flash} onClose={() => setField(null)} onSaved={async m => { setField(null); await onSaved(m) }} />}

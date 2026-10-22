@@ -1,15 +1,22 @@
 import { useEffect, useState } from 'react'
 import type { Backend } from './api'
-import { MODULES, userModules } from './types'
-import type { AppUser, Customer, Me, Role } from './types'
+import { MODULES } from './types'
+import type { AppUser, Customer, Level, Me, ModKey } from './types'
 
-const ROLES: { role: Role; label: string; what: string }[] = [
-  { role: 'admin', label: 'Admin', what: 'Everything, plus managing users' },
-  { role: 'sales', label: 'Sales', what: 'Everything except users: customers, reserves, orders, pricing' },
-  { role: 'crew', label: 'Crew', what: 'Freezers, pallets, loads. Customer names only, no orders or prices' },
-  { role: 'customer', label: 'Customer', what: 'Order portal only, for one customer account' },
-  { role: 'none', label: 'No access', what: 'Blocked from the app' },
+type Kind = 'staff' | 'customer' | 'none'
+const KINDS: { k: Kind; label: string; what: string }[] = [
+  { k: 'staff', label: 'Staff', what: 'Signs in with their Lifted Microsoft account. Pick what they can use below.' },
+  { k: 'customer', label: 'Customer', what: 'Order portal only, for one customer account' },
+  { k: 'none', label: 'No access', what: 'Blocked from the app' },
 ]
+const kindOf = (u: Partial<AppUser>): Kind => u.role === 'customer' ? 'customer' : u.role === 'none' ? 'none' : 'staff'
+const isStaffRole = (r?: string) => r === 'admin' || r === 'sales' || r === 'crew'
+export function accessText(u: AppUser) {
+  if (u.owner) return 'Owner: everything'
+  const a = u.access ?? {}
+  const parts = MODULES.filter(m => a[m.key]).map(m => m.key === 'admin' ? 'Admin module' : `${m.label}${a[m.key] === 'admin' ? ' (Admin)' : ''}`)
+  return parts.length ? parts.join(' · ') : 'no modules'
+}
 
 function ago(at: string | null) {
   if (!at) return 'never signed in'
@@ -17,6 +24,7 @@ function ago(at: string | null) {
   return d < 1 ? 'active today' : d < 2 ? 'active yesterday' : `active ${Math.floor(d)} days ago`
 }
 
+/** Admin module > Settings > Users and access */
 export function UsersTab({ backend, me, customers, flash }: {
   backend: Backend; me: Me; customers: Customer[]; flash: (t: string, bad?: boolean) => void
 }) {
@@ -34,48 +42,47 @@ export function UsersTab({ backend, me, customers, flash }: {
   }
   useEffect(() => { load() }, [])
 
-  if (err) return <div className="warnbox">Users aren't set up in the database yet. Run the 007_roles.sql update in Supabase, then refresh. ({err})</div>
+  if (err) return <div className="warnbox">Couldn't load users. ({err})</div>
   if (!users) return <p className="muted">Loading users…</p>
   const cust = new Map(customers.map(c => [c.id, c.name]))
-  const shown = users.filter(u => !q || `${u.email} ${u.display_name ?? ''} ${u.role} ${cust.get(u.customer_id ?? -1) ?? ''}`.toLowerCase().includes(q.toLowerCase()))
+  const shown = users.filter(u => !q || `${u.email} ${u.display_name ?? ''} ${accessText(u)} ${cust.get(u.customer_id ?? -1) ?? ''}`.toLowerCase().includes(q.toLowerCase()))
+  const groups: [string, AppUser[]][] = [
+    ['Owners', shown.filter(u => u.owner)],
+    ['Staff', shown.filter(u => !u.owner && isStaffRole(u.role))],
+    ['Customers', shown.filter(u => u.role === 'customer')],
+    ['No access', shown.filter(u => u.role === 'none')],
+  ]
 
   return (
     <>
       <div className="row toolbar">
-        <input className="search" type="search" placeholder="Search users" value={q} onChange={e => setQ(e.target.value)} />
-        <button className="primary" onClick={() => setEdit({ role: 'crew' })}>+ Add user</button>
+        <input className="search" type="search" placeholder="Search people" value={q} onChange={e => setQ(e.target.value)} />
+        <button className="primary" onClick={() => setEdit({ role: 'crew', access: { distribution: 'user' } })}>+ Add person</button>
       </div>
-      <p className="muted">Anyone with a Lifted Microsoft account can sign in and starts as Crew. Change their role here. For a customer login, add them as Customer, then send them the invite link. They set their own password.</p>
-      {ROLES.map(({ role, label: l }) => {
-        const list = shown.filter(u => u.role === role)
-        if (!list.length) return null
-        return (
-          <div key={role}>
-            <h3 className="grouph">{l} <span className="muted">{list.length}</span></h3>
-            {list.map(u => (
-              <button key={u.email} className="li setrow" onClick={() => setEdit({ ...u })}>
-                <div className="grow">
-                  <div><b>{u.display_name || u.email}</b>{u.email === me.email && <span className="muted"> · you</span>}</div>
-                  <div className="muted">{[u.display_name ? u.email : '', u.customer_id ? cust.get(u.customer_id) : '', loginStatus(u), ['admin', 'sales', 'crew'].includes(u.role) ? (userModules(u).length ? userModules(u).map(k => MODULES.find(m => m.key === k)?.label ?? k).join(' + ') : 'no modules') : '', ago(u.last_seen)].filter(Boolean).join(' · ')}</div>
-                </div>
-              </button>
-            ))}
-          </div>
-        )
-      })}
-      {edit && <UserForm user={edit} customers={customers} isMe={edit.email === me.email} backend={backend}
+      <p className="muted">Anyone with a Lifted Microsoft account can sign in and starts with Distribution. Give each person a level per module: User works in it, Admin also changes its settings and approves. Owners have everything. For a customer login, add them as Customer, then send the invite link.</p>
+      {groups.map(([l, list]) => !list.length ? null : (
+        <div key={l}>
+          <h3 className="grouph">{l} <span className="muted">{list.length}</span></h3>
+          {list.map(u => (
+            <button key={u.email} className="li setrow" onClick={() => setEdit({ ...u, access: { ...(u.access ?? {}) } })}>
+              <div className="grow">
+                <div><b>{u.display_name || u.email}</b>{u.email === (me.real_email ?? me.email) && <span className="muted"> · you</span>}</div>
+                <div className="muted">{[u.display_name ? u.email : '', u.customer_id ? cust.get(u.customer_id) : '', loginStatus(u), isStaffRole(u.role) ? accessText(u) : '', ago(u.last_seen)].filter(Boolean).join(' · ')}</div>
+              </div>
+            </button>
+          ))}
+        </div>
+      ))}
+      {edit && <UserForm user={edit} customers={customers} me={me} isMe={edit.email === (me.real_email ?? me.email)} backend={backend}
         claimed={!!(edit.email && logins.get(edit.email)?.claimed)} flash={flash} onLinked={load}
         onClose={() => setEdit(null)}
-        onSave={async (u) => {
+        onSave={async (u, kind) => {
           try {
-            await backend.setUser(u.email!, u.role!, u.customer_id ?? null, u.display_name ?? '')
-            const mods = ['admin', 'sales', 'crew'].includes(u.role!) ? (u.modules ?? []) : []
-            if (mods.join() !== (edit.modules ?? []).join()) await backend.setUserModules(u.email!, mods)
-            const hid = ['admin', 'sales', 'crew'].includes(u.role!) ? (u.hidden_modules ?? []) : []
-            if (hid.join() !== (edit.hidden_modules ?? []).join()) await backend.setUserHiddenModules(u.email!, hid)
+            await backend.saveUser({ email: u.email!, name: u.display_name ?? '', kind, customerId: kind === 'customer' ? u.customer_id ?? null : null,
+              access: kind === 'staff' ? (u.access ?? {}) : {}, owner: me.access.owner ? !!u.owner : undefined })
             await load(); flash('Saved')
             // new customer: keep the card open so the invite link can be made right away
-            if (u.role === 'customer' && !edit.created_at) setEdit({ ...u, created_at: new Date().toISOString(), added_by: me.email }); else setEdit(null)
+            if (kind === 'customer' && !edit.created_at) setEdit({ ...u, role: 'customer', created_at: new Date().toISOString(), added_by: me.email }); else setEdit(null)
           }
           catch (e) { flash(String((e as Error).message ?? e), true) }
         }}
@@ -87,37 +94,43 @@ export function UsersTab({ backend, me, customers, flash }: {
   )
 }
 
-function UserForm({ user, customers, isMe, onClose, onSave, onRemove, backend, claimed, flash, onLinked }: {
-  user: Partial<AppUser>; customers: Customer[]; isMe: boolean; backend: Backend; claimed: boolean
+function UserForm({ user, customers, me, isMe, onClose, onSave, onRemove, backend, claimed, flash, onLinked }: {
+  user: Partial<AppUser>; customers: Customer[]; me: Me; isMe: boolean; backend: Backend; claimed: boolean
   flash: (t: string, bad?: boolean) => void; onLinked: () => void
-  onClose: () => void; onSave: (u: Partial<AppUser>) => Promise<void>; onRemove: (email: string) => Promise<void>
+  onClose: () => void; onSave: (u: Partial<AppUser>, kind: Kind) => Promise<void>; onRemove: (email: string) => Promise<void>
 }) {
   const [u, setU] = useState(user)
+  const [kind, setKind] = useState<Kind>(kindOf(user))
   const [busy, setBusy] = useState(false)
   const set = (x: Partial<AppUser>) => setU(v => ({ ...v, ...x }))
+  const setLevel = (m: ModKey, lv: Level | null) => setU(v => { const a = { ...(v.access ?? {}) }; if (lv) a[m] = lv; else delete a[m]; return { ...v, access: a } })
   const isNew = !user.created_at
+  const iOwn = me.access.owner
+  const locked = !!user.owner && !iOwn            // only Owners change Owners
   const emailOk = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test((u.email ?? '').trim())
-  const ok = emailOk && !!u.role && (u.role !== 'customer' || !!u.customer_id)
+  const ok = emailOk && !locked && (kind !== 'customer' || !!u.customer_id)
   const run = (f: () => Promise<void>) => { setBusy(true); f().finally(() => setBusy(false)) }
   const external = customers.filter(c => c.active && c.kind === 'external')
+  const a = u.access ?? {}
   return (
     <div className="scrim" onClick={onClose}>
       <div className="sheet form" onClick={e => e.stopPropagation()}>
-        <div className="sheet-h"><h2>{isNew ? 'Add user' : 'Edit user'}</h2><button className="ghost" onClick={onClose}>✕</button></div>
+        <div className="sheet-h"><h2>{isNew ? 'Add person' : 'Edit person'}</h2><button className="ghost" onClick={onClose}>✕</button></div>
+        {locked && <div className="warnbox">{user.display_name || user.email} is an Owner. Only another Owner can change them.</div>}
         <div className="field"><label>Email</label>
           <input type="email" value={u.email ?? ''} disabled={!isNew} autoFocus={isNew} onChange={e => set({ email: e.target.value })} placeholder="name@company.com" /></div>
         <div className="field"><label>Name <span className="muted">(what the app shows)</span></label>
-          <input value={u.display_name ?? ''} onChange={e => set({ display_name: e.target.value })} /></div>
-        <div className="field"><label>Role</label>
+          <input value={u.display_name ?? ''} disabled={locked} onChange={e => set({ display_name: e.target.value })} /></div>
+        <div className="field"><label>Type</label>
           <div className="choices col">
-            {ROLES.map(r => (
-              <button key={r.role} className={u.role === r.role ? 'on' : ''} disabled={isMe && r.role !== 'admin'} onClick={() => set({ role: r.role })}>
-                <b>{r.label}</b> <span className="muted">{r.what}</span>
+            {KINDS.map(k => (
+              <button key={k.k} className={kind === k.k ? 'on' : ''} disabled={locked || (isMe && k.k !== 'staff')} onClick={() => setKind(k.k)}>
+                <b>{k.label}</b> <span className="muted">{k.what}</span>
               </button>
             ))}
           </div>
         </div>
-        {u.role === 'customer' && (
+        {kind === 'customer' && (
           <div className="field"><label>Customer account</label>
             <select value={u.customer_id ?? ''} onChange={e => set({ customer_id: e.target.value ? Number(e.target.value) : null })}>
               <option value="">Pick a customer…</option>
@@ -126,40 +139,41 @@ function UserForm({ user, customers, isMe, onClose, onSave, onRemove, backend, c
             <p className="muted">They'll only ever see this customer's reserves, menu and orders. After saving, send them the invite link.</p>
           </div>
         )}
-        {['admin', 'sales', 'crew'].includes(u.role ?? '') && (
-          <div className="field"><label>Modules <span className="muted">(what this person sees)</span></label>
-            {MODULES.map(m => {
-              const hidden = (u.hidden_modules ?? []).includes(m.key)
-              const on = (m.byDefault || (u.modules ?? []).includes(m.key)) && !hidden
-              const flip = () => {
-                const hid = (u.hidden_modules ?? []).filter(x => x !== m.key), mods = (u.modules ?? []).filter(x => x !== m.key)
-                if (m.byDefault) set({ hidden_modules: on ? [...hid, m.key] : hid })
-                else set({ modules: on ? mods : [...mods, m.key], hidden_modules: hid })
-              }
-              return (
-                <label key={m.key} className="check">
-                  <input type="checkbox" checked={on} onChange={flip} />
-                  <span><b>{m.label}</b> <span className="muted">{m.what}{m.byDefault ? ' (on for everyone unless hidden)' : ''}</span></span>
-                </label>
-              )
-            })}
-            {userModules(u).length === 0 && <p className="warn-t small">With nothing ticked they'll only see a "no modules" message{isMe ? ' (you can still reach Settings from the top bar)' : ''}.</p>}
-          </div>
-        )}
-        {!isNew && !isMe && user.role !== 'admin' && (
+        {kind === 'staff' && (<>
+          {iOwn && <label className="check"><input type="checkbox" checked={!!u.owner} disabled={isMe} onChange={e => set({ owner: e.target.checked })} />
+            <span><b>Owner</b> <span className="muted">Everything in every module, and can make other Owners</span></span></label>}
+          {u.owner ? <p className="muted">Owners have every module as Admin.</p> : (
+            <div className="field"><label>Modules</label>
+              <div className="accgrid">
+                {MODULES.map(m => {
+                  const lv = a[m.key] ?? null
+                  const opts: [Level | null, string][] = m.key === 'admin' ? [[null, 'Off'], ['admin', 'On']] : [[null, 'Off'], ['user', 'User'], ['admin', 'Admin']]
+                  return (
+                    <div key={m.key} className="accrow">
+                      <div><b>{m.label}</b><div className="muted">{lv === 'admin' && m.key !== 'admin' ? m.admin : lv ? m.user : m.what}</div></div>
+                      <div className="seg">{opts.map(([v, l]) => <button key={l} className={lv === v ? 'on' : ''} disabled={locked || (isMe && m.key === 'admin' && !iOwn)} onClick={() => setLevel(m.key, v)}>{l}</button>)}</div>
+                    </div>
+                  )
+                })}
+              </div>
+              {!MODULES.some(m => a[m.key]) && <p className="warn-t small">With every module off they'll only see a "no modules" message.</p>}
+            </div>
+          )}
+        </>)}
+        {!isNew && !isMe && !user.owner && !(user.access ?? {}).admin && (
           <div className="field"><label>See what they see</label>
             <div className="row"><button className="ghost small" disabled={busy} onClick={() => run(async () => { await backend.startViewAs(user.email!); location.reload() })}>View as {user.display_name || user.email}</button>
               <span className="muted">Read-only, for up to 2 hours. Logged in Activity.</span></div></div>
         )}
         {!isNew && user.role === 'customer' && <LinkBox backend={backend} email={user.email!} claimed={claimed} flash={flash} onLinked={onLinked} />}
-        {isMe && <p className="muted">You can't change your own role. Another admin can.</p>}
+        {isMe && <p className="muted">You can't take away your own access{iOwn ? ' or Owner' : ' or Admin module'}. Another {iOwn ? 'Owner' : 'Admin'} can.</p>}
         <div className="row between">
-          {!isNew && !isMe
+          {!isNew && !isMe && !locked
             ? <button className="ghost" disabled={busy} onClick={() => run(() => onRemove(u.email!))}>Remove</button>
             : <span />}
           <div className="row">
             <button className="ghost" onClick={onClose}>Cancel</button>
-            <button className="primary" disabled={busy || !ok} onClick={() => run(() => onSave({ ...u, email: u.email!.trim().toLowerCase() }))}>Save</button>
+            <button className="primary" disabled={busy || !ok} onClick={() => run(() => onSave({ ...u, email: u.email!.trim().toLowerCase() }, kind))}>Save</button>
           </div>
         </div>
         {!isNew && <p className="muted">Added by {user.added_by ?? 'unknown'} · {ago(user.last_seen ?? null)}</p>}

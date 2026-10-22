@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { Backend } from './api'
 import { readSheet } from 'read-excel-file/browser'
 import { parseCsv } from './settings'
 import { OpenMenu } from './menu'
 import { RequestsPanel } from './requests'
-import type { MenuNumbers, ReserveRequest, ReserveYears, Role, Balance, Customer, ImportResult, Order, RoshiRow, Strain } from './types'
+import type { MenuNumbers, ReserveRequest, ReserveYears, Balance, Customer, ImportResult, Order, RoshiRow, Strain } from './types'
 
 const n0 = (x: number) => Math.round(x).toLocaleString()
 
@@ -40,12 +40,14 @@ async function readRoshi(f: File): Promise<RoshiRow[]> {
   }).filter(r => /FL2[56]/.test(r.sku_name) && /fresh frozen/i.test(r.sku_name) && r.so_number)
 }
 
-export function ReservesView({ backend, customers, strains, onHand, flash, role, initialMode, onCounts }: {
+export type SalesMode = 'customer' | 'strain' | 'orders' | 'requests' | 'menu'
+export const SALES_TITLES: Record<SalesMode, string> = { menu: 'Open menu', orders: 'Orders', requests: 'Requests', customer: 'Reserves by customer', strain: 'Reserves by strain' }
+
+/** Sales screens. The Sales module menu picks the screen (mode); isAdmin = Sales Admin (approvals, reserves, deadlines). */
+export function ReservesView({ backend, customers, strains, onHand, flash, isAdmin, mode, onCounts }: {
   backend: Backend; customers: Customer[]; strains: Strain[]; onHand: Map<string, number>
-  flash: (t: string, bad?: boolean) => void; role: Role; initialMode?: 'requests' | 'orders'; onCounts?: () => void
+  flash: (t: string, bad?: boolean) => void; isAdmin: boolean; mode: SalesMode; onCounts?: () => void
 }) {
-  const picked = useRef(false)
-  const isAdmin = role === 'admin'
   const [reqs, setReqs] = useState<ReserveRequest[]>([])
   const [nums, setNums] = useState<MenuNumbers[]>([])
   const [year, setYear] = useState<number | null>(null)
@@ -55,7 +57,6 @@ export function ReservesView({ backend, customers, strains, onHand, flash, role,
   useEffect(() => { backend.reserveYears().then(setYs).catch(() => {}) }, [])
   const [orders, setOrders] = useState<Order[]>([])
   const [err, setErr] = useState<string | null>(null)
-  const [mode, setMode] = useState<'customer' | 'strain' | 'orders' | 'requests' | 'menu'>(initialMode ?? 'menu')
   const [open, setOpen] = useState<number | null>(null)
   const [edit, setEdit] = useState<{ customer_id: number | null; strain: string; lbs: string; isNew: boolean } | null>(null)
   const [q, setQ] = useState('')
@@ -65,8 +66,6 @@ export function ReservesView({ backend, customers, strains, onHand, flash, role,
       backend.listRequests().catch(() => [] as ReserveRequest[]), backend.menuNumbers().catch(() => [] as MenuNumbers[])])
     .then(([b, o, r, m]) => {
       setBal(b); setOrders(o); setReqs(r); setNums(m); setErr(null); onCounts?.()
-      // first open: go where the work is
-      if (!initialMode && !picked.current) { picked.current = true; if (o.some(x => x.status === 'submitted')) setMode('orders'); else if (isAdmin && r.some(x => x.status === 'pending')) setMode('requests') }
     }).catch(e => setErr(String(e?.message ?? e)))
   useEffect(() => { load() }, [])
 
@@ -108,7 +107,6 @@ export function ReservesView({ backend, customers, strains, onHand, flash, role,
       return { s, rs, left, have, pend, held: 0, free: have - pend - left, hidden: false }
     })).filter(x => (x.have > 0 || x.left > 0) && (!ql || x.s.toLowerCase().includes(ql) || x.rs.some(r => cname(r.customer_id).toLowerCase().includes(ql))))
     .sort((a, b) => a.s.localeCompare(b.s))
-  const submitted = orders.filter(o => o.status === 'submitted').length
   const shownOrders = [...orders].sort((a, b) => Number(b.status === 'submitted') - Number(a.status === 'submitted')).filter(o => !ql || cname(o.customer_id).toLowerCase().includes(ql) || (o.so_number ?? '').toLowerCase().includes(ql) || o.order_lines.some(l => l.strain.toLowerCase().includes(ql)))
 
   async function save() {
@@ -130,20 +128,13 @@ export function ReservesView({ backend, customers, strains, onHand, flash, role,
     try {
       const rows = await readRoshi(f)
       if (!rows.length) throw new Error('No 2026 fresh frozen lines found in that file')
-      const res = await backend.importRoshi(rows); setResult(res); await load(); setMode('orders')
+      const res = await backend.importRoshi(rows); setResult(res); await load()
     } catch (e) { flash(String((e as Error).message ?? e), true) } finally { setBusy(false) }
   }
 
   return (
     <div className="list reserves">
-      <h2>Sales <span className="muted">{cur} reserves: {n0(sum(allBal.filter(r => (r.crop_year ?? cur) === cur), 'remaining'))} lbs left of {n0(sum(allBal.filter(r => (r.crop_year ?? cur) === cur), 'reserved'))}</span></h2>
-      <div className="seg tabs">
-        <button className={mode === 'menu' ? 'on' : ''} onClick={() => setMode('menu')}>Open menu</button>
-        <button className={mode === 'orders' ? 'on' : ''} onClick={() => setMode('orders')}>Orders {submitted > 0 ? <span className="badge warn">{submitted} new</span> : <span className="muted">{orders.length}</span>}</button>
-        <button className={mode === 'requests' ? 'on' : ''} onClick={() => setMode('requests')}>Requests {reqs.some(r => r.status === 'pending') ? <span className="badge warn">{reqs.filter(r => r.status === 'pending').length}</span> : <span className="muted">0</span>}</button>
-        <button className={mode === 'customer' ? 'on' : ''} onClick={() => setMode('customer')}>Reserves by customer</button>
-        <button className={mode === 'strain' ? 'on' : ''} onClick={() => setMode('strain')}>Reserves by strain</button>
-      </div>
+      <h2>{SALES_TITLES[mode]} {(mode === 'customer' || mode === 'strain') && <span className="muted">{cur} reserves: {n0(sum(allBal.filter(r => (r.crop_year ?? cur) === cur), 'remaining'))} lbs left of {n0(sum(allBal.filter(r => (r.crop_year ?? cur) === cur), 'reserved'))}</span>}</h2>
       <div className="row toolbar">
         <input className="search" type="search" placeholder="Search customer, strain or SO #" value={q} onChange={e => setQ(e.target.value)} />
         {mode === 'orders'
@@ -277,7 +268,7 @@ export function ReservesView({ backend, customers, strains, onHand, flash, role,
   )
 }
 
-function DeadlineEdit({ year, value, onSave }: { year: number; value: string | null; onSave: (v: string | null) => Promise<void> }) {
+export function DeadlineEdit({ year, value, onSave }: { year: number; value: string | null; onSave: (v: string | null) => Promise<void> }) {
   const [v, setV] = useState(value ?? '')
   const [open, setOpen] = useState(false)
   if (!open) return <a onClick={() => { setV(value ?? ''); setOpen(true) }}>Change deadline</a>

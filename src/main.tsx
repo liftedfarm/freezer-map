@@ -2,6 +2,9 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
 import './styles.css'
+import { applyTheme, savedTheme } from './theme'
+
+applyTheme(savedTheme())
 
 class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { err: Error | null }> {
   state = { err: null as Error | null }

@@ -69,12 +69,17 @@
 .cult .neg { color: var(--bad); }
 .cult .pos { color: #166534; }
 @media (prefers-color-scheme: dark) {
-  .kpill.k-ff { background: #1e3a8a; color: #dbeafe; }
-  .kpill.k-dry { background: #78350f; color: #fef3c7; }
-  .kpill.k-combine, .kpill.k-strip, .kpill.s-done { background: #14532d; color: #dcfce7; }
-  .cult .dev { background: #4c1d95; color: #ede9fe; }
-  .cult .pos { color: #4ade80; }
+  :root:not([data-theme="light"]) .kpill.k-ff { background: #1e3a8a; color: #dbeafe; }
+  :root:not([data-theme="light"]) .kpill.k-dry { background: #78350f; color: #fef3c7; }
+  :root:not([data-theme="light"]) .kpill.k-combine, :root:not([data-theme="light"]) .kpill.k-strip, :root:not([data-theme="light"]) .kpill.s-done { background: #14532d; color: #dcfce7; }
+  :root:not([data-theme="light"]) .cult .dev { background: #4c1d95; color: #ede9fe; }
+  :root:not([data-theme="light"]) .cult .pos { color: #4ade80; }
 }
+:root[data-theme="dark"] .kpill.k-ff { background: #1e3a8a; color: #dbeafe; }
+:root[data-theme="dark"] .kpill.k-dry { background: #78350f; color: #fef3c7; }
+:root[data-theme="dark"] .kpill.k-combine, :root[data-theme="dark"] .kpill.k-strip, :root[data-theme="dark"] .kpill.s-done { background: #14532d; color: #dcfce7; }
+:root[data-theme="dark"] .cult .dev { background: #4c1d95; color: #ede9fe; }
+:root[data-theme="dark"] .cult .pos { color: #4ade80; }
 @media (max-width: 600px) {
   .csheet .grid3 { grid-template-columns: 1fr 1fr; }
   .ctable { font-size: 13px; }

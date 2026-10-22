@@ -15,7 +15,7 @@
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #101411;
     --panel: #181e1a;
     --ink: #e7ece8;
@@ -31,6 +31,22 @@
     --tile-ink: #eef3ef;
     color-scheme: dark;
   }
+}
+:root[data-theme="dark"] {
+  --bg: #101411;
+  --panel: #181e1a;
+  --ink: #e7ece8;
+  --muted: #93a097;
+  --line: #2a332d;
+  --brand: #22c55e;
+  --brand-ink: #062b14;
+  --empty: #1e2621;
+  --warn: #f59e0b;
+  --bad: #f87171;
+  --tile-l: 30%;
+  --tile-s: 35%;
+  --tile-ink: #eef3ef;
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -62,9 +78,11 @@ h3 { font-size: 15px; margin-top: 18px; }
 .app-name { font-weight: 700; }
 .logo-login { width: 220px; max-width: 70vw; height: auto; margin: 0 auto 8px; display: block; }
 @media (prefers-color-scheme: dark) {
-  .logo-img, .logo-login { background: #f1f4f0; border-radius: 8px; padding: 3px 6px; }
-  .logo-login { padding: 10px 14px; border-radius: 14px; }
+  :root:not([data-theme="light"]) .logo-img, :root:not([data-theme="light"]) .logo-login { background: #f1f4f0; border-radius: 8px; padding: 3px 6px; }
+  :root:not([data-theme="light"]) .logo-login { padding: 10px 14px; border-radius: 14px; }
 }
+:root[data-theme="dark"] .logo-img, :root[data-theme="dark"] .logo-login { background: #f1f4f0; border-radius: 8px; padding: 3px 6px; }
+:root[data-theme="dark"] .logo-login { padding: 10px 14px; border-radius: 14px; }
 
 .app { padding-bottom: 76px; }
 .top { position: sticky; top: 0; z-index: 5; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
@@ -458,7 +476,12 @@ body.dragging { user-select: none; -webkit-user-select: none; cursor: grabbing; 
 .modmenu button.on { border-color: var(--brand); background: color-mix(in srgb, var(--brand) 10%, var(--panel)); }
 .app.mod-cult .top .brand .app-name { color: #7a4f00; }
 .rail { display: none; }
-@media (prefers-color-scheme: dark) { .modpill.m-cult { color: #fbbf24; border-color: #fbbf24; } .app.mod-cult .top .brand .app-name { color: #fbbf24; } }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .modpill.m-cult { color: #fbbf24; border-color: #fbbf24; }
+  :root:not([data-theme="light"]) .app.mod-cult .top .brand .app-name { color: #fbbf24; }
+}
+:root[data-theme="dark"] .modpill.m-cult { color: #fbbf24; border-color: #fbbf24; }
+:root[data-theme="dark"] .app.mod-cult .top .brand .app-name { color: #fbbf24; }
 @media (min-width: 1000px) {
   .app.with-mods .modpick { display: none; }
   .rail { display: flex; position: fixed; top: 0; bottom: 0; left: 0; z-index: 7; }
@@ -564,3 +587,32 @@ body.dragging { user-select: none; -webkit-user-select: none; cursor: grabbing; 
 .scanview { position: relative; margin-top: 10px; border-radius: 12px; overflow: hidden; background: #000; aspect-ratio: 4 / 3; }
 .scanview video { width: 100%; height: 100%; object-fit: cover; display: block; }
 .scanline { position: absolute; left: 8%; right: 8%; top: 50%; height: 2px; background: #ef4444; box-shadow: 0 0 8px #ef4444; }
+
+/* Users: level per module */
+.accgrid { display: grid; gap: 6px; }
+.accrow { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
+.accrow .muted { font-size: 12px; }
+.accrow .seg button { padding: 6px 10px; font-size: 13px; }
+.mine { display: grid; gap: 12px; max-width: 720px; }
+.mine .dcard h3 { margin: 0 0 8px; font-size: 15px; }
+.mine .row input { flex: 1; min-width: 0; }
+.mine .seg { flex-wrap: wrap; width: fit-content; }
+.form-panel { display: grid; gap: 4px; max-width: 620px; }
+
+/* module colors: Sales blue, Admin purple */
+.modpill.m-sales { border-color: #1d4ed8; background: color-mix(in srgb, #2563eb 12%, var(--panel)); color: #1d4ed8; }
+.app.mod-sales .top .brand .app-name { color: #1d4ed8; }
+.modpill.m-admin { border-color: #6d28d9; background: color-mix(in srgb, #7c3aed 12%, var(--panel)); color: #6d28d9; }
+.app.mod-admin .top .brand .app-name { color: #6d28d9; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .modpill.m-sales, :root:not([data-theme="light"]) .app.mod-sales .top .brand .app-name { color: #93c5fd; border-color: #93c5fd; }
+  :root:not([data-theme="light"]) .modpill.m-admin, :root:not([data-theme="light"]) .app.mod-admin .top .brand .app-name { color: #c4b5fd; border-color: #c4b5fd; }
+}
+:root[data-theme="dark"] .modpill.m-sales, :root[data-theme="dark"] .app.mod-sales .top .brand .app-name { color: #93c5fd; border-color: #93c5fd; }
+:root[data-theme="dark"] .modpill.m-admin, :root[data-theme="dark"] .app.mod-admin .top .brand .app-name { color: #c4b5fd; border-color: #c4b5fd; }
+.modset { margin-top: 24px; padding-top: 8px; border-top: 1px solid var(--line); }
+@media (max-width: 600px) { .hide-phone { display: none; } }
+.accrow > div:first-child { flex: 1; min-width: 0; }
+.accrow .seg { flex-shrink: 0; }
+@media (max-width: 600px) { .accrow { flex-direction: column; align-items: stretch; } .accrow .seg { align-self: flex-start; } }
+.mine input:not([type="checkbox"]) { padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
