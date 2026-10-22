@@ -40,8 +40,9 @@ export default async function handler(req, res) {
     const up = Number(q.to) > Number(q.from)
     const what = Number(q.from) === 0 ? `add ${lbs(q.to)} lbs of ${q.strain}` : Number(q.to) === 0 ? `drop their ${lbs(q.from)} lbs of ${q.strain}`
       : `${up ? 'raise' : 'lower'} ${q.strain} from ${lbs(q.from)} to ${lbs(q.to)} lbs`
-    subject = `Reserve request: ${q.customer} · ${q.strain} ${lbs(q.from)} → ${lbs(q.to)} lbs`
-    html = wrap(`<p><b>${esc(q.customer)}</b> wants to ${esc(what)}.</p>
+    const yr = q.crop_year ? ` (${q.crop_year} crop)` : ''
+    subject = `Reserve request${yr}: ${q.customer} · ${q.strain} ${lbs(q.from)} → ${lbs(q.to)} lbs`
+    html = wrap(`<p><b>${esc(q.customer)}</b> wants to ${esc(what)}${esc(yr)}.</p>
       <p>Requested by ${esc(who)}${q.note ? `<br>Note: "${esc(q.note)}"` : ''}</p>
       <p><a href="${esc(app)}/?go=requests">Approve or decline in Lifted Inventory Management</a> (Sales &gt; Requests). Only an Admin can approve.</p>`)
   }

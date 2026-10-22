@@ -94,3 +94,4 @@
 .selbar { position: fixed; left: 50%; transform: translateX(-50%); bottom: 72px; z-index: 9; background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
   box-shadow: 0 6px 24px rgb(0 0 0 / .18); padding: 10px 14px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; max-width: calc(100vw - 32px); }
 .primary.dangerbg { background: var(--bad); color: #fff; }
+.cult .bufin { width: 60px; padding: 7px 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); text-align: right; }

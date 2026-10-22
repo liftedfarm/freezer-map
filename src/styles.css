@@ -458,3 +458,47 @@ body.dragging { user-select: none; -webkit-user-select: none; cursor: grabbing; 
 .stagecard .stage-strip i { width: 12px; height: 10px; border-radius: 2px; background: hsl(var(--h, 0) var(--tile-s) var(--tile-l)); }
 .danger { color: #b91c1c; border-color: #fca5a5; }
 .danger-bg { background: #b91c1c !important; border-color: #b91c1c !important; color: #fff !important; }
+
+/* ---------- modules: switcher pill (phone) and rail (computer) ---------- */
+.modpick { position: relative; }
+.modpill { display: flex; align-items: center; gap: 6px; border-radius: 99px; padding: 7px 12px; font-weight: 700; font-size: 14px; border: 1px solid var(--brand);
+  background: color-mix(in srgb, var(--brand) 12%, var(--panel)); color: var(--brand); white-space: nowrap; }
+.modpill.m-cult { border-color: #8a5a00; background: color-mix(in srgb, #d97706 14%, var(--panel)); color: #7a4f00; }
+.modscrim { position: fixed; inset: 0; z-index: 19; }
+.modmenu { position: absolute; z-index: 20; top: calc(100% + 6px); left: 0; min-width: 240px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+  box-shadow: 0 8px 28px rgb(0 0 0 / .18); padding: 6px; display: grid; gap: 4px; }
+.modmenu button { display: grid; text-align: left; gap: 2px; padding: 10px 12px; border-radius: 10px; border: 1px solid transparent; background: transparent; }
+.modmenu button.on { border-color: var(--brand); background: color-mix(in srgb, var(--brand) 10%, var(--panel)); }
+.app.mod-cult .top .brand .app-name { color: #7a4f00; }
+.rail { display: none; }
+@media (prefers-color-scheme: dark) { .modpill.m-cult { color: #fbbf24; border-color: #fbbf24; } .app.mod-cult .top .brand .app-name { color: #fbbf24; } }
+@media (min-width: 1000px) {
+  .app.with-rail .modpick { display: none; }
+  .rail { display: flex; position: fixed; top: 0; bottom: 0; left: 0; z-index: 7; }
+  .rail-mods { width: 84px; background: #12301f; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 14px 0; }
+  .rail-logo { font-weight: 800; font-size: 15px; color: #bfe3cc; margin-bottom: 12px; }
+  .rail-mod { width: 70px; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 0; border-radius: 12px; border: 0;
+    background: transparent; color: #c9d6cd; font-size: 11px; }
+  .rail-mod.on { background: #2b5a3d; color: #fff; font-weight: 700; }
+  .rail-mod:hover { background: #1f4630; color: #fff; }
+  .rail-screens { width: 200px; background: var(--panel); border-right: 1px solid var(--line); padding: 18px 10px; display: flex; flex-direction: column; gap: 2px; overflow-y: auto; }
+  .rail-h { font-size: 12px; font-weight: 700; color: var(--muted); padding: 0 10px 8px; }
+  .rail-screens button { text-align: left; padding: 10px; border-radius: 10px; border: 0; background: transparent; font-size: 15px; }
+  .rail-screens button.on { background: color-mix(in srgb, var(--brand) 12%, var(--panel)); color: var(--brand); font-weight: 700; }
+  .app.with-rail { padding-left: 84px; }
+  .app.with-rail .bottom { left: 84px; }
+  .app.with-rail .sidebar { left: 84px; }
+  .app.with-rail.with-side { padding-left: 424px; }
+  .app.with-rail.with-side .bottom, .app.with-rail.with-side .planbar { left: 424px; }
+  .app.with-rail .planbar { left: 84px; }
+  .app.with-rail.mod-cult { padding-left: 284px; padding-bottom: 20px; }
+  .app.with-rail.mod-cult .bottom { display: none; }
+  .app.with-rail .cult .selbar { margin-left: 142px; }
+}
+.top > .grow { flex: 1; }
+@media (max-width: 999px) {
+  .modmenu { position: fixed; top: 64px; left: 16px; right: 16px; min-width: 0; }
+}
+@media (max-width: 600px) {
+  .app.with-rail .top .app-name { display: none; }
+}

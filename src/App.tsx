@@ -10,6 +10,8 @@ import { ChooseDialog, PlanBar, RemoveForm, SelectBar, UndoPill } from './planui
 import { ReservesView } from './reserves'
 import { Portal, PortalLink, PortalLogin } from './portal'
 import { Sidebar } from './sidebar'
+import { CULT_TABS } from './cult/tabs'
+import type { CultTab } from './cult/tabs'
 import { LoadForm, LoadView, PickLoad, TransitView, stopColor } from './loads'
 import type { LoadCtx } from './loads'
 import { canSales } from './types'
@@ -20,6 +22,10 @@ const backend: Backend = makeBackend()
 const CultView = lazy(() => import('./cult/CultView'))
 
 type View = 'map' | 'freezer' | 'transit' | 'load' | 'review' | 'activity' | 'settings' | 'reserves' | 'cult'
+// modules: Distribution (the freezer app) for every staff user, others switched on per user
+type Mod = 'dist' | 'cult'
+const stored = (k: string) => { try { return localStorage.getItem(k) } catch { return null } }
+const store = (k: string, v: string) => { try { localStorage.setItem(k, v) } catch { /* private mode */ } }
 
 // ---------- helpers ----------
 
@@ -193,7 +199,12 @@ export default function App() {
   const [snap, setSnap] = useState<Snapshot | null>(null)
   const [site, setSite] = useState<Site>('OHR')
   useEffect(() => { if (GO) history.replaceState(null, '', location.pathname) }, [])
-  const [view, setView] = useState<View>(GO_TAB ? 'reserves' : 'map')
+  const [view, setView] = useState<View>(GO_TAB ? 'reserves' : stored('fm.mod') === 'cult' ? 'cult' : 'map')
+  const [mod, setModS] = useState<Mod>(GO_TAB ? 'dist' : stored('fm.mod') === 'cult' ? 'cult' : 'dist')
+  const [cultTab, setCultTabS] = useState<CultTab>(() => (CULT_TABS.find(t => t.t === stored('cult.tab'))?.t ?? 'schedule'))
+  const [modMenu, setModMenu] = useState(false)
+  const [more, setMore] = useState(false)
+  const setCultTab = (t: CultTab) => { setCultTabS(t); store('cult.tab', t); setView('cult'); setMore(false); window.scrollTo(0, 0) }
   const [freezerId, setFreezerId] = useState<number | null>(null)
   const [palletId, setPalletId] = useState<number | null>(null)
   const [plan, setPlan] = useState<Plan>(EMPTY)
@@ -233,9 +244,15 @@ export default function App() {
     backend.me().then(setMe).catch(e => setLoadError(String(e?.message ?? e)))
   }, [user])
   const staff = !!me && ['admin', 'sales', 'crew'].includes(me.role)
-  const [modules, setModules] = useState<string[]>([])
+  const [modules, setModules] = useState<string[] | null>(null)
   useEffect(() => { if (staff) backend.myModules().then(setModules).catch(() => setModules([])); else setModules([]) }, [staff, me?.email, me?.viewing_as])
-  const hasCult = modules.includes('cultivation')
+  const hasCult = (modules ?? []).includes('cultivation')
+  const MODS: { m: Mod; l: string; on: boolean }[] = [{ m: 'dist', l: 'Distribution', on: true }, { m: 'cult', l: 'Production', on: hasCult }]
+  const myMods = MODS.filter(x => x.on)
+  const inCult = hasCult && mod === 'cult'
+  const goMod = (m: Mod) => { setModS(m); store('fm.mod', m); setModMenu(false); setView(m === 'cult' ? 'cult' : 'map'); window.scrollTo(0, 0) }
+  // modules loaded and Production isn't on for this user: back to Distribution
+  useEffect(() => { if (modules && staff && !hasCult && (mod === 'cult' || view === 'cult')) { setModS('dist'); if (view === 'cult') setView('map') } }, [me, staff, hasCult, modules])
   useEffect(() => {
     if (!staff) return
     reload().then(() => setLoadError(null)).catch(e => setLoadError(String(e?.message ?? e)))
@@ -415,10 +432,31 @@ export default function App() {
   const selWeight = sel.reduce((a, id) => { const p = ix.pallet.get(id); return a + (p ? weightOf(ix, p) : 0) }, 0)
 
   return (
-    <div className={`app ${banner ? 'is-moving' : ''} ${side ? 'with-side' : ''}`}>
+    <div className={`app ${banner ? 'is-moving' : ''} ${side && !inCult ? 'with-side' : ''} ${myMods.length > 1 ? 'with-rail' : ''} ${inCult ? 'mod-cult' : ''}`}>
       {viewBar}
-      {side && <div className="side-scrim" onClick={() => toggleSide(false)} />}
-      {side && (
+      {myMods.length > 1 && (
+        <aside className="rail" aria-label="Modules">
+          <div className="rail-mods">
+            <div className="rail-logo">Lifted</div>
+            {myMods.map(x => (
+              <button key={x.m} className={`rail-mod ${mod === x.m ? 'on' : ''}`} onClick={() => goMod(x.m)}>
+                {x.m === 'dist'
+                  ? <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><rect x="1" y="7" width="14" height="10" /><path d="M15 10h4l3 3v4h-7" /><circle cx="6" cy="19" r="2" /><circle cx="18" cy="19" r="2" /></svg>
+                  : <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M12 22V12M12 12C12 7 8 4 3 4c0 5 4 8 9 8zM12 12c0-4 3-7 8-7 0 4-3 7-8 7z" /></svg>}
+                <span>{x.l}</span>
+              </button>
+            ))}
+          </div>
+          {inCult && (
+            <nav className="rail-screens" aria-label="Production screens">
+              <div className="rail-h">PRODUCTION</div>
+              {CULT_TABS.map(t => <button key={t.t} className={view === 'cult' && cultTab === t.t ? 'on' : ''} onClick={() => setCultTab(t.t)}>{t.l}</button>)}
+            </nav>
+          )}
+        </aside>
+      )}
+      {side && !inCult && <div className="side-scrim" onClick={() => toggleSide(false)} />}
+      {side && !inCult && (
         <Sidebar ctx={{
           snap, site, backend,
           slotsOf: id => ix.slotsOf.get(id) ?? [], inSlot: id => ix.inSlot.get(id) ?? [], weight: p => weightOf(ix, p),
@@ -437,17 +475,32 @@ export default function App() {
         }} />
       )}
       <header className="top">
-        <button className={`ghost small sidebtn ${side ? 'on-btn' : ''}`} title="Summary" onClick={() => toggleSide(!side)}>☰</button>
-        <div className="brand" onClick={() => { setView('map'); setFreezerId(null) }}>
-          <img className="logo-img" src="/logo.png" alt="Lifted Farms" /> <span className="app-name">Inventory Management</span> {backend.demo && <span className="demo">DEMO</span>}
+        {!inCult && <button className={`ghost small sidebtn ${side ? 'on-btn' : ''}`} title="Summary" onClick={() => toggleSide(!side)}>☰</button>}
+        <div className="brand" onClick={() => { if (inCult) setCultTab('schedule'); else { setView('map'); setFreezerId(null) } }}>
+          <img className="logo-img" src="/logo.png" alt="Lifted Farms" /> <span className="app-name">{inCult ? 'Production' : 'Inventory Management'}</span> {backend.demo && <span className="demo">DEMO</span>}
         </div>
-        <div className="seg">
+        {myMods.length > 1 && (
+          <div className="modpick">
+            <button className={`modpill m-${mod}`} aria-haspopup="menu" aria-expanded={modMenu} onClick={() => setModMenu(!modMenu)}>
+              {MODS.find(x => x.m === mod)?.l} <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
+            </button>
+            {modMenu && <>
+              <div className="modscrim" onClick={() => setModMenu(false)} />
+              <div className="modmenu" role="menu">
+                {myMods.map(x => <button key={x.m} role="menuitem" className={mod === x.m ? 'on' : ''} onClick={() => goMod(x.m)}>
+                  <b>{x.l}</b><span className="muted">{x.m === 'dist' ? 'Map · Transit · Sales' : 'Harvests · fields · plan'}</span></button>)}
+              </div>
+            </>}
+          </div>
+        )}
+        {!inCult && <div className="seg">
           {(['OHR', 'GVR'] as Site[]).map(s => (
             <button key={s} className={s === site ? 'on' : ''} onClick={() => { setSite(s); if (view === 'freezer') setView('map') }}>{s}</button>
           ))}
-        </div>
-        <input className="search" type="search" placeholder="Pallet, strain or tag" value={query}
-          onChange={e => { setQuery(e.target.value); if (view === 'freezer' || view === 'activity') setView('map') }} />
+        </div>}
+        {!inCult && <input className="search" type="search" placeholder="Pallet, strain or tag" value={query}
+          onChange={e => { setQuery(e.target.value); if (view === 'freezer' || view === 'activity') setView('map') }} />}
+        {inCult && <span className="grow" />}
         <button className={`ghost small ${view === 'settings' ? 'on-btn' : ''}`} title="Settings" onClick={() => setView('settings')}>⚙ Settings</button>
         <button className="ghost small" title={`Signed in as ${user} (${me?.role ?? ''}). Click to sign out.`} onClick={() => backend.signOut().then(() => setUser(null))}>{who(user)} ⏏</button>
       </header>
@@ -510,7 +563,7 @@ export default function App() {
             ? m.set(p.strain.toLowerCase(), (m.get(p.strain.toLowerCase()) ?? 0) + Number(p.current_weight ?? 0)) : m, new Map<string, number>())} />}
         {view === 'transit' && <TransitView ctx={ctx} onOpen={id => { setLoadId(id); setView('load'); window.scrollTo(0, 0) }} onNew={() => setLoadForm({})} />}
         {view === 'load' && loadId != null && <LoadView ctx={ctx} loadId={loadId} onBack={() => setView('transit')} onEdit={() => setLoadForm({ load: (snap.loads ?? []).find(l => l.id === loadId) })} />}
-        {view === 'cult' && hasCult && <Suspense fallback={<p className="muted">Loading…</p>}><CultView backend={backend} flash={flash} onPalletsChanged={() => { reload() }} /></Suspense>}
+        {view === 'cult' && inCult && <Suspense fallback={<p className="muted">Loading…</p>}><CultView backend={backend} flash={flash} tab={cultTab} onPalletsChanged={() => { reload() }} /></Suspense>}
         {view === 'settings' && <SettingsView backend={backend} flash={flash} me={me!} onChanged={() => { reload() }}
           inventoryStrains={snap.pallets.reduce((m, p) => p.strain ? m.set(p.strain, (m.get(p.strain) ?? 0) + 1) : m, new Map<string, number>())} />}
       </main>
@@ -536,14 +589,28 @@ export default function App() {
           onUndo={() => { const b = lastBatch; setLastBatch(null); act(() => backend.undoBatch(b.id), 'Undone') }} />
       )}
       <DragGhost />
-      <nav className="bottom">
+      {inCult && (
+        <nav className="bottom">
+          {CULT_TABS.filter(t => t.bottom).map(t => <button key={t.t} className={view === 'cult' && cultTab === t.t ? 'on' : ''} onClick={() => setCultTab(t.t)}>{t.l}</button>)}
+          <button className={view === 'cult' && !CULT_TABS.find(t => t.t === cultTab)?.bottom ? 'on' : ''} onClick={() => setMore(true)}>
+            {view === 'cult' && !CULT_TABS.find(t => t.t === cultTab)?.bottom ? CULT_TABS.find(t => t.t === cultTab)?.l : 'More'}</button>
+        </nav>
+      )}
+      {inCult && more && (
+        <div className="scrim" onClick={() => setMore(false)}>
+          <div className="sheet" onClick={e => e.stopPropagation()}>
+            <div className="sheet-h"><h2>Production</h2><button className="ghost" onClick={() => setMore(false)}>✕</button></div>
+            <div className="choices col">{CULT_TABS.filter(t => !t.bottom).map(t => <button key={t.t} className={cultTab === t.t ? 'on' : ''} onClick={() => setCultTab(t.t)}>{t.l}</button>)}</div>
+          </div>
+        </div>
+      )}
+      {!inCult && <nav className="bottom">
         <button className={view === 'map' || view === 'freezer' ? 'on' : ''} onClick={() => setView(view !== 'map' && view !== 'freezer' && freezerId != null ? 'freezer' : 'map')}>Map</button>
         <button className={view === 'transit' || view === 'load' ? 'on' : ''} onClick={() => setView('transit')}>Transit{openLoads.length > 0 && <span className="badge">{openLoads.length}</span>}</button>
         {canSales(me?.role) && <button className={view === 'reserves' ? 'on' : ''} onClick={() => setView('reserves')}>Sales{salesBadge > 0 && <span className="badge warn">{salesBadge}</span>}</button>}
-        {hasCult && <button className={view === 'cult' ? 'on' : ''} onClick={() => setView('cult')}>Grow</button>}
         <button className={view === 'activity' ? 'on' : ''} onClick={() => setView('activity')}>Activity</button>
         <button className={view === 'review' ? 'on' : ''} onClick={() => setView('review')}>Review{reviewCount > 0 && <span className="badge warn">{reviewCount}</span>}</button>
-      </nav>
+      </nav>}
 
       {selected && !banner && (
         <PalletSheet ix={ix} p={selected} busy={busy} where={where}

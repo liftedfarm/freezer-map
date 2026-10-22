@@ -3,7 +3,7 @@ import type { Backend } from './api'
 import { readSheet } from 'read-excel-file/browser'
 import { parseCsv } from './settings'
 import { OpenMenu } from './menu'
-import type { MenuNumbers, ReserveRequest, Role, Balance, Customer, ImportResult, Order, RoshiRow, Strain } from './types'
+import type { MenuNumbers, ReserveRequest, ReserveYears, Role, Balance, Customer, ImportResult, Order, RoshiRow, Strain } from './types'
 
 const n0 = (x: number) => Math.round(x).toLocaleString()
 
@@ -50,6 +50,9 @@ export function ReservesView({ backend, customers, strains, onHand, flash, role,
   const [decideNote, setDecideNote] = useState<Record<number, string>>({})
   const [year, setYear] = useState<number | null>(null)
   const [bal, setBal] = useState<Balance[] | null>(null)
+  const [ys, setYs] = useState<ReserveYears | null>(null)
+  const [ry, setRy] = useState<number | null>(null)   // which crop's reserves
+  useEffect(() => { backend.reserveYears().then(setYs).catch(() => {}) }, [])
   const [orders, setOrders] = useState<Order[]>([])
   const [err, setErr] = useState<string | null>(null)
   const [mode, setMode] = useState<'customer' | 'strain' | 'orders' | 'requests' | 'menu'>(initialMode ?? 'menu')
@@ -78,20 +81,29 @@ export function ReservesView({ backend, customers, strains, onHand, flash, role,
 
   if (err) return <div className="list"><h2>Reserves</h2><div className="warnbox">Reserves or orders aren't set up in the database yet. Run 009_reserves.sql and 010_orders.sql in Supabase, then refresh. ({err})</div></div>
   if (!bal) return <div className="list"><h2>Reserves</h2><p className="muted">Loading…</p></div>
+  const cur = ys?.current ?? new Date().getFullYear()
+  const rYear = ry ?? cur
+  const future = rYear > cur
+  const menuYears = [...new Set(nums.map(m => m.crop_year))].sort((a, b) => b - a)
+  const yrSel = mode === 'strain' && !future ? (year ?? menuYears[0] ?? cur) : rYear
+  const dl = ys?.years.find(y => y.year === rYear)?.deadline ?? null
+  const allBal = bal
+  const yearsWith = [...new Set([cur, ...(ys?.years ?? []).map(y => y.year), ...allBal.map(r => r.crop_year ?? cur), ...(mode === 'strain' ? menuYears : [])])].sort((a, b) => a - b)
+  const balY = allBal.filter(r => (r.crop_year ?? cur) === rYear)
 
   const ql = q.toLowerCase()
   const sum = (rs: Balance[], k: 'reserved' | 'shipped' | 'pending' | 'remaining') => rs.reduce((a, r) => a + Number(r[k]), 0)
-  const byCust = [...bal.reduce((m, r) => m.set(r.customer_id, [...(m.get(r.customer_id) ?? []), r]), new Map<number, Balance[]>())]
+  const byCust = [...balY.reduce((m, r) => m.set(r.customer_id, [...(m.get(r.customer_id) ?? []), r]), new Map<number, Balance[]>())]
     .map(([id, rs]) => ({ id, name: cname(id), rs }))
     .filter(c => !ql || c.name.toLowerCase().includes(ql) || c.rs.some(r => r.strain.toLowerCase().includes(ql)))
     .sort((a, b) => sum(b.rs, 'reserved') - sum(a.rs, 'reserved'))
   // numbers come from the database (same math as the customer menu); fall back to local math before 011 is run
   const years = [...new Set(nums.map(m => m.crop_year))].sort((a, b) => b - a)
   const yr = year ?? years[0]
-  const byStrain = (nums.length ? nums.filter(m => m.crop_year === yr).map(m => ({ s: m.strain, rs: bal.filter(r => r.strain.toLowerCase() === m.strain.toLowerCase()),
+  const byStrain = (nums.length ? nums.filter(m => m.crop_year === yr).map(m => ({ s: m.strain, rs: balY.filter(r => r.strain.toLowerCase() === m.strain.toLowerCase()),
       left: Number(m.reserved_left), have: Number(m.on_hand), pend: Number(m.pending), held: Number(m.held), free: Number(m.free), hidden: !m.on_menu }))
-    : [...new Set([...bal.map(r => r.strain), ...[...onHand.keys()].map(k => strains.find(s => s.name.toLowerCase() === k)?.name ?? k)])].map(s => {
-      const rs = bal.filter(r => r.strain.toLowerCase() === s.toLowerCase())
+    : [...new Set([...balY.map(r => r.strain), ...[...onHand.keys()].map(k => strains.find(s => s.name.toLowerCase() === k)?.name ?? k)])].map(s => {
+      const rs = balY.filter(r => r.strain.toLowerCase() === s.toLowerCase())
       const left = sum(rs, 'remaining'), have = onHandOf(s), pend = pendingByStrain.get(s.toLowerCase()) ?? 0
       return { s, rs, left, have, pend, held: 0, free: have - pend - left, hidden: false }
     })).filter(x => (x.have > 0 || x.left > 0) && (!ql || x.s.toLowerCase().includes(ql) || x.rs.some(r => cname(r.customer_id).toLowerCase().includes(ql))))
@@ -102,7 +114,7 @@ export function ReservesView({ backend, customers, strains, onHand, flash, role,
   async function save() {
     if (!edit || edit.customer_id == null) return
     const lbs = Number(edit.lbs)
-    try { await backend.setReserve(edit.customer_id, edit.strain, lbs); await load(); setOpen(edit.customer_id); setEdit(null); flash(lbs === 0 ? 'Reserve removed' : 'Reserve saved') }
+    try { await backend.setReserve(edit.customer_id, edit.strain, lbs, undefined, rYear !== cur ? rYear : undefined); await load(); setOpen(edit.customer_id); setEdit(null); flash(lbs === 0 ? 'Reserve removed' : 'Reserve saved') }
     catch (e) { flash(String((e as Error).message ?? e), true) }
   }
   async function copyMenu() {
@@ -129,7 +141,7 @@ export function ReservesView({ backend, customers, strains, onHand, flash, role,
 
   return (
     <div className="list reserves">
-      <h2>Sales <span className="muted">Reserves: {n0(sum(bal, 'remaining'))} lbs left of {n0(sum(bal, 'reserved'))}</span></h2>
+      <h2>Sales <span className="muted">{cur} reserves: {n0(sum(allBal.filter(r => (r.crop_year ?? cur) === cur), 'remaining'))} lbs left of {n0(sum(allBal.filter(r => (r.crop_year ?? cur) === cur), 'reserved'))}</span></h2>
       <div className="seg tabs">
         <button className={mode === 'menu' ? 'on' : ''} onClick={() => setMode('menu')}>Open menu</button>
         <button className={mode === 'orders' ? 'on' : ''} onClick={() => setMode('orders')}>Orders {submitted > 0 ? <span className="badge warn">{submitted} new</span> : <span className="muted">{orders.length}</span>}</button>
@@ -153,6 +165,14 @@ export function ReservesView({ backend, customers, strains, onHand, flash, role,
         </div>
       )}
 
+      {(mode === 'customer' || mode === 'strain') && yearsWith.length > 1 && (
+        <div className="row yearpick">
+          <div className="seg yearseg">{yearsWith.map(y => <button key={y} className={y === yrSel ? 'on' : ''} onClick={() => { setRy(y); if (y <= cur) setYear(y) }}>{y} crop</button>)}</div>
+          {future && <span className="muted">{dl ? `Customers can request ${rYear} reserves until ${new Date(dl + 'T12:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}.` : `${rYear} requests are closed.`}</span>}
+          {future && isAdmin && <DeadlineEdit year={rYear} value={dl} onSave={async v => { try { await backend.setReserveDeadline(rYear, v); setYs(await backend.reserveYears()); flash('Deadline saved') } catch (e) { flash(String((e as Error).message ?? e), true) } }} />}
+        </div>
+      )}
+      {mode === 'customer' && byCust.length === 0 && <p className="muted">No {rYear} reserves yet.</p>}
       {mode === 'customer' && byCust.map(c => (
         <div key={c.id} className="rescard">
           <button className="li setrow" onClick={() => setOpen(open === c.id ? null : c.id)}>
@@ -177,10 +197,21 @@ export function ReservesView({ backend, customers, strains, onHand, flash, role,
         </div>
       ))}
 
-      {mode === 'strain' && (
-        <>
-          {years.length > 1 && <div className="seg yearseg">{years.map(y => <button key={y} className={y === yr ? 'on' : ''} onClick={() => setYear(y)}>{y} crop</button>)}</div>}
+      {mode === 'strain' && future && (() => {
+        const tot = [...balY.reduce((m, r) => m.set(r.strain, [...(m.get(r.strain) ?? []), r]), new Map<string, Balance[]>())].sort((a, b) => a[0].localeCompare(b[0]))
+        const pend = reqs.filter(r => r.status === 'pending' && r.crop_year === rYear)
+        return (
           <table className="restable wide">
+            <thead><tr><th>Strain</th><th className="num">Customers</th><th className="num">Reserved</th><th className="num">Requested (waiting)</th></tr></thead>
+            <tbody>{tot.map(([st, rs]) => <tr key={st}><td>{st}</td><td className="num">{rs.length}</td><td className="num"><b>{n0(sum(rs, 'reserved'))}</b></td>
+              <td className="num">{n0(pend.filter(q => q.strain.toLowerCase() === st.toLowerCase()).reduce((a, q) => a + Number(q.requested_lbs) - Number(q.current_lbs), 0)) || ''}</td></tr>)}
+            {!tot.length && <tr><td colSpan={4} className="muted">No {rYear} reserves yet.</td></tr>}</tbody>
+          </table>
+        )
+      })()}
+      {mode === 'strain' && !future && (
+        <>
+                    <table className="restable wide">
             <thead><tr><th>Strain</th><th className="num">On hand</th><th className="num">Pending</th><th className="num">Res. left</th><th className="num">Free</th></tr></thead>
             <tbody>
               {byStrain.map(x => (
@@ -210,10 +241,10 @@ export function ReservesView({ backend, customers, strains, onHand, flash, role,
           return (
             <div key={r.id} className={`li reqcard ${r.status}`}>
               <div className="grow">
-                <div><b>{cname(r.customer_id)}</b> · {r.strain} <span className={`pill r-${r.status}`}>{r.status}</span></div>
+                <div><b>{cname(r.customer_id)}</b> · {r.strain}{r.crop_year && r.crop_year !== cur ? <span className="pill old">{r.crop_year} crop</span> : null} <span className={`pill r-${r.status}`}>{r.status}</span></div>
                 <div>{n0(Number(r.current_lbs))} → <b>{n0(Number(r.requested_lbs))} lbs</b> <span className={d > 0 ? 'up' : 'down'}>({d > 0 ? '+' : ''}{n0(d)})</span></div>
                 <div className="muted">{r.requested_by} · {new Date(r.requested_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}{r.note && <> · "{r.note}"</>}</div>
-                {r.status === 'pending' && m && <div className="muted">Free now {n0(Number(m.free))} lbs (this request already held)</div>}
+                {r.status === 'pending' && m && (!r.crop_year || r.crop_year === cur) && <div className="muted">Free now {n0(Number(m.free))} lbs (this request already held)</div>}
                 {r.status !== 'pending' && r.decided_by && <div className="muted">{r.status} by {r.decided_by}{r.decision_note && <> · "{r.decision_note}"</>}</div>}
                 {r.status === 'pending' && isAdmin && (
                   <div className="row reqact">
@@ -252,7 +283,7 @@ export function ReservesView({ backend, customers, strains, onHand, flash, role,
           <p className="muted">Import the Roshi sales order export (the same one the menu engine uses) any time. New orders are added and existing ones are updated. Only 2026 fresh frozen lines, plus open 2025 ones, are used.</p>
         </>
       )}
-      {bal.length === 0 && mode !== 'orders' && <p className="muted">No reserves yet.</p>}
+
 
       {edit && (
         <div className="scrim" onClick={() => setEdit(null)}>
@@ -283,10 +314,24 @@ export function ReservesView({ backend, customers, strains, onHand, flash, role,
   )
 }
 
+function DeadlineEdit({ year, value, onSave }: { year: number; value: string | null; onSave: (v: string | null) => Promise<void> }) {
+  const [v, setV] = useState(value ?? '')
+  const [open, setOpen] = useState(false)
+  if (!open) return <a onClick={() => { setV(value ?? ''); setOpen(true) }}>Change deadline</a>
+  return (
+    <span className="row">
+      <input type="date" value={v} onChange={e => setV(e.target.value)} />
+      <button className="primary small" onClick={async () => { await onSave(v || null); setOpen(false) }}>Save</button>
+      <button className="ghost small" onClick={() => setOpen(false)}>Cancel</button>
+      <span className="muted">Blank closes {year} requests.</span>
+    </span>
+  )
+}
+
 // read-only lists for the customer portal
-export function MyReserves({ backend }: { backend: Backend }) {
+export function MyReserves({ backend, year }: { backend: Backend; year?: number }) {
   const [rows, setRows] = useState<Balance[] | null>(null)
-  useEffect(() => { backend.listBalances().then(setRows).catch(() => setRows([])) }, [])
+  useEffect(() => { backend.listBalances().then(b => setRows(b.filter(r => !year || r.crop_year == null || r.crop_year === year))).catch(() => setRows([])) }, [year])
   if (!rows) return <p className="muted">Loading…</p>
   if (!rows.length) return <p className="muted">No reserves on file yet.</p>
   const t = (k: 'reserved' | 'shipped' | 'pending' | 'remaining') => rows.reduce((a, r) => a + Number(r[k]), 0)

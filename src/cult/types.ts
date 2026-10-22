@@ -57,7 +57,7 @@ export interface YieldHist { id: number; crop_year: number; site: string; strain
 export interface LogRow { id: number; at: string; user_email: string | null; tbl: string; row_id: number | null; op: string; data: Record<string, unknown> | null; was: Record<string, unknown> | null }
 export interface StrainLite { name: string; aliases: string[] | null; roshi_name?: string | null; active?: boolean }
 
-export interface CultSettings { sampleWeekday: number; labs: string[]; equipment: string[]; readyDays: number }
+export interface CultSettings { sampleWeekday: number; labs: string[]; equipment: string[]; readyDays: number; bufferPct: number }
 
 export interface CultData {
   year: number
@@ -85,8 +85,10 @@ export interface PlanData {
   history: YieldHist[]
   /** this year's actuals per strain, for the averages */
   actuals: { strain: string; crop_year: number; plants: number; ff_lbs: number }[]
-  /** current reserves by strain (null when this user can't see reserves) */
+  /** that crop year's reserves by strain (null when this user can't see reserves) */
   reserves: Map<string, number> | null
+  /** lbs customers have asked for that year and are waiting on approval, by strain */
+  requested: Map<string, number>
 }
 
 export type CultTable = 'cult_plantings' | 'cult_harvests' | 'cult_tests' | 'cult_flower_picks' | 'cult_demand' | 'cult_plan'

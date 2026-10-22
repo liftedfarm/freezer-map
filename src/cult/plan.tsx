@@ -17,6 +17,7 @@ export function PlanTab({ d, c, api, flash, q }: { d: CultData; c: Ctx; api: Cul
   const [pEdit, setPEdit] = useState<Partial<PlanRow> | null>(null)
   const [oEdit, setOEdit] = useState<Partial<NurseryOrder> | null>(null)
   const [busy, setBusy] = useState(false)
+  const [bufferPct, setBufferPct] = useState(d.settings.bufferPct)
   const selD = useSel(), selP = useSel(), selO = useSel()
   const load = useCallback(() => api.loadPlan(year).then(x => { setP(x); setErr(null) }).catch(e => setErr(errText(e))), [api, year])
   useEffect(() => { setP(null); load() }, [load])
@@ -41,18 +42,21 @@ export function PlanTab({ d, c, api, flash, q }: { d: CultData; c: Ctx; api: Cul
 
   const ql = q.trim().toLowerCase()
   const planLpp = (r: Partial<PlanRow>) => r.est_lbs_per_plant ?? (r.strain ? (() => { const h = lppHist.get(lc(r.strain!)); return h ? h.lbs / h.plants : null })() : null)
-  const strains = [...new Set([...p.demand.map(x => x.strain), ...p.plan.map(x => x.strain)].map(s => s))]
+  const resOf = (s: string) => { let t = 0; for (const [k, v] of p.reserves ?? []) if (lc(k) === lc(s)) t += v; return t }
+  const reqOf = (s: string) => { let t = 0; for (const [k, v] of p.requested) if (lc(k) === lc(s)) t += v; return t }
+  const strains = [...new Set([...p.demand.map(x => x.strain), ...p.plan.map(x => x.strain), ...(p.reserves?.keys() ?? []), ...p.requested.keys()].map(s => s))]
     .filter((s, i, a) => a.findIndex(t => lc(t) === lc(s)) === i).filter(s => !ql || lc(s).includes(ql)).sort((a, b) => a.localeCompare(b))
   const rows = strains.map(s => {
     const dem = p.demand.find(x => lc(x.strain) === lc(s))
     const pl = p.plan.filter(x => lc(x.strain) === lc(s))
     const h = lppHist.get(lc(s))
     const lpp = pl.find(x => x.est_lbs_per_plant != null)?.est_lbs_per_plant ?? (h ? h.lbs / h.plants : null)
-    const need = dem?.lbs ?? 0
+    const reserved = resOf(s), buffer = reserved * bufferPct / 100, extra = dem?.lbs ?? 0, waiting = reqOf(s)
+    const need = reserved + buffer + extra
     const plantsNeeded = lpp && need ? Math.ceil((need / lpp) * 1.03) : null
     const planned = sum(pl.map(x => x.plants))
     const projected = sum(pl.map(x => x.plants * (planLpp(x) ?? 0)))
-    return { s, dem, pl, h, lpp, need, plantsNeeded, planned, projected, delta: projected - need, reserve: p.reserves?.get(s) ?? null }
+    return { s, dem, pl, h, lpp, need, plantsNeeded, planned, projected, delta: projected - need, reserved, buffer, extra, waiting }
   })
   const bySite = d.sites.map(s => {
     const pl = p.plan.filter(x => x.site === s.code)
@@ -62,15 +66,8 @@ export function PlanTab({ d, c, api, flash, q }: { d: CultData; c: Ctx; api: Cul
   })
 
   const bulk = (f: () => Promise<unknown>, m: string) => async () => { try { await f(); await saved(m) } catch (e) { flash(errText(e), true) } }
-  async function copyReserves() {
-    if (!p?.reserves) return
-    setBusy(true)
-    try {
-      const have = new Set(p.demand.map(x => lc(x.strain)))
-      const add = [...p.reserves.entries()].filter(([s, lbs]) => lbs > 0 && !have.has(lc(s))).map(([strain, lbs]) => ({ crop_year: year, strain, lbs, notes: `From ${d.currentYear} reserves` }))
-      await api.insertMany('cult_demand', add)
-      await saved(add.length ? `Added ${add.length} strains from current reserves` : 'Every reserve strain is already on the list')
-    } catch (e) { flash(errText(e), true) } finally { setBusy(false) }
+  async function saveBuffer(v: number) {
+    try { await api.setSetting('cult.buffer_pct', String(v)); setBufferPct(v); flash(`Buffer set to ${v}%`) } catch (e) { flash(errText(e), true) }
   }
   async function copyPlan(from: number) {
     setBusy(true)
@@ -88,10 +85,12 @@ export function PlanTab({ d, c, api, flash, q }: { d: CultData; c: Ctx; api: Cul
         <select value={year} onChange={e => setYear(Number(e.target.value))}>
           {[d.currentYear + 2, d.currentYear + 1, d.currentYear, d.currentYear - 1].map(y => <option key={y} value={y}>{y}</option>)}
         </select>
-        {p.reserves && <button className="ghost small" disabled={busy} onClick={copyReserves}>Add strains from current reserves</button>}
+        <span className="muted">Buffer on top of reserves</span>
+        <input className="bufin" inputMode="decimal" defaultValue={String(bufferPct)} key={bufferPct} onBlur={e => { const v = Number(e.target.value); if (isFinite(v) && v >= 0 && v !== bufferPct) saveBuffer(v) }} /><span className="muted">%</span>
         {!p.plan.length && <button className="ghost small" disabled={busy} onClick={() => copyPlan(year - 1)}>Start from the {year - 1} plan</button>}
       </div>
       <Kpis items={[
+        [n0(sum(rows.map(r => r.reserved))), `lbs reserved for ${year}`], [n0(sum(rows.map(r => r.waiting))), 'lbs requested, waiting'],
         [n0(sum(rows.map(r => r.need))), 'lbs needed'], [n0(sum(rows.map(r => r.projected))), 'lbs projected'],
         ...bySite.map(x => [`${n0(x.plants)}`, `${x.s.code} plants to order (with overage)`] as [string, string]),
         ...bySite.map(x => [`${n1(x.acres)}${x.avail ? ` / ${n1(x.avail)}` : ''}`, `${x.s.code} acres planned${x.avail ? ' / flower fields' : ''}`] as [string, string]),
@@ -100,23 +99,24 @@ export function PlanTab({ d, c, api, flash, q }: { d: CultData; c: Ctx; api: Cul
       <div className="row between"><h3 className="csec">By strain <span className="muted">what to grow for, and whether the plan covers it</span></h3>
         <div className="row"><SelButton sel={selD} /><button className="primary small" onClick={() => setDEdit({ crop_year: year, strain: '', lbs: 0 })}>+ Strain</button></div></div>
       <div className="cwrap"><table className="ctable">
-        <thead><tr><SelAll sel={selD} ids={rows.map(r => r.dem?.id).filter((x): x is number => x != null)} /><th>Strain</th><th className="num">Lbs needed</th><th className="num">Lbs / plant</th><th className="num">Plants needed</th><th className="num">Planned</th>
-          <th className="num">Projected lbs</th><th className="num">Short / over</th>{p.reserves && <th className="num hide-s">{d.currentYear} reserves</th>}<th /></tr></thead>
+        <thead><tr><SelAll sel={selD} ids={rows.map(r => r.dem?.id).filter((x): x is number => x != null)} /><th>Strain</th><th className="num">Reserved</th><th className="num hide-s">+ Buffer</th><th className="num hide-s">+ Extra</th><th className="num">Lbs needed</th><th className="num">Lbs / plant</th><th className="num">Plants needed</th><th className="num">Planned</th>
+          <th className="num">Projected lbs</th><th className="num">Short / over</th><th /></tr></thead>
         <tbody>{rows.map(r => (
           <tr key={r.s} className="tap" onClick={() => selD.on ? r.dem && selD.toggle(r.dem.id) : setDEdit(r.dem ?? { crop_year: year, strain: r.s, lbs: 0 })}>
-            <SelBox sel={selD} id={r.dem?.id} /><td>{r.s}</td><td className="num">{r.need ? n0(r.need) : ''}</td>
+            <SelBox sel={selD} id={r.dem?.id} /><td>{r.s}{r.waiting > 0 && <div className="muted small">{n0(r.waiting)} lbs requested, waiting</div>}</td>
+            <td className="num">{r.reserved ? n0(r.reserved) : ''}</td><td className="num hide-s">{r.buffer ? n0(r.buffer) : ''}</td><td className="num hide-s">{r.extra ? n0(r.extra) : ''}</td>
+            <td className="num"><b>{r.need ? n0(r.need) : ''}</b></td>
             <td className="num" title={r.h ? `${[...r.h.years].sort().join(' + ')}: ${n0(r.h.lbs)} lbs from ${n0(r.h.plants)} plants` : 'no history'}>{n2(r.lpp)}{!r.lpp && <span className="warn-t">?</span>}</td>
             <td className="num">{n0(r.plantsNeeded)}</td><td className="num">{n0(r.planned) || ''}</td><td className="num">{n0(r.projected) || ''}</td>
             <td className={`num ${r.delta < 0 ? 'neg' : 'pos'}`}>{r.need || r.projected ? (r.delta > 0 ? '+' : '') + n0(r.delta) : ''}</td>
-            {p.reserves && <td className="num hide-s">{n0(r.reserve)}</td>}
             <td onClick={e => e.stopPropagation()}>{r.plantsNeeded && r.planned < r.plantsNeeded / 1.03 &&
               <button className="ghost small" onClick={() => setPEdit({ crop_year: year, site: 'OHR', strain: r.s, plants: Math.ceil((r.plantsNeeded! / 1.03) - r.planned), overage_pct: 3, source: 'clone', trial: false, est_lbs_per_plant: null })}>Plan it</button>}</td>
           </tr>))}
-        {!rows.length && <tr><td colSpan={10} className="muted">Nothing yet. Add strains with the lbs you want to grow for, or start from current reserves.</td></tr>}</tbody>
-        {rows.length > 0 && <tfoot><tr className="tot">{selD.on && <td />}<td>Total</td><td className="num">{n0(sum(rows.map(r => r.need)))}</td><td /><td className="num">{n0(sum(rows.map(r => r.plantsNeeded)))}</td>
-          <td className="num">{n0(sum(rows.map(r => r.planned)))}</td><td className="num">{n0(sum(rows.map(r => r.projected)))}</td><td className="num">{n0(sum(rows.map(r => r.delta)))}</td>{p.reserves && <td className="hide-s" />}<td /></tr></tfoot>}
+        {!rows.length && <tr><td colSpan={13} className="muted">Nothing yet. {year} reserves show up here as customers ask for them and they're approved. Add extra strains with + Strain.</td></tr>}</tbody>
+        {rows.length > 0 && <tfoot><tr className="tot">{selD.on && <td />}<td>Total</td><td className="num">{n0(sum(rows.map(r => r.reserved)))}</td><td className="num hide-s">{n0(sum(rows.map(r => r.buffer)))}</td><td className="num hide-s">{n0(sum(rows.map(r => r.extra)))}</td><td className="num">{n0(sum(rows.map(r => r.need)))}</td><td /><td className="num">{n0(sum(rows.map(r => r.plantsNeeded)))}</td>
+          <td className="num">{n0(sum(rows.map(r => r.planned)))}</td><td className="num">{n0(sum(rows.map(r => r.projected)))}</td><td className="num">{n0(sum(rows.map(r => r.delta)))}</td><td /></tr></tfoot>}
       </table></div>
-      <p className="cnote">Lbs / plant: what's set on the plan, otherwise the average from the last two seasons (hover for the numbers). Plants needed includes 3% overage.</p>
+      <p className="cnote">Lbs needed = {year} reserves (approved) + {bufferPct}% buffer + any extra lbs you add per strain. {!p.reserves && 'You can\'t see reserves with your role, so only extra lbs count. '}Lbs / plant: what's set on the plan, otherwise the average from the last two seasons (hover for the numbers). Plants needed includes 3% overage.</p>
 
       <div className="row between"><h3 className="csec">Crop plan <span className="muted">{p.plan.length} rows</span></h3>
         <div className="row"><SelButton sel={selP} /><button className="primary small" onClick={() => setPEdit({ crop_year: year, site: 'OHR', strain: '', plants: 0, overage_pct: 3, source: 'clone', trial: false })}>+ Add to plan</button></div></div>
@@ -161,7 +161,7 @@ export function PlanTab({ d, c, api, flash, q }: { d: CultData; c: Ctx; api: Cul
       <SelBar sel={selO} noun="delivery" actions={[
         ...(['ordered', 'confirmed', 'received'] as const).map(st => ({ label: `Mark ${st}`, run: async (ids: number[]) => bulk(() => api.updateMany('cult_nursery_orders', ids, { status: st }), `${ids.length} marked ${st}`)() })),
         { label: 'Delete', danger: true, run: async ids => bulk(() => api.removeMany('cult_nursery_orders', ids), `Removed ${ids.length} deliveries`)() }]} />
-      {dEdit && <DemandSheet d={d} x={dEdit} hist={dEdit.strain ? lppHist.get(lc(dEdit.strain)) : undefined} reserve={dEdit.strain ? p.reserves?.get(dEdit.strain) ?? null : null}
+      {dEdit && <DemandSheet d={d} x={dEdit} hist={dEdit.strain ? lppHist.get(lc(dEdit.strain)) : undefined} reserve={dEdit.strain ? resOf(dEdit.strain) : null} year={year}
         api={api} flash={flash} onClose={() => setDEdit(null)} onSaved={saved} />}
       {pEdit && <PlanSheet d={d} c={c} x={pEdit} lpp={planLpp({ ...pEdit, est_lbs_per_plant: null })} orders={p.orders.filter(o => pEdit.id != null && o.plan_id === pEdit.id)}
         api={api} flash={flash} onClose={() => setPEdit(null)} onSaved={saved} onOrder={o => { setPEdit(null); setOEdit(o) }} />}
@@ -170,7 +170,7 @@ export function PlanTab({ d, c, api, flash, q }: { d: CultData; c: Ctx; api: Cul
   )
 }
 
-function DemandSheet({ d, x: x0, hist, reserve, api, flash, onClose, onSaved }: { d: CultData; x: Partial<Demand>; hist?: { plants: number; lbs: number; years: Set<number> }; reserve: number | null
+function DemandSheet({ d, x: x0, hist, reserve, year, api, flash, onClose, onSaved }: { d: CultData; x: Partial<Demand>; hist?: { plants: number; lbs: number; years: Set<number> }; reserve: number | null; year: number
   api: CultApi; flash: Flash; onClose: () => void; onSaved: (m: string) => Promise<void> }) {
   const [x, setX] = useState(x0)
   const [busy, setBusy] = useState(false)
@@ -179,7 +179,7 @@ function DemandSheet({ d, x: x0, hist, reserve, api, flash, onClose, onSaved }: 
     <Sheet title={x0.id ? x0.strain : x0.strain || 'Strain to grow'} sub={`${x0.crop_year} plan`} onClose={onClose}>
       <StrainList id="cult-strains" names={d.strains.map(s => s.name)} />
       <F label="Strain"><TextIn value={x.strain} list="cult-strains" autoFocus={!x0.strain} onChange={v => setX({ ...x, strain: v ?? '' })} /></F>
-      <F label="Fresh frozen lbs to grow for" hint={reserve ? `(current reserves ${n0(reserve)})` : ''}><NumIn value={x.lbs} onChange={v => setX({ ...x, lbs: v ?? 0 })} /></F>
+      <F label="Extra fresh frozen lbs to grow" hint={`(on top of ${n0(reserve ?? 0)} lbs of ${year} reserves and the buffer)`}><NumIn value={x.lbs} onChange={v => setX({ ...x, lbs: v ?? 0 })} /></F>
       <F label="Notes"><TextIn value={x.notes} onChange={v => setX({ ...x, notes: v })} /></F>
       {hist && <p className="cnote">History: {n0(hist.lbs)} lbs from {n0(hist.plants)} plants ({[...hist.years].sort().join(', ')}) = {n2(hist.lbs / hist.plants)} lbs/plant.</p>}
       <SaveBar busy={busy} disabled={!x.strain?.trim()} onCancel={onClose} onSave={() => run(() => api.save('cult_demand', x), 'Saved')}

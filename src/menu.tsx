@@ -15,7 +15,7 @@ export function OpenMenu({ backend, reserves }: { backend: Backend; reserves: bo
   const [pick, setPick] = useState<MenuRow | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
   const load = () => Promise.all([backend.openMenu(), backend.listRequests().catch(() => [] as ReserveRequest[])])
-    .then(([m, r]) => { setRows(m); setReqs(r); setErr(null) }).catch(e => setErr(String(e?.message ?? e)))
+    .then(([m, r]) => { const y = Math.max(...m.map(x => x.crop_year), 0); setRows(m); setReqs(r.filter(x => !x.crop_year || x.crop_year <= y)); setErr(null) }).catch(e => setErr(String(e?.message ?? e)))
   useEffect(() => { load() }, [])
 
   if (err) return <p className="muted">The menu isn't available right now.</p>

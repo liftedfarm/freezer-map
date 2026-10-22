@@ -3,7 +3,7 @@ import { readSheet } from 'read-excel-file/browser'
 import type { Backend } from './api'
 import { UsersTab } from './users'
 import { canSales } from './types'
-import type { Customer, ListName, Me, ListRow, Settings, Strain, Vehicle } from './types'
+import type { Customer, CustomerTerms, ListName, Me, ListRow, ReserveYears, Settings, Strain, Vehicle } from './types'
 
 // ---------- column definitions per list ----------
 
@@ -255,7 +255,8 @@ export function SettingsView({ backend, inventoryStrains, onChanged, flash, me }
         </button>
       ))}
 
-      {edit && <EditForm list={tab} row={edit} busy={busy} onClose={() => setEdit(null)} onSave={save} />}
+      {edit && <EditForm list={tab} row={edit} busy={busy} onClose={() => setEdit(null)} onSave={save}
+        extra={tab === 'customers' && edit.id != null && (edit as Customer).kind !== 'internal' && canSales(me.role) ? <TermsByYear backend={backend} c={edit as Customer} /> : null} />}
       {plan && <ImportPreview list={tab} plan={plan} busy={busy} onClose={() => setPlan(null)} onApply={applyPlan} />}
       </>}
     </div>
@@ -270,8 +271,8 @@ function summary(list: ListName, r: ListRow, inv: Map<string, number>) {
   return [s.show_on_menu === false ? 'Hidden from menu' : '', n ? `${n} pallet${n === 1 ? "" : "s"} in inventory` : 'none in inventory', s.aliases?.length ? `also: ${s.aliases.join(', ')}` : ''].filter(Boolean).join(' · ')
 }
 
-function EditForm({ list, row, busy, onClose, onSave }: {
-  list: ListName; row: Partial<ListRow>; busy: boolean; onClose: () => void; onSave: (r: Partial<ListRow>) => void
+function EditForm({ list, row, busy, onClose, onSave, extra }: {
+  list: ListName; row: Partial<ListRow>; busy: boolean; onClose: () => void; onSave: (r: Partial<ListRow>) => void; extra?: React.ReactNode
 }) {
   const [r, setR] = useState<Record<string, unknown>>(row as Record<string, unknown>)
   const set = (k: string, v: unknown) => setR(x => ({ ...x, [k]: v }))
@@ -317,6 +318,7 @@ function EditForm({ list, row, busy, onClose, onSave }: {
           </div>
         ))}
         {!colorOk && <div className="warn-t">Color must look like #A1B2C3</div>}
+        {extra}
         {locked && <p className="muted">{String(row.name)} is a Lifted site. You can edit its details but not rename or retire it.</p>}
         <div className="row between">
           {row.id && !locked
@@ -360,6 +362,65 @@ function ImportPreview({ list, plan, busy, onClose, onApply }: {
           <button className="primary" disabled={busy || n + u === 0} onClick={onApply}>{busy ? 'Importing…' : `Import ${n + u}`}</button>
         </div>
       </div>
+    </div>
+  )
+}
+
+// contract terms by crop year: the terms above carry over until a later year gets its own
+const TERM_KEYS: { k: keyof CustomerTerms; l: string }[] = [
+  { k: 'price_per_lb', l: 'Price $/lb' }, { k: 'contract_lbs', l: 'Contract lbs' }, { k: 'monthly_min_lbs', l: 'Monthly min lbs' },
+  { k: 'deposit_usd', l: 'Deposit $' }, { k: 'storage_fee', l: 'Storage fee' },
+]
+function TermsByYear({ backend, c }: { backend: Backend; c: Customer }) {
+  const [rows, setRows] = useState<CustomerTerms[] | null>(null)
+  const [ys, setYs] = useState<ReserveYears | null>(null)
+  const [edit, setEdit] = useState<CustomerTerms | null>(null)
+  const [msg, setMsg] = useState<string | null>(null)
+  const load = () => backend.listTerms().then(t => setRows(t.filter(x => x.customer_id === c.id))).catch(() => setRows([]))
+  useEffect(() => { load(); backend.reserveYears().then(setYs).catch(() => {}) }, [c.id])
+  if (!rows || !ys) return null
+  const cur = ys.current
+  const years = [...new Set([...ys.years.map(y => y.year).filter(y => y > cur), ...rows.map(r => r.crop_year)])].sort((a, b) => a - b)
+  if (!years.length) return null
+  const base = c as unknown as Record<string, number | null>
+  const inForce = (y: number) => rows.filter(r => r.crop_year <= y).sort((a, b) => b.crop_year - a.crop_year)[0]
+  const fmt = (t: Record<string, unknown>) => t.price_per_lb != null ? `$${Number(t.price_per_lb).toFixed(2)}/lb` : 'no price'
+  async function save(clear: boolean) {
+    if (!edit) return
+    try { await backend.setTerms(edit, clear); setEdit(null); setMsg(clear ? `${edit.crop_year} terms removed` : `${edit.crop_year} terms saved`); load() }
+    catch (e) { setMsg(String((e as Error).message ?? e)) }
+  }
+  return (
+    <div className="field">
+      <label>Terms by crop year</label>
+      <p className="muted">The terms above are this customer's {cur} terms and carry over to later crops until a year gets its own.</p>
+      {years.map(y => {
+        const own = rows.find(r => r.crop_year === y), f = inForce(y)
+        return (
+          <div key={y} className="row between">
+            <span><b>{y}</b> <span className="muted">{own ? fmt(own as unknown as Record<string, unknown>) : `same as ${f ? f.crop_year : cur} (${fmt((f ?? base) as unknown as Record<string, unknown>)})`}</span></span>
+            <button className="ghost small" onClick={() => setEdit(own ?? { customer_id: c.id!, crop_year: y,
+              price_per_lb: (f ?? base).price_per_lb ?? null, contract_lbs: (f ?? base).contract_lbs ?? null, monthly_min_lbs: (f ?? base).monthly_min_lbs ?? null,
+              deposit_usd: (f ?? base).deposit_usd ?? null, storage_fee: (f ?? base).storage_fee ?? null })}>{own ? 'Edit' : `Set ${y} terms`}</button>
+          </div>
+        )
+      })}
+      {edit && (
+        <div className="card-ish">
+          <b>{edit.crop_year} terms</b>
+          {TERM_KEYS.map(t => (
+            <div key={t.k} className="field"><label>{t.l}</label>
+              <input type="number" min="0" step="any" value={edit[t.k] == null ? '' : String(edit[t.k])}
+                onChange={e => setEdit({ ...edit, [t.k]: e.target.value === '' ? null : Number(e.target.value) })} /></div>
+          ))}
+          <div className="row">
+            <button className="primary small" onClick={() => save(false)}>Save {edit.crop_year} terms</button>
+            {rows.some(r => r.crop_year === edit.crop_year) && <button className="ghost small" onClick={() => save(true)}>Remove (carry over instead)</button>}
+            <button className="ghost small" onClick={() => setEdit(null)}>Cancel</button>
+          </div>
+        </div>
+      )}
+      {msg && <p className="muted">{msg}</p>}
     </div>
   )
 }

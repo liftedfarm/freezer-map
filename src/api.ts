@@ -1,5 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
-import type { UnmatchedTag, ShippedCheck, OrderInput, Terms, MenuNumbers, MenuRow, ReserveRequest, Balance, ImportResult, Order, RoshiRow, Reserve, LinkInfo, AppUser, Customer, Me, Role, Freezer, FreezerStatus, InvEvent, ListName, ListRow, Load, LoadItem, LoadStop, MixLine, Pallet, Settings, SingleInput, Slot, Snapshot, StopInput, Strain, Vehicle } from './types'
+import type { ReserveYears, CustomerTerms, UnmatchedTag, ShippedCheck, OrderInput, Terms, MenuNumbers, MenuRow, ReserveRequest, Balance, ImportResult, Order, RoshiRow, Reserve, LinkInfo, AppUser, Customer, Me, Role, Freezer, FreezerStatus, InvEvent, ListName, ListRow, Load, LoadItem, LoadStop, MixLine, Pallet, Settings, SingleInput, Slot, Snapshot, StopInput, Strain, Vehicle } from './types'
 
 export interface Backend {
   demo: boolean
@@ -22,7 +22,13 @@ export interface Backend {
   openMenu(): Promise<MenuRow[]>
   menuNumbers(): Promise<MenuNumbers[]>
   listRequests(): Promise<ReserveRequest[]>
-  requestReserve(strain: string, lbs: number, note: string): Promise<void>
+  requestReserve(strain: string, lbs: number, note: string, year?: number): Promise<void>
+  reserveYears(): Promise<ReserveYears>
+  reserveStrains(): Promise<string[]>
+  setReserveDeadline(year: number, date: string | null): Promise<void>
+  listTerms(): Promise<CustomerTerms[]>
+  setTerms(t: CustomerTerms, clear?: boolean): Promise<void>
+  myTermsFor(year: number): Promise<{ price_per_lb: number | null; contract_lbs: number | null } | null>
   cancelRequest(id: number): Promise<void>
   decideRequest(id: number, approve: boolean, note: string): Promise<void>
   listOrders(): Promise<Order[]>
@@ -35,7 +41,7 @@ export interface Backend {
   startViewAs(email: string): Promise<void>
   stopViewAs(): Promise<void>
   importRoshi(rows: RoshiRow[]): Promise<ImportResult>
-  setReserve(customerId: number, strain: string, lbs: number, note?: string): Promise<void>
+  setReserve(customerId: number, strain: string, lbs: number, note?: string, year?: number): Promise<void>
   load(): Promise<Snapshot>
   movePallet(palletId: number, toSlot: number | null, combine: boolean, note?: string): Promise<void>
   setFreezerStatus(freezerId: number, status: FreezerStatus, note?: string): Promise<void>
@@ -221,8 +227,31 @@ class SupaBackend implements Backend {
     const { data, error } = await this.sb.from('reserve_requests').select('*').order('requested_at', { ascending: false }).limit(500)
     fail(error); return (data ?? []) as ReserveRequest[]
   }
-  async requestReserve(strain: string, lbs: number, note: string) {
-    const { data, error } = await this.sb.rpc('request_reserve_change', { p_strain: strain, p_lbs: lbs, p_note: note || null })
+  async reserveYears(): Promise<ReserveYears> {
+    const { data, error } = await this.sb.rpc('reserve_years')
+    if (error) return { current: new Date().getFullYear(), years: [] }   // before 020 is run
+    return data as ReserveYears
+  }
+  async reserveStrains() { const { data, error } = await this.sb.rpc('reserve_strains'); fail(error); return (data ?? []) as string[] }
+  async setReserveDeadline(year: number, date: string | null) {
+    const { error } = await this.sb.rpc('set_reserve_deadline', { p_year: year, p_date: date }); fail(error)
+  }
+  async listTerms() {
+    const { data, error } = await this.sb.from('customer_terms').select('*').order('crop_year')
+    if (error) return []
+    return (data ?? []) as CustomerTerms[]
+  }
+  async setTerms(t: CustomerTerms, clear = false) {
+    const { error } = await this.sb.rpc('set_customer_terms', { p_customer: t.customer_id, p_year: t.crop_year, p_price: t.price_per_lb,
+      p_contract: t.contract_lbs, p_min: t.monthly_min_lbs, p_deposit: t.deposit_usd, p_storage: t.storage_fee, p_clear: clear })
+    fail(error)
+  }
+  async myTermsFor(year: number) {
+    const { data, error } = await this.sb.rpc('my_terms_for', { p_year: year }); if (error) return null
+    return data as { price_per_lb: number | null; contract_lbs: number | null } | null
+  }
+  async requestReserve(strain: string, lbs: number, note: string, year?: number) {
+    const { data, error } = await this.sb.rpc('request_reserve_change', { p_strain: strain, p_lbs: lbs, p_note: note || null, ...(year ? { p_year: year } : {}) })
     fail(error)
     this.notify('reserve', data as number)
   }
@@ -261,8 +290,8 @@ class SupaBackend implements Backend {
     fail(error)
     return data as ImportResult
   }
-  async setReserve(customerId: number, strain: string, lbs: number, note?: string) {
-    const { error } = await this.sb.rpc('set_reserve', { p_customer: customerId, p_strain: strain, p_lbs: lbs, p_note: note || null })
+  async setReserve(customerId: number, strain: string, lbs: number, note?: string, year?: number) {
+    const { error } = await this.sb.rpc('set_reserve', { p_customer: customerId, p_strain: strain, p_lbs: lbs, p_note: note || null, ...(year ? { p_year: year } : {}) })
     fail(error)
   }
   // Crew only gets customer names (no contacts or licenses)
@@ -762,6 +791,12 @@ class DemoBackend implements Backend {
   }
   subscribe() { return () => {} }
   async myModules() { return [] as string[] }
+  async reserveYears() { return { current: new Date().getFullYear(), years: [{ year: new Date().getFullYear(), deadline: null, open: true }] } }
+  async reserveStrains() { return [] as string[] }
+  async setReserveDeadline() {}
+  async listTerms() { return [] }
+  async setTerms() {}
+  async myTermsFor() { return null }
   async setUserModules(email: string, modules: string[]) { const u = this.users.find(x => x.email === email); if (u) u.modules = modules }
   client() { return null }
 }

@@ -50,6 +50,7 @@ export class CultApi {
       labs: (st.get('cult.labs') ?? '').split('|').map(s => s.trim()).filter(Boolean),
       equipment: (st.get('cult.equipment') ?? 'Swather|Merger|Combine|Stripper Header').split('|'),
       readyDays: Number(st.get('cult.ready_days') ?? 2),
+      bufferPct: Number(st.get('cult.buffer_pct') ?? 0),
     }
     const years = [...new Set([y, currentYear, ...yearsH.map(r => r.crop_year)])].sort((a, b) => b - a)
     const fix = <T extends object>(rows: T[], keys: (keyof T)[]) => rows.map(r => { const o = { ...r }; for (const k of keys) (o as Record<string, unknown>)[k as string] = num(o[k]); return o })
@@ -75,14 +76,19 @@ export class CultApi {
       all<{ strain: string; crop_year: number; kind: string; plants: number | null; ff_lbs: number | null }>((a, b) =>
         this.sb.from('cult_harvest_actuals').select('strain,crop_year,kind,plants,ff_lbs').eq('kind', 'ff').range(a, b)),
     ])
+    // that crop's reserves (Admin and Sales can read them; others get null)
     let reserves: Map<string, number> | null = null
-    const { data, error } = await this.sb.from('reserve_balances').select('strain,reserved')
+    const requested = new Map<string, number>()
+    const { data, error } = await this.sb.from('reserves').select('strain,lbs').eq('crop_year', year)
     if (!error && data) {
       reserves = new Map()
-      for (const r of data as { strain: string; reserved: number }[]) reserves.set(r.strain, (reserves.get(r.strain) ?? 0) + Number(r.reserved))
+      for (const r of data as { strain: string; lbs: number }[]) reserves.set(r.strain, (reserves.get(r.strain) ?? 0) + Number(r.lbs))
+      const q = await this.sb.from('reserve_requests').select('strain,requested_lbs,current_lbs').eq('crop_year', year).eq('status', 'pending')
+      for (const r of (q.data ?? []) as { strain: string; requested_lbs: number; current_lbs: number }[])
+        requested.set(r.strain, (requested.get(r.strain) ?? 0) + Number(r.requested_lbs) - Number(r.current_lbs))
     }
     return {
-      year, reserves,
+      year, reserves, requested,
       demand: demand.map(d => ({ ...d, lbs: Number(d.lbs) })),
       plan: plan.map(p => ({ ...p, overage_pct: Number(p.overage_pct), spacing_in: num(p.spacing_in), est_lbs_per_plant: num(p.est_lbs_per_plant) })),
       orders, receipts,
