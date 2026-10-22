@@ -202,8 +202,11 @@ end $$;
 revoke execute on function pheno_hunt_number(bigint, int, text), pheno_keeper(bigint, text), breed_audit() from public, anon;
 grant execute on function pheno_hunt_number(bigint, int, text), pheno_keeper(bigint, text) to authenticated;
 
--- 4 rooting chambers: trailers 1-4 (trailer 5 off unless something's in it)
-update nursery_rooms r set active = false where r.name = 'Trailer 5' and r.site = '1PN'
-   and not exists (select 1 from nursery_batches b where b.room_id = r.id and b.stage in ('rooting','ready'));
+-- only 4 trailers (the 4 rooting chambers): remove Trailer 5 (just turn it off if anything ever pointed at it)
+update nursery_rooms r set active = false where r.name = 'Trailer 5' and r.site = '1PN';
+delete from nursery_rooms r where r.name = 'Trailer 5' and r.site = '1PN'
+   and not exists (select 1 from nursery_batches b where b.room_id = r.id) and not exists (select 1 from nursery_mothers m where m.room_id = r.id)
+   and not exists (select 1 from pheno_hunts h where h.room_id = r.id) and not exists (select 1 from breed_runs x where x.room_id = r.id or x.donor_room_id = r.id)
+   and not exists (select 1 from phenos p where p.room_id = r.id) and not exists (select 1 from nursery_tests t where t.room_id = r.id);
 
 select 'ok' as breeding;

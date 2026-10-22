@@ -1,5 +1,5 @@
 -- Migration 031: Nursery generations (G1 > G2 > G3 field moms > G4 production clones), mother lots, rooting data,
--- locations (Webb greenhouse benches, Webb hoops 1-18, Zion hoops 1-6 rented, rooting trailers 1-5),
+-- locations (Webb greenhouse benches, Webb hoops 1-18, Zion hoops 1-6 rented, rooting trailers 1-4),
 -- the season Plan, and logs shared with Production (spray, feed, labor) plus nursery lab tests (HLVD).
 -- Run after 028 (029/030 are tag imports and can go in any order). Safe to re-run.
 set client_min_messages = warning;
@@ -23,7 +23,7 @@ update nursery_rooms set name = 'Trailer 1', kind = 'trailer', trays = 388 where
 update nursery_rooms set sort = 99 where name = 'Greenhouse' and sort < 99;
 update nursery_rooms set sort = 201 where name = 'Trailer 1' and sort < 100;
 insert into nursery_rooms (site, place, name, kind, sort) select '1PN', 'Webb', 'GH B' || n, 'bench', 100 + n from generate_series(1, 8) n on conflict do nothing;
-insert into nursery_rooms (site, place, name, kind, trays, sort) select '1PN', 'Webb', 'Trailer ' || n, 'trailer', 388, 200 + n from generate_series(1, 5) n on conflict do nothing;
+insert into nursery_rooms (site, place, name, kind, trays, sort) select '1PN', 'Webb', 'Trailer ' || n, 'trailer', 388, 200 + n from generate_series(1, 4) n on conflict do nothing;
 insert into nursery_rooms (site, place, name, kind, beds, capacity, sort)
 select '1PN', 'Webb', 'Hoop ' || h, 'hoop', jsonb_build_array(jsonb_build_object('bed','A','cap',a), jsonb_build_object('bed','B','cap',b), jsonb_build_object('bed','C','cap',c)), a + b + c, 300 + h
   from (values (1,126,178,132),(2,132,174,126),(3,105,136,101),(4,75,100,75),(5,150,200,150),(6,150,200,150),(7,152,202,150),(8,150,200,150),(9,150,200,150),
