@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react'
 import { Backend, CONFIG_MISSING, IS_PORTAL, makeBackend, portalUrl } from './api'
 import { FREEZER_STATUSES } from './types'
 import { MergeForm, MergeHere, MixedBuilder, NewPalletChooser, PickMixed, SingleForm, SplitForm, TagForm, WeightForm, lbs } from './forms'
@@ -16,8 +16,10 @@ import { canSales } from './types'
 import type { UnmatchedTag, ShippedCheck, Freezer, Me, FreezerStatus, InvEvent, Load, LoadItem, LoadStop, Pallet, Site, Slot, Snapshot } from './types'
 
 const backend: Backend = makeBackend()
+// Cultivation module: its own bundle, only loaded for users who have it switched on
+const CultView = lazy(() => import('./cult/CultView'))
 
-type View = 'map' | 'freezer' | 'transit' | 'load' | 'review' | 'activity' | 'settings' | 'reserves'
+type View = 'map' | 'freezer' | 'transit' | 'load' | 'review' | 'activity' | 'settings' | 'reserves' | 'cult'
 
 // ---------- helpers ----------
 
@@ -164,6 +166,10 @@ function describe(ix: Index, e: InvEvent, names?: Map<number, string>) {
     case 'reserve_approved': case 'reserve_declined': { const d = e.details as { customer?: string; strain?: string; from?: number; to?: number } | null
       return `Reserve request ${e.type === 'reserve_approved' ? 'approved' : 'declined'}: ${d?.customer} · ${d?.strain} ${lbs(Number(d?.from ?? 0))} → ${lbs(Number(d?.to ?? 0))}` }
     case 'user_removed': return `${e.note} removed from users`
+    case 'user_modules': { const d = e.details as { email?: string; modules?: string[] } | null
+      return `${d?.email} modules: ${(d?.modules ?? []).join(', ') || 'none'}` }
+    case 'harvested': { const d = e.details as { strain?: string; site?: string; field?: string; tag?: string | null } | null
+      return `${code} harvested: ${d?.strain} from ${d?.site} ${d?.field ?? ''} (${lbs(e.lbs)})${d?.tag ? '' : ', tag pending'}, needs a spot` }
     default: return `${e.type} ${code}`
   }
 }
@@ -227,6 +233,9 @@ export default function App() {
     backend.me().then(setMe).catch(e => setLoadError(String(e?.message ?? e)))
   }, [user])
   const staff = !!me && ['admin', 'sales', 'crew'].includes(me.role)
+  const [modules, setModules] = useState<string[]>([])
+  useEffect(() => { if (staff) backend.myModules().then(setModules).catch(() => setModules([])); else setModules([]) }, [staff, me?.email, me?.viewing_as])
+  const hasCult = modules.includes('cultivation')
   useEffect(() => {
     if (!staff) return
     reload().then(() => setLoadError(null)).catch(e => setLoadError(String(e?.message ?? e)))
@@ -501,6 +510,7 @@ export default function App() {
             ? m.set(p.strain.toLowerCase(), (m.get(p.strain.toLowerCase()) ?? 0) + Number(p.current_weight ?? 0)) : m, new Map<string, number>())} />}
         {view === 'transit' && <TransitView ctx={ctx} onOpen={id => { setLoadId(id); setView('load'); window.scrollTo(0, 0) }} onNew={() => setLoadForm({})} />}
         {view === 'load' && loadId != null && <LoadView ctx={ctx} loadId={loadId} onBack={() => setView('transit')} onEdit={() => setLoadForm({ load: (snap.loads ?? []).find(l => l.id === loadId) })} />}
+        {view === 'cult' && hasCult && <Suspense fallback={<p className="muted">Loading…</p>}><CultView backend={backend} flash={flash} onPalletsChanged={() => { reload() }} /></Suspense>}
         {view === 'settings' && <SettingsView backend={backend} flash={flash} me={me!} onChanged={() => { reload() }}
           inventoryStrains={snap.pallets.reduce((m, p) => p.strain ? m.set(p.strain, (m.get(p.strain) ?? 0) + 1) : m, new Map<string, number>())} />}
       </main>
@@ -530,6 +540,7 @@ export default function App() {
         <button className={view === 'map' || view === 'freezer' ? 'on' : ''} onClick={() => setView(view !== 'map' && view !== 'freezer' && freezerId != null ? 'freezer' : 'map')}>Map</button>
         <button className={view === 'transit' || view === 'load' ? 'on' : ''} onClick={() => setView('transit')}>Transit{openLoads.length > 0 && <span className="badge">{openLoads.length}</span>}</button>
         {canSales(me?.role) && <button className={view === 'reserves' ? 'on' : ''} onClick={() => setView('reserves')}>Sales{salesBadge > 0 && <span className="badge warn">{salesBadge}</span>}</button>}
+        {hasCult && <button className={view === 'cult' ? 'on' : ''} onClick={() => setView('cult')}>Grow</button>}
         <button className={view === 'activity' ? 'on' : ''} onClick={() => setView('activity')}>Activity</button>
         <button className={view === 'review' ? 'on' : ''} onClick={() => setView('review')}>Review{reviewCount > 0 && <span className="badge warn">{reviewCount}</span>}</button>
       </nav>

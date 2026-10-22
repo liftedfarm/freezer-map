@@ -1,0 +1,90 @@
+/* Cultivation module */
+.cult { max-width: 1200px; }
+.cult h2 .muted { font-weight: 400; }
+.cult .chead { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.cult .chead h2 { margin: 0; }
+.cult .ctabs { overflow-x: auto; flex-wrap: nowrap; margin-bottom: 10px; scrollbar-width: none; }
+.cult .ctabs button { white-space: nowrap; padding: 8px 12px; }
+.cult .dev { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 99px; background: #ede9fe; color: #5b21b6; vertical-align: 3px; }
+.cult select, .csheet select { padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); font-size: 15px; }
+.cult .toolbar select { padding: 7px 10px; font-size: 14px; }
+.cult .toolbar { margin-bottom: 8px; }
+.ctable { width: 100%; border-collapse: collapse; font-size: 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.ctable th, .ctable td { padding: 7px 8px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+.ctable th { font-size: 12px; color: var(--muted); font-weight: 600; background: var(--bg); position: sticky; top: 0; }
+.ctable .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ctable tr.tap { cursor: pointer; }
+.ctable tr.tap:hover td { background: color-mix(in srgb, var(--brand) 6%, var(--panel)); }
+.ctable tr.done td { color: var(--muted); }
+.ctable tr.cancelled td { color: var(--muted); text-decoration: line-through; }
+.ctable tr.wk td { background: var(--bg); font-weight: 700; font-size: 13px; }
+.ctable tr.tot td { font-weight: 700; background: var(--bg); }
+.ctable td.nowrap, .ctable th.nowrap { white-space: nowrap; }
+.ctable .small { font-size: 12px; }
+.show-s { display: none; }
+.cwrap { overflow-x: auto; margin: 6px 0 14px; border-radius: 12px; }
+.cwrap .ctable { min-width: 640px; }
+.cwrap.tight .ctable { min-width: 0; }
+.fpill { display: inline-block; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 6px; background: var(--empty); margin-right: 4px; white-space: nowrap; }
+.kpill { display: inline-block; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 99px; white-space: nowrap; }
+.kpill.k-ff { background: #dbeafe; color: #1e40af; }
+.kpill.k-dry { background: #fef3c7; color: #92400e; }
+.kpill.k-combine, .kpill.k-strip { background: #dcfce7; color: #166534; }
+.kpill.s-done { background: #dcfce7; color: #166534; }
+.kpill.s-planned { background: var(--empty); color: var(--muted); }
+.kpill.s-cancelled { background: #f3f4f6; color: #6b7280; }
+.tstat { font-size: 12px; font-weight: 700; white-space: nowrap; }
+.tstat.t-ORDER { color: #fff; background: var(--bad); padding: 1px 6px; border-radius: 6px; }
+.tstat.t-Window { color: var(--bad); }
+.tstat.t-Results { color: #166534; }
+.tstat.t-Submitted { color: #1e40af; }
+.tstat.t-Upcoming { color: var(--muted); }
+.tstat.t-Harvest { color: var(--muted); }
+.tstat.t-No { color: var(--muted); }
+.ckpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin: 6px 0 12px; }
+.ckpis div { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px; }
+.ckpis b { display: block; font-size: 19px; }
+.ckpis span { font-size: 12px; color: var(--muted); }
+.csheet .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }
+.csheet .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0 10px; }
+.csheet .field { margin: 8px 0; }
+.csheet textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); font: inherit; font-size: 15px; min-height: 60px; }
+.csheet h3 { margin: 16px 0 4px; font-size: 15px; }
+.calcbox { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; font-size: 14px; display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; }
+.calcbox span { color: var(--muted); }
+.calcbox b { font-variant-numeric: tabular-nums; }
+.csave { margin-top: 14px; position: sticky; bottom: -16px; background: var(--panel); padding: 10px 0; border-top: 1px solid var(--line); }
+.ghost.danger { border-color: var(--bad); color: var(--bad); }
+.binrow { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0; }
+.binrow span { font-size: 12px; background: var(--empty); border-radius: 6px; padding: 2px 6px; font-variant-numeric: tabular-nums; }
+.binrow span a { margin-left: 4px; text-decoration: none; color: var(--muted); }
+.palrow { display: grid; grid-template-columns: 90px 1fr auto; gap: 6px; align-items: center; margin: 4px 0; }
+.palrow input { padding: 9px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); font-size: 15px; min-width: 0; }
+.cweek { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+.cweek b { min-width: 170px; text-align: center; }
+.csec { margin: 18px 0 6px; font-size: 16px; }
+.csec .muted { font-weight: 400; }
+.heat0 { color: var(--muted); }
+.cnote { font-size: 13px; color: var(--muted); margin: 4px 0 10px; }
+.cult .neg { color: var(--bad); }
+.cult .pos { color: #166534; }
+@media (prefers-color-scheme: dark) {
+  .kpill.k-ff { background: #1e3a8a; color: #dbeafe; }
+  .kpill.k-dry { background: #78350f; color: #fef3c7; }
+  .kpill.k-combine, .kpill.k-strip, .kpill.s-done { background: #14532d; color: #dcfce7; }
+  .cult .dev { background: #4c1d95; color: #ede9fe; }
+  .cult .pos { color: #4ade80; }
+}
+@media (max-width: 600px) {
+  .csheet .grid3 { grid-template-columns: 1fr 1fr; }
+  .ctable { font-size: 13px; }
+  .ctable th, .ctable td { padding: 6px 5px; }
+  .ctable .hide-s { display: none; }
+  .show-s { display: block; margin-top: 2px; }
+  .cwrap.fit .ctable { min-width: 0; }
+}
+.csheet .grid2 > *, .csheet .grid3 > * { min-width: 0; }
+.csheet select, .csheet input { width: 100%; max-width: 100%; box-sizing: border-box; }
+.csheet .row input { width: auto; flex: 1; }
+.csheet input[type=checkbox] { width: auto; }
+@media (max-width: 600px) { .kpill.s-planned, .kpill.s-done, .kpill.s-cancelled { white-space: normal; } }

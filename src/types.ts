@@ -92,7 +92,11 @@ export interface Snapshot {
 
 export type Role = 'admin' | 'sales' | 'crew' | 'customer' | 'none'
 export interface Me { email: string; role: Role; display_name: string | null; customer_id: number | null; customer_name: string | null; viewing_as?: boolean; real_email?: string }
-export interface AppUser { email: string; role: Role; customer_id: number | null; display_name: string | null; added_by: string | null; created_at: string; last_seen: string | null }
+export interface AppUser { email: string; role: Role; customer_id: number | null; display_name: string | null; added_by: string | null; created_at: string; last_seen: string | null; modules?: string[] }
+/** modules an Admin can switch on per user while they're being built */
+export const MODULES: { key: string; label: string; what: string }[] = [
+  { key: 'cultivation', label: 'Cultivation', what: 'Plantings, harvest schedule, testing, harvests, planning (in development)' },
+]
 export const canSales = (r?: Role) => r === 'admin' || r === 'sales'
 export interface LinkInfo { kind: 'invite' | 'reset'; email: string; display_name: string | null; customer_name: string | null }
 export interface Reserve { id: number; customer_id: number; strain: string; product: string; lbs: number; notes: string | null; updated_by: string | null; updated_at: string }

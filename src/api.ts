@@ -75,6 +75,11 @@ export interface Backend {
   recentEvents(limit: number): Promise<InvEvent[]>
   search(q: string): Promise<Pallet[]>
   subscribe(onChange: () => void): () => void
+  /** extra modules switched on for this user (Settings > Users) */
+  myModules(): Promise<string[]>
+  setUserModules(email: string, modules: string[]): Promise<void>
+  /** the database client, for modules that talk to their own tables (null in the demo) */
+  client(): SupabaseClient | null
 }
 
 const URL_ = import.meta.env.VITE_SUPABASE_URL as string | undefined
@@ -440,6 +445,16 @@ class SupaBackend implements Backend {
     fail(error)
     return (data ?? []) as Pallet[]
   }
+  async myModules() {
+    const { data, error } = await this.sb.rpc('my_modules')
+    if (error) return []   // before 018 is run
+    return (data ?? []) as string[]
+  }
+  async setUserModules(email: string, modules: string[]) {
+    const { error } = await this.sb.rpc('set_user_modules', { p_email: email, p_modules: modules })
+    fail(error)
+  }
+  client() { return this.sb }
   subscribe(onChange: () => void) {
     let t: number | undefined
     const bump = () => { clearTimeout(t); t = window.setTimeout(onChange, 400) }
@@ -746,4 +761,7 @@ class DemoBackend implements Backend {
       [p.code, p.strain, p.package_tag, p.label].some(v => v?.toLowerCase().includes(s))).slice(0, 200)
   }
   subscribe() { return () => {} }
+  async myModules() { return [] as string[] }
+  async setUserModules(email: string, modules: string[]) { const u = this.users.find(x => x.email === email); if (u) u.modules = modules }
+  client() { return null }
 }

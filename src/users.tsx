@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { Backend } from './api'
+import { MODULES } from './types'
 import type { AppUser, Customer, Me, Role } from './types'
 
 const ROLES: { role: Role; label: string; what: string }[] = [
@@ -55,7 +56,7 @@ export function UsersTab({ backend, me, customers, flash }: {
               <button key={u.email} className="li setrow" onClick={() => setEdit({ ...u })}>
                 <div className="grow">
                   <div><b>{u.display_name || u.email}</b>{u.email === me.email && <span className="muted"> · you</span>}</div>
-                  <div className="muted">{[u.display_name ? u.email : '', u.customer_id ? cust.get(u.customer_id) : '', loginStatus(u), ago(u.last_seen)].filter(Boolean).join(' · ')}</div>
+                  <div className="muted">{[u.display_name ? u.email : '', u.customer_id ? cust.get(u.customer_id) : '', loginStatus(u), (u.modules ?? []).length ? `+ ${(u.modules ?? []).map(k => MODULES.find(m => m.key === k)?.label ?? k).join(', ')}` : '', ago(u.last_seen)].filter(Boolean).join(' · ')}</div>
                 </div>
               </button>
             ))}
@@ -67,7 +68,10 @@ export function UsersTab({ backend, me, customers, flash }: {
         onClose={() => setEdit(null)}
         onSave={async (u) => {
           try {
-            await backend.setUser(u.email!, u.role!, u.customer_id ?? null, u.display_name ?? ''); await load(); flash('Saved')
+            await backend.setUser(u.email!, u.role!, u.customer_id ?? null, u.display_name ?? '')
+            const mods = ['admin', 'sales', 'crew'].includes(u.role!) ? (u.modules ?? []) : []
+            if (mods.join() !== (edit.modules ?? []).join()) await backend.setUserModules(u.email!, mods)
+            await load(); flash('Saved')
             // new customer: keep the card open so the invite link can be made right away
             if (u.role === 'customer' && !edit.created_at) setEdit({ ...u, created_at: new Date().toISOString(), added_by: me.email }); else setEdit(null)
           }
@@ -118,6 +122,19 @@ function UserForm({ user, customers, isMe, onClose, onSave, onRemove, backend, c
               {external.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
             <p className="muted">They'll only ever see this customer's reserves, menu and orders. After saving, send them the invite link.</p>
+          </div>
+        )}
+        {['admin', 'sales', 'crew'].includes(u.role ?? '') && (
+          <div className="field"><label>Modules <span className="muted">(extra parts of the app, on for this person only)</span></label>
+            {MODULES.map(m => {
+              const on = (u.modules ?? []).includes(m.key)
+              return (
+                <label key={m.key} className="check">
+                  <input type="checkbox" checked={on} onChange={() => set({ modules: on ? (u.modules ?? []).filter(x => x !== m.key) : [...(u.modules ?? []), m.key] })} />
+                  <span><b>{m.label}</b> <span className="muted">{m.what}</span></span>
+                </label>
+              )
+            })}
           </div>
         )}
         {!isNew && !isMe && user.role !== 'admin' && (

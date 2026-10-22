@@ -1,0 +1,79 @@
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { Backend } from '../api'
+import { CultApi } from './api'
+import { makeCtx } from './calc'
+import type { CultData, Harvest } from './types'
+import { HarvestSheet, ScheduleTab } from './schedule'
+import { WeekTab } from './week'
+import { TestingTab } from './testing'
+import { AvailabilityTab } from './avail'
+import { PlantingsTab } from './plantings'
+import { YieldsTab } from './yields'
+import { PlanTab } from './plan'
+import { SetupTab } from './setup'
+import { errText } from './ui'
+import './cult.css'
+
+type Tab = 'schedule' | 'week' | 'testing' | 'avail' | 'plantings' | 'yields' | 'plan' | 'setup'
+const TABS: { t: Tab; l: string }[] = [
+  { t: 'schedule', l: 'Schedule' }, { t: 'week', l: 'Week' }, { t: 'testing', l: 'Testing' }, { t: 'avail', l: 'Availability' },
+  { t: 'plantings', l: 'Plantings' }, { t: 'yields', l: 'Yields' }, { t: 'plan', l: 'Plan' }, { t: 'setup', l: 'Setup' },
+]
+const remembered = <T extends string>(k: string, d: T): T => { try { return (localStorage.getItem(k) as T) || d } catch { return d } }
+const remember = (k: string, v: string) => { try { localStorage.setItem(k, v) } catch { /* private mode */ } }
+
+export default function CultView({ backend, flash, onPalletsChanged }: { backend: Backend; flash: (t: string, bad?: boolean) => void; onPalletsChanged: () => void }) {
+  const api = useMemo(() => { const sb = backend.client(); return sb ? new CultApi(sb) : null }, [backend])
+  const [tab, setTabS] = useState<Tab>(() => remembered('cult.tab', 'schedule'))
+  const [site, setSiteS] = useState<string | null>(() => remembered('cult.site', '') || null)
+  const [year, setYear] = useState<number | null>(null)
+  const [d, setD] = useState<CultData | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+  const [q, setQ] = useState('')
+  const [open, setOpen] = useState<Partial<Harvest> | null>(null)
+  const setTab = (t: Tab) => { setTabS(t); remember('cult.tab', t) }
+  const setSite = (s: string | null) => { setSiteS(s); remember('cult.site', s ?? '') }
+
+  const load = useCallback(async () => {
+    if (!api) return
+    try { setD(await api.load(year)); setErr(null) } catch (e) { setErr(errText(e)) }
+  }, [api, year])
+  useEffect(() => { load() }, [load])
+  const c = useMemo(() => d && makeCtx(d), [d])
+  const saved = useCallback(async (msg: string) => { await load(); flash(msg); if (/pallet/i.test(msg)) onPalletsChanged() }, [load, flash, onPalletsChanged])
+
+  if (!api) return <div className="list"><h2>Cultivation</h2><p className="muted">Cultivation needs the database (not available in the demo).</p></div>
+  if (err) return <div className="list"><h2>Cultivation</h2><div className="warnbox">Couldn't load cultivation data. If this is the first time, run 018_modules_sites_fields.sql and 019_cultivation.sql in Supabase. ({err})</div></div>
+  if (!d || !c) return <div className="list"><h2>Cultivation</h2><p className="muted">Loading…</p></div>
+
+  return (
+    <div className="cult">
+      <div className="chead">
+        <h2>Cultivation <span className="dev">in development</span></h2>
+        <div className="row">
+          {tab !== 'plan' && tab !== 'setup' && <select value={d.year} onChange={e => setYear(Number(e.target.value))}>
+            {[...new Set([...d.years, d.currentYear + 1])].sort((a, b) => b - a).map(y => <option key={y} value={y}>{y} season</option>)}
+          </select>}
+          {tab !== 'plan' && tab !== 'setup' && <div className="seg">
+            {[null, ...d.sites.map(s => s.code)].map(s => <button key={s ?? 'all'} className={site === s ? 'on' : ''} onClick={() => setSite(s)}>{s ?? 'Both'}</button>)}
+          </div>}
+        </div>
+      </div>
+      <div className="seg ctabs">{TABS.map(x => <button key={x.t} className={tab === x.t ? 'on' : ''} onClick={() => setTab(x.t)}>{x.l}</button>)}</div>
+      {['schedule', 'avail', 'plantings', 'yields', 'plan'].includes(tab) &&
+        <div className="row toolbar"><input className="search" type="search" placeholder="Search strain, field, notes" value={q} onChange={e => setQ(e.target.value)} /></div>}
+
+      {tab === 'schedule' && <ScheduleTab d={d} c={c} site={site} q={q} onOpen={setOpen} />}
+      {tab === 'week' && <WeekTab d={d} c={c} site={site} onOpen={setOpen} />}
+      {tab === 'testing' && <TestingTab d={d} c={c} site={site} api={api} flash={flash} onSaved={saved} />}
+      {tab === 'avail' && <AvailabilityTab d={d} c={c} site={site} q={q} api={api} flash={flash} onSaved={saved} />}
+      {tab === 'plantings' && <PlantingsTab d={d} c={c} site={site} q={q} api={api} flash={flash} onSaved={saved} />}
+      {tab === 'yields' && <YieldsTab d={d} c={c} site={site} q={q} api={api} />}
+      {tab === 'plan' && <PlanTab d={d} c={c} api={api} flash={flash} q={q} />}
+      {tab === 'setup' && <SetupTab d={d} api={api} flash={flash} onSaved={saved} />}
+
+      {open && <HarvestSheet key={open.id ?? 'new'} d={d} c={c} harvest={open} api={api} flash={flash} onClose={() => setOpen(null)}
+        onSaved={async m => { setOpen(null); await saved(m) }} />}
+    </div>
+  )
+}
