@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { Backend } from './api'
-import { MODULES } from './types'
+import { MODULES, userModules } from './types'
 import type { AppUser, Customer, Me, Role } from './types'
 
 const ROLES: { role: Role; label: string; what: string }[] = [
@@ -56,7 +56,7 @@ export function UsersTab({ backend, me, customers, flash }: {
               <button key={u.email} className="li setrow" onClick={() => setEdit({ ...u })}>
                 <div className="grow">
                   <div><b>{u.display_name || u.email}</b>{u.email === me.email && <span className="muted"> · you</span>}</div>
-                  <div className="muted">{[u.display_name ? u.email : '', u.customer_id ? cust.get(u.customer_id) : '', loginStatus(u), (u.modules ?? []).length ? `+ ${(u.modules ?? []).map(k => MODULES.find(m => m.key === k)?.label ?? k).join(', ')}` : '', ago(u.last_seen)].filter(Boolean).join(' · ')}</div>
+                  <div className="muted">{[u.display_name ? u.email : '', u.customer_id ? cust.get(u.customer_id) : '', loginStatus(u), ['admin', 'sales', 'crew'].includes(u.role) ? (userModules(u).length ? userModules(u).map(k => MODULES.find(m => m.key === k)?.label ?? k).join(' + ') : 'no modules') : '', ago(u.last_seen)].filter(Boolean).join(' · ')}</div>
                 </div>
               </button>
             ))}
@@ -71,6 +71,8 @@ export function UsersTab({ backend, me, customers, flash }: {
             await backend.setUser(u.email!, u.role!, u.customer_id ?? null, u.display_name ?? '')
             const mods = ['admin', 'sales', 'crew'].includes(u.role!) ? (u.modules ?? []) : []
             if (mods.join() !== (edit.modules ?? []).join()) await backend.setUserModules(u.email!, mods)
+            const hid = ['admin', 'sales', 'crew'].includes(u.role!) ? (u.hidden_modules ?? []) : []
+            if (hid.join() !== (edit.hidden_modules ?? []).join()) await backend.setUserHiddenModules(u.email!, hid)
             await load(); flash('Saved')
             // new customer: keep the card open so the invite link can be made right away
             if (u.role === 'customer' && !edit.created_at) setEdit({ ...u, created_at: new Date().toISOString(), added_by: me.email }); else setEdit(null)
@@ -125,16 +127,23 @@ function UserForm({ user, customers, isMe, onClose, onSave, onRemove, backend, c
           </div>
         )}
         {['admin', 'sales', 'crew'].includes(u.role ?? '') && (
-          <div className="field"><label>Modules <span className="muted">(extra parts of the app, on for this person only)</span></label>
+          <div className="field"><label>Modules <span className="muted">(what this person sees)</span></label>
             {MODULES.map(m => {
-              const on = (u.modules ?? []).includes(m.key)
+              const hidden = (u.hidden_modules ?? []).includes(m.key)
+              const on = (m.byDefault || (u.modules ?? []).includes(m.key)) && !hidden
+              const flip = () => {
+                const hid = (u.hidden_modules ?? []).filter(x => x !== m.key), mods = (u.modules ?? []).filter(x => x !== m.key)
+                if (m.byDefault) set({ hidden_modules: on ? [...hid, m.key] : hid })
+                else set({ modules: on ? mods : [...mods, m.key], hidden_modules: hid })
+              }
               return (
                 <label key={m.key} className="check">
-                  <input type="checkbox" checked={on} onChange={() => set({ modules: on ? (u.modules ?? []).filter(x => x !== m.key) : [...(u.modules ?? []), m.key] })} />
-                  <span><b>{m.label}</b> <span className="muted">{m.what}</span></span>
+                  <input type="checkbox" checked={on} onChange={flip} />
+                  <span><b>{m.label}</b> <span className="muted">{m.what}{m.byDefault ? ' (on for everyone unless hidden)' : ''}</span></span>
                 </label>
               )
             })}
+            {userModules(u).length === 0 && <p className="warn-t small">With nothing ticked they'll only see a "no modules" message{isMe ? ' (you can still reach Settings from the top bar)' : ''}.</p>}
           </div>
         )}
         {!isNew && !isMe && user.role !== 'admin' && (

@@ -11,6 +11,7 @@ import { PlantingsTab } from './plantings'
 import { YieldsTab } from './yields'
 import { PlanTab } from './plan'
 import { SetupTab } from './setup'
+import { CultDashboard } from './dash'
 import { errText } from './ui'
 import './cult.css'
 
@@ -19,7 +20,7 @@ import type { CultTab as Tab } from './tabs'
 const remembered = <T extends string>(k: string, d: T): T => { try { return (localStorage.getItem(k) as T) || d } catch { return d } }
 const remember = (k: string, v: string) => { try { localStorage.setItem(k, v) } catch { /* private mode */ } }
 
-export default function CultView({ backend, flash, onPalletsChanged, tab }: { backend: Backend; flash: (t: string, bad?: boolean) => void; onPalletsChanged: () => void; tab: Tab }) {
+export default function CultView({ backend, flash, onPalletsChanged, tab, go }: { backend: Backend; flash: (t: string, bad?: boolean) => void; onPalletsChanged: () => void; tab: Tab; go: (t: Tab) => void }) {
   const api = useMemo(() => { const sb = backend.client(); return sb ? new CultApi(sb) : null }, [backend])
   const [site, setSiteS] = useState<string | null>(() => remembered('cult.site', '') || null)
   const [year, setYear] = useState<number | null>(null)
@@ -44,7 +45,7 @@ export default function CultView({ backend, flash, onPalletsChanged, tab }: { ba
   return (
     <div className="cult">
       <div className="chead">
-        <h2>{CULT_TABS.find(x => x.t === tab)?.l ?? 'Production'} <span className="dev">in development</span></h2>
+        {tab === 'dashboard' ? <span className="dev">in development</span> : <h2>{CULT_TABS.find(x => x.t === tab)?.l ?? 'Production'} <span className="dev">in development</span></h2>}
         <div className="row">
           {tab !== 'plan' && tab !== 'setup' && <select value={d.year} onChange={e => setYear(Number(e.target.value))}>
             {[...new Set([...d.years, d.currentYear + 1])].sort((a, b) => b - a).map(y => <option key={y} value={y}>{y} season</option>)}
@@ -57,6 +58,7 @@ export default function CultView({ backend, flash, onPalletsChanged, tab }: { ba
       {['schedule', 'avail', 'plantings', 'yields', 'plan'].includes(tab) &&
         <div className="row toolbar"><input className="search" type="search" placeholder="Search strain, field, notes" value={q} onChange={e => setQ(e.target.value)} /></div>}
 
+      {tab === 'dashboard' && <CultDashboard d={d} c={c} site={site} onOpen={setOpen} go={go} />}
       {tab === 'schedule' && <ScheduleTab d={d} c={c} site={site} q={q} onOpen={setOpen} api={api} flash={flash} onSaved={saved} />}
       {tab === 'week' && <WeekTab d={d} c={c} site={site} onOpen={setOpen} />}
       {tab === 'testing' && <TestingTab d={d} c={c} site={site} api={api} flash={flash} onSaved={saved} />}

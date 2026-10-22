@@ -83,9 +83,10 @@ export interface Backend {
   recentEvents(limit: number): Promise<InvEvent[]>
   search(q: string): Promise<Pallet[]>
   subscribe(onChange: () => void): () => void
-  /** extra modules switched on for this user (Settings > Users) */
+  /** modules this user sees: 'distribution' unless an Admin hid it, plus extra modules switched on (Settings > Users) */
   myModules(): Promise<string[]>
   setUserModules(email: string, modules: string[]): Promise<void>
+  setUserHiddenModules(email: string, hidden: string[]): Promise<void>
   /** the database client, for modules that talk to their own tables (null in the demo) */
   client(): SupabaseClient | null
 }
@@ -489,9 +490,15 @@ class SupaBackend implements Backend {
     return (data ?? []) as Pallet[]
   }
   async myModules() {
-    const { data, error } = await this.sb.rpc('my_modules')
-    if (error) return []   // before 018 is run
-    return (data ?? []) as string[]
+    const [on, hid] = await Promise.all([this.sb.rpc('my_modules'), this.sb.rpc('my_hidden_modules')])
+    const extra = on.error ? [] : (on.data ?? []) as string[]          // before 018 is run
+    const hidden = hid.error ? [] : (hid.data ?? []) as string[]       // before 022 is run
+    return [...(hidden.includes('distribution') ? [] : ['distribution']), ...extra.filter(m => !hidden.includes(m))]
+  }
+  async setUserHiddenModules(email: string, hidden: string[]) {
+    const { error } = await this.sb.rpc('set_user_hidden_modules', { p_email: email, p_hidden: hidden })
+    if (error && /set_user_hidden_modules/.test(error.message)) throw new Error('Run 022_hide_modules.sql in Supabase first')
+    fail(error)
   }
   async setUserModules(email: string, modules: string[]) {
     const { error } = await this.sb.rpc('set_user_modules', { p_email: email, p_modules: modules })
@@ -804,7 +811,8 @@ class DemoBackend implements Backend {
       [p.code, p.strain, p.package_tag, p.label].some(v => v?.toLowerCase().includes(s))).slice(0, 200)
   }
   subscribe() { return () => {} }
-  async myModules() { return [] as string[] }
+  async myModules() { return ['distribution'] }
+  async setUserHiddenModules(email: string, hidden: string[]) { const u = this.users.find(x => x.email === email); if (u) u.hidden_modules = hidden }
   async reserveYears() { return { current: new Date().getFullYear(), years: [{ year: new Date().getFullYear(), deadline: null, open: true }] } }
   async reserveStrains() { return [] as string[] }
   async requestReserveBatch() { return 0 }

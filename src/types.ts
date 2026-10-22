@@ -92,11 +92,15 @@ export interface Snapshot {
 
 export type Role = 'admin' | 'sales' | 'crew' | 'customer' | 'none'
 export interface Me { email: string; role: Role; display_name: string | null; customer_id: number | null; customer_name: string | null; viewing_as?: boolean; real_email?: string }
-export interface AppUser { email: string; role: Role; customer_id: number | null; display_name: string | null; added_by: string | null; created_at: string; last_seen: string | null; modules?: string[] }
-/** modules an Admin can switch on per user while they're being built */
-export const MODULES: { key: string; label: string; what: string }[] = [
-  { key: 'cultivation', label: 'Cultivation', what: 'Plantings, harvest schedule, testing, harvests, planning (in development)' },
+export interface AppUser { email: string; role: Role; customer_id: number | null; display_name: string | null; added_by: string | null; created_at: string; last_seen: string | null; modules?: string[]; hidden_modules?: string[] }
+/** modules an Admin can switch on or hide per user. byDefault = on for every staff user unless hidden */
+export const MODULES: { key: string; label: string; what: string; byDefault?: boolean }[] = [
+  { key: 'distribution', label: 'Distribution', what: 'Freezer map, transit, sales, review', byDefault: true },
+  { key: 'cultivation', label: 'Production', what: 'Plantings, harvest schedule, testing, harvests, planning (in development)' },
 ]
+/** what a user ends up seeing, from their row (Settings > Users) */
+export const userModules = (u: Pick<AppUser, 'modules' | 'hidden_modules'>) =>
+  MODULES.filter(m => (m.byDefault || (u.modules ?? []).includes(m.key)) && !(u.hidden_modules ?? []).includes(m.key)).map(m => m.key)
 export const canSales = (r?: Role) => r === 'admin' || r === 'sales'
 export interface LinkInfo { kind: 'invite' | 'reset'; email: string; display_name: string | null; customer_name: string | null }
 export interface Reserve { id: number; customer_id: number; strain: string; product: string; lbs: number; notes: string | null; updated_by: string | null; updated_at: string; crop_year?: number }
