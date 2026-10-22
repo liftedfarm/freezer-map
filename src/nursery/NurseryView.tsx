@@ -1,3 +1,4 @@
+import { ScanButton } from '../scan'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Backend } from '../api'
 import type { Customer, PaymentTerm } from '../types'
@@ -57,7 +58,7 @@ export default function NurseryView({ backend, flash, tab, go, customers, isAdmi
   return (
     <div className="cult nursery">
       {tab !== 'dashboard' && tab !== 'invoices' && <div className="chead">{title}</div>}
-      {search && <div className="row toolbar"><input className="search" type="search" placeholder={t('Search strain, tag, farm, notes')} value={q} onChange={e => setQ(e.target.value)} /></div>}
+      {search && <div className="row toolbar"><input className="search" type="search" placeholder={t('Search strain, tag, farm, notes')} value={q} onChange={e => setQ(e.target.value)} /><ScanButton onScan={setQ} /></div>}
 
       {tab === 'dashboard' && <NurseryDashboard d={d} c={c} go={go} onOrder={setOrder} onBatch={setBatch} />}
       {tab === 'orders' && <OrdersTab d={d} c={c} q={q} onOpen={setOrder} onNew={() => setOrder({ nursery_site: d.sites[0]?.code, status: 'confirmed' })} />}

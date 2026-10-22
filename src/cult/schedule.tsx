@@ -1,3 +1,4 @@
+import { ScanButton } from '../scan'
 import { useMemo, useState } from 'react'
 import type { CultApi } from './api'
 import { KIND_LABEL, KIND_SHORT, addDays, calcHarvest, fieldName, fmtD, isBiomass, monday, n0, n1, n2, pct, sum, today } from './calc'
@@ -251,6 +252,7 @@ export function HarvestSheet({ d, c, harvest, api, flash, onClose, onSaved }: {
             <div key={i} className="palrow">
               <input inputMode="decimal" placeholder="lbs" value={r.lbs} onChange={e => setRows(rows.map((x, j) => j === i ? { ...x, lbs: e.target.value } : x))} />
               <input placeholder="METRC tag (blank = pending)" value={r.tag} onChange={e => setRows(rows.map((x, j) => j === i ? { ...x, tag: e.target.value.toUpperCase() } : x))} />
+              <ScanButton compact onScan={tag => setRows(rows.map((x, j) => j === i ? { ...x, tag } : x))} />
               <button className="ghost small" onClick={() => setRows(rows.filter((_, j) => j !== i))}>✕</button>
             </div>
           ))}

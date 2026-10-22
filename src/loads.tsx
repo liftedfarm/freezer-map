@@ -1,3 +1,4 @@
+import { ScanButton } from './scan'
 import { useMemo, useState } from 'react'
 import { lbs } from './forms'
 import type { Customer, Load, LoadItem, LoadStop, Pallet, StopInput, Vehicle } from './types'
@@ -347,7 +348,7 @@ function PalletPicker({ ctx, load, stops, initialStop, position, free, onClose }
           </div>
         </div>
         <div className="field"><label>Find pallets {!single && <span className="muted">({free} open position{free === 1 ? '' : 's'})</span>}</label>
-          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search strain, pallet # or tag" autoFocus />
+          <div className="row tagrow"><input className="grow-in" value={q} onChange={e => setQ(e.target.value)} placeholder="Search strain, pallet # or tag" autoFocus /><ScanButton onScan={setQ} /></div>
           {(results.length > 0 || picked.length > 0) && (
             <div className="picklist">
               {[...picked.map(id => ctx.pallet(id)!).filter(Boolean), ...results.filter(r => !picked.includes(r.id))].map(p => (

@@ -1,3 +1,4 @@
+import { ScanButton } from './scan'
 import { useEffect, useState } from 'react'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Backend } from './api'
@@ -58,8 +59,8 @@ export function TagRanges({ sb, license, kind, ranges, used, canEdit, flash, onC
       })}
       {canEdit && <div className="row wrap tagadd">
         <select value={purpose} onChange={e => setPurpose(e.target.value)}>{Object.entries(PURPOSE_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
-        <input value={first} onChange={e => setFirst(e.target.value.toUpperCase())} placeholder="First tag" />
-        <input value={last} onChange={e => setLast(e.target.value.toUpperCase())} placeholder="Last tag" />
+        <input value={first} onChange={e => setFirst(e.target.value.toUpperCase())} placeholder="First tag" /><ScanButton compact onScan={setFirst} />
+        <input value={last} onChange={e => setLast(e.target.value.toUpperCase())} placeholder="Last tag" /><ScanButton compact onScan={setLast} />
         <button className="ghost small" disabled={busy || !first.trim() || !last.trim()} onClick={() => go({ first: first.trim(), last: last.trim(), purpose }, 'Tag range added')}>+ Add range</button>
       </div>}
     </div>

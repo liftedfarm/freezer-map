@@ -1,3 +1,4 @@
+import { ScanButton } from './scan'
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Backend, CONFIG_MISSING, IS_PORTAL, makeBackend, portalUrl } from './api'
@@ -619,8 +620,9 @@ export default function App() {
             <button key={s} className={s === site ? 'on' : ''} onClick={() => { setSite(s); if (view === 'freezer') setView('map') }}>{s}</button>
           ))}
         </div>}
-        {cur === 'dist' && !noMods && <input className="search" type="search" placeholder="Pallet, strain or tag" value={query}
-          onChange={e => { setQuery(e.target.value); if (view === 'freezer' || view === 'activity' || view === 'dash' || view === 'mine') setView('map') }} />}
+        {cur === 'dist' && !noMods && <><input className="search" type="search" placeholder="Pallet, strain or tag" value={query}
+          onChange={e => { setQuery(e.target.value); if (view === 'freezer' || view === 'activity' || view === 'dash' || view === 'mine') setView('map') }} />
+          <ScanButton compact onScan={tag => { setQuery(tag); if (view === 'freezer' || view === 'activity' || view === 'dash' || view === 'mine') setView('map') }} /></>}
         {(cur !== 'dist' || noMods) && <span className="grow" />}
         <button className={`ghost small ${view === 'mine' ? 'on-btn' : ''}`} title={t('Your own settings')} onClick={() => (view === 'mine' ? go(lastView.current) : go('mine'))}>⚙<span className="hide-phone"> {t('My settings')}</span></button>
         <button className="ghost small" title={t('Signed in as {u}. Click to sign out.', { u: user ?? '' })} onClick={() => backend.signOut().then(() => setUser(null))}>{who(user)} ⏏</button>

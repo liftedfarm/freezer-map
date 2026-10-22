@@ -40,11 +40,11 @@ async function decodePhoto(file: File): Promise<string | null> {
   } finally { URL.revokeObjectURL(url) }
 }
 
-export function ScanButton({ onScan, disabled }: { onScan: (tag: string) => void; disabled?: boolean }) {
+export function ScanButton({ onScan, disabled, compact }: { onScan: (tag: string) => void; disabled?: boolean; compact?: boolean }) {
   const [open, setOpen] = useState(false)
   return (
     <>
-      <button type="button" className="ghost small scanbtn" disabled={disabled} onClick={() => setOpen(true)} title="Scan the tag's barcode">📷 Scan</button>
+      <button type="button" className="ghost small scanbtn" disabled={disabled} onClick={() => setOpen(true)} title="Scan the tag's barcode">{compact ? '📷' : '📷 Scan'}</button>
       {open && <Scanner onClose={() => setOpen(false)} onScan={t => { setOpen(false); onScan(t) }} />}
     </>
   )

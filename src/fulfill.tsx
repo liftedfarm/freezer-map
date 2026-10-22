@@ -1,3 +1,4 @@
+import { ScanButton } from './scan'
 import { useMemo, useState } from 'react'
 import type { Backend } from './api'
 import type { FLine, FOrder, FState, Load, Pallet, Vehicle } from './types'
@@ -172,7 +173,7 @@ function Pick({ line, need, cands, where, rank, busy, close, onWhole, onPart }: 
             <div className="sheet-h"><h2>Take part of {part.p.code}</h2><button className="ghost" onClick={() => setPart(null)}>✕</button></div>
             <p className="muted">{part.p.code} has {n0(w(part.p))} lbs. The part you take becomes its own package for this order (the rest stays as {part.p.code}). Split it for real when you pull it.</p>
             <div className="field"><label>Lbs for this order</label><input type="number" inputMode="decimal" value={part.lbs} onChange={e => setPart({ ...part, lbs: e.target.value })} /></div>
-            <div className="field"><label>New METRC tag <span className="muted">(blank = tag pending)</span></label><input value={part.tag} onChange={e => setPart({ ...part, tag: e.target.value })} placeholder="Scan or type later" /></div>
+            <div className="field"><label>New METRC tag <span className="muted">(blank = tag pending)</span></label><div className="row tagrow"><input className="grow-in" value={part.tag} onChange={e => setPart({ ...part, tag: e.target.value.toUpperCase().replace(/\s/g, '') })} placeholder="Scan or type later" /><ScanButton onScan={tag => setPart({ ...part, tag })} /></div></div>
             <div className="row between"><span /><div className="row">
               <button className="ghost" onClick={() => setPart(null)}>Cancel</button>
               <button className="primary" disabled={busy || !(Number(part.lbs) > 0 && Number(part.lbs) < w(part.p))} onClick={() => { onPart(part.p, Number(part.lbs), part.tag.trim() || null); setPart(null) }}>Assign {n0(Number(part.lbs) || 0)} lbs</button>

@@ -215,7 +215,7 @@ export function MixedBuilder({ title, target, candidates, initial, whereOf, busy
       <p className="muted">Going to {target}. Add each package: take the whole pallet (keeps its METRC tag) or enter lbs to split off (needs a new tag or pending).</p>
       <div className="field">
         <label>Add a package</label>
-        <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search strain, pallet # or tag" autoFocus />
+        <div className="row tagrow"><input className="grow-in" value={q} onChange={e => setQ(e.target.value)} placeholder="Search strain, pallet # or tag" autoFocus /><ScanButton onScan={setQ} /></div>
         {results.length > 0 && (
           <div className="picklist">
             {results.map(c => (
