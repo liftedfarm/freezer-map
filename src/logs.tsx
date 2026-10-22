@@ -16,7 +16,11 @@ export interface OpsLog {
   task: string | null; strain: string | null; batch_id: number | null; qty: number | null; crew: number | null; hours: number | null; notes: string | null; created_by: string | null
   method: string | null; acres: number | null; run_min: number | null; equipment: string | null; recipe: string | null
 }
-interface Product { id: number; name: string; manufacturer: string | null; rate: number | null; rate_unit: string | null; kind: string | null; active: boolean; price: number | null; price_unit: string | null; pesticide: boolean }
+interface Product {
+  id: number; module?: string; name: string; manufacturer: string | null; rate: number | null; rate_unit: string | null; kind: string | null; active: boolean; price: number | null; price_unit: string | null; pesticide: boolean
+  full_name?: string | null; form?: string | null; npk?: string | null; nutrients?: string | null; notes?: string | null; label_url?: string | null; epa_reg?: string | null
+  rei_hours?: number | null; phi_days?: number | null; active_ingredient?: string | null
+}
 interface Recipe { id: number; module: string; kind: 'spray' | 'feed'; name: string; method: string | null; stage: string | null; water_per_acre: number | null; products: ProductLine[]; active: boolean }
 
 const KIND_LABEL: Record<LogKind, string> = { spray: 'Spray', feed: 'Feed', labor: 'Labor' }
@@ -60,7 +64,7 @@ export function OpsLogs({ sb, module, sites, areas, strains, flash, batches, wag
   fieldAcres?: Record<string, number>; canEditRecipes?: boolean
 }) {
   const field = module === 'cultivation'
-  const [kind, setKind] = useState<LogKind | 'extra' | 'recipes'>('spray')
+  const [kind, setKind] = useState<LogKind | 'extra' | 'recipes' | 'products'>('spray')
   const [rows, setRows] = useState<OpsLog[] | null>(null)
   const [products, setProducts] = useState<Product[]>([])
   const [recipes, setRecipes] = useState<Recipe[]>([])
@@ -73,7 +77,7 @@ export function OpsLogs({ sb, module, sites, areas, strains, flash, batches, wag
   const load = useCallback(async () => {
     const [l, p, r] = await Promise.all([
       sb.from('ops_logs').select('*').eq('module', module).order('log_on', { ascending: false }).order('id', { ascending: false }).limit(5000),
-      sb.from('input_products').select('*').order('name'),
+      sb.from('input_products').select('*').eq('module', module).order('name').then(r => (r.error ? sb.from('input_products').select('*').order('name') : r)),
       sb.from('ops_recipes').select('*').eq('module', module).order('sort'),
     ])
     if (l.error) { setErr(/ops_logs/.test(l.error.message) ? t('Logs need 031 and 032 run in Supabase.') : l.error.message); return }
@@ -88,7 +92,7 @@ export function OpsLogs({ sb, module, sites, areas, strains, flash, batches, wag
   const years = [...new Set(rows.map(r => Number(r.log_on.slice(0, 4))))].sort((a, b) => b - a)
   const yr = year ?? years[0] ?? new Date().getFullYear()
   const ql = q.trim().toLowerCase()
-  const shown = kind === 'extra' || kind === 'recipes' ? [] : rows.filter(r => r.kind === kind && (!site || r.site === site) && Number(r.log_on.slice(0, 4)) === yr &&
+  const shown = kind === 'extra' || kind === 'recipes' || kind === 'products' ? [] : rows.filter(r => r.kind === kind && (!site || r.site === site) && Number(r.log_on.slice(0, 4)) === yr &&
     (!ql || `${r.area ?? ''} ${r.task ?? ''} ${r.strain ?? ''} ${r.method ?? ''} ${r.spray_type ?? ''} ${r.notes ?? ''} ${r.products.map(p => p.product).join(' ')}`.toLowerCase().includes(ql)))
   const cost = (r: OpsLog) => r.products.reduce((a, l) => a + (lineCost(l, pmap.get(l.product.toLowerCase())) ?? 0), 0)
   const hrs = (r: OpsLog) => (r.crew ?? 1) * (r.hours ?? 0)
@@ -129,18 +133,20 @@ export function OpsLogs({ sb, module, sites, areas, strains, flash, batches, wag
       <div className="row wrap">
         <div className="seg">{(['spray', 'feed', 'labor'] as LogKind[]).map(k => <button key={k} className={kind === k ? 'on' : ''} onClick={() => setKind(k)}>{t(KIND_LABEL[k])}</button>)}
           {extraTab && <button className={kind === 'extra' ? 'on' : ''} onClick={() => setKind('extra')}>{extraTab.l}</button>}
-          <button className={kind === 'recipes' ? 'on' : ''} onClick={() => setKind('recipes')}>{t('Recipes')}</button></div>
-        {kind !== 'extra' && kind !== 'recipes' && <>
+          <button className={kind === 'recipes' ? 'on' : ''} onClick={() => setKind('recipes')}>{t('Recipes')}</button>
+          <button className={kind === 'products' ? 'on' : ''} onClick={() => setKind('products')}>{t('Products')}</button></div>
+        {kind !== 'extra' && kind !== 'recipes' && kind !== 'products' && <>
           <select value={yr} onChange={e => setYear(Number(e.target.value))}>{(years.length ? years : [yr]).map(y => <option key={y} value={y}>{y}</option>)}</select>
           {sites.length > 1 && <div className="seg">{[null, ...sites].map(s => <button key={s ?? 'all'} className={site === s ? 'on' : ''} onClick={() => setSite(s)}>{s ?? t('All')}</button>)}</div>}
           <input className="search" type="search" placeholder={t('Field, product, task')} value={q} onChange={e => setQ(e.target.value)} />
         </>}
       </div>
-      {kind !== 'extra' && kind !== 'recipes' && <button className="primary" onClick={() => newLog(kind)}>{t('+ ' + KIND_LABEL[kind] + ' log')}</button>}
+      {kind !== 'extra' && kind !== 'recipes' && kind !== 'products' && <button className="primary" onClick={() => newLog(kind)}>{t('+ ' + KIND_LABEL[kind] + ' log')}</button>}
     </div>
     {kind === 'extra' && extraTab?.node}
+    {kind === 'products' && <Products sb={sb} module={module} products={products} logs={rows} canEdit={!!canEditRecipes} field={field} flash={flash} onChanged={load} />}
     {kind === 'recipes' && <Recipes sb={sb} module={module} recipes={recipes} products={products} canEdit={!!canEditRecipes} flash={flash} onChanged={load} />}
-    {kind !== 'extra' && kind !== 'recipes' && (!shown.length ? <p className="muted">{t('No ' + KIND_LABEL[kind].toLowerCase() + ' logs in {yr}.', { yr })}</p> : <>
+    {kind !== 'extra' && kind !== 'recipes' && kind !== 'products' && (!shown.length ? <p className="muted">{t('No ' + KIND_LABEL[kind].toLowerCase() + ' logs in {yr}.', { yr })}</p> : <>
       <div className="cwrap"><table className="ctable logtable">
         <thead>{head}</thead>
         <tbody>{[...months.entries()].map(([m, weeks]) => {
@@ -220,7 +226,7 @@ function LogSheet({ sb, x0, field, sites, areas, strains, products, recipes, bat
     try {
       const ps = (x.products ?? []).filter(l => l.product.trim())
       const fresh = ps.filter(l => !pmap.has(l.product.trim().toLowerCase()))
-      if (fresh.length) await sb.from('input_products').insert(fresh.map(l => ({ name: l.product.trim(), rate: l.rate, rate_unit: l.unit ? `${l.unit}/${l.basis ?? basis}` : null })))
+      if (fresh.length) await sb.from('input_products').insert(fresh.map(l => ({ module: x.module, name: l.product.trim(), rate: l.rate, rate_unit: l.unit ? `${l.unit}/${l.basis ?? basis}` : null })))
       const row = { module: x.module, kind: x.kind, site: x.site, area: x.area || null, log_on: x.log_on, start_at: x.start_at || null, end_at: x.end_at || null, sqft: x.sqft ?? null,
         spray_type: x.spray_type || null, water_gal: x.water_gal ?? null, applicator: x.applicator || null, products: ps, task: x.task || null, strain: x.strain || null,
         batch_id: x.batch_id ?? null, qty: x.qty ?? null, crew: x.crew ?? null, hours: x.hours ?? null, notes: [tag, x.notes].filter(Boolean).join(' ') || null,
@@ -333,6 +339,90 @@ function Recipes({ sb, module, recipes, products, canEdit, flash, onChanged }: {
       <button className="ghost small" onClick={() => setEd({ ...ed, products: [...(ed.products ?? []), { product: '', rate: null, unit: null, basis: module === 'nursery' ? 'gal' : 'acre', total: null, total_unit: null }] })}>{t('+ Product')}</button>
       <label className="check"><input type="checkbox" checked={ed.active !== false} onChange={e => setEd({ ...ed, active: e.target.checked })} /> <span>{t('In use')}</span></label>
       <div className="row between csave"><span />{<div className="row"><button className="ghost" onClick={() => setEd(null)}>{t('Cancel')}</button><button className="primary" disabled={busy || !ed.name?.trim()} onClick={save}>{t('Save')}</button></div>}</div>
+    </div></div>}
+  </>
+}
+
+/** Logs > Products: this module's own product list (rates, prices, pesticide details) and how much each was used */
+function Products({ sb, module, products, logs, canEdit, field, flash, onChanged }: {
+  sb: SupabaseClient; module: string; products: Product[]; logs: OpsLog[]; canEdit: boolean; field: boolean; flash: Flash; onChanged: () => void
+}) {
+  const [ed, setEd] = useState<Partial<Product> | null>(null)
+  const [q, setQ] = useState('')
+  const [f, setF] = useState<'all' | 'pest' | 'off'>('all')
+  const [busy, setBusy] = useState(false)
+  const yr = new Date().getFullYear()
+  const use = useMemo(() => {
+    const m = new Map<string, { n: number; last: string; total: number; unit: string; cost: number }>()
+    for (const r of logs) for (const l of r.products) {
+      if (!l.product) continue
+      const k = l.product.toLowerCase(), g = m.get(k) ?? { n: 0, last: '', total: 0, unit: l.total_unit ?? '', cost: 0 }
+      g.n++; if (r.log_on > g.last) g.last = r.log_on
+      if (r.log_on.startsWith(String(yr)) && l.total != null && unitKey(l.total_unit) === unitKey(g.unit)) g.total += l.total
+      m.set(k, g)
+    }
+    return m
+  }, [logs, yr])
+  const ql = q.trim().toLowerCase()
+  const shown = products.filter(p => (f === 'all' ? p.active : f === 'pest' ? p.pesticide && p.active : !p.active) &&
+    (!ql || `${p.name} ${p.manufacturer ?? ''} ${p.full_name ?? ''} ${p.form ?? p.kind ?? ''} ${p.npk ?? ''}`.toLowerCase().includes(ql)))
+    .sort((a, b) => (use.get(b.name.toLowerCase())?.n ?? 0) - (use.get(a.name.toLowerCase())?.n ?? 0) || a.name.localeCompare(b.name))
+  const per = field ? 'acre' : 'gal'
+  async function save() {
+    if (!ed?.name?.trim()) return
+    setBusy(true)
+    const row = { module, name: ed.name.trim(), manufacturer: ed.manufacturer || null, full_name: ed.full_name || null, form: ed.form || null, kind: ed.form || ed.kind || null,
+      npk: ed.npk || null, nutrients: ed.nutrients || null, rate: ed.rate ?? null, rate_unit: ed.rate_unit || null, price: ed.price ?? null, price_unit: ed.price_unit || null,
+      pesticide: !!ed.pesticide, epa_reg: ed.epa_reg || null, rei_hours: ed.rei_hours ?? null, phi_days: ed.phi_days ?? null, active_ingredient: ed.active_ingredient || null,
+      label_url: ed.label_url || null, notes: ed.notes || null, active: ed.active !== false }
+    const { error } = ed.id ? await sb.from('input_products').update(row).eq('id', ed.id) : await sb.from('input_products').insert(row)
+    setBusy(false)
+    if (error) flash(/duplicate|unique/.test(error.message) ? t('There\'s already a product with that name') : /module|column/.test(error.message) ? t('Run 037_products.sql in Supabase first') : error.message, true)
+    else { setEd(null); onChanged(); flash(t('Product saved')) }
+  }
+  const txt = (k: keyof Product, label: string, ph = '') => <div className="field"><label>{t(label)}</label>
+    <input value={(ed?.[k] as string | null) ?? ''} placeholder={ph} disabled={!canEdit} onChange={e => setEd({ ...ed, [k]: e.target.value })} /></div>
+  const nm = (k: keyof Product, label: string) => <div className="field"><label>{t(label)}</label>
+    <input type="number" value={(ed?.[k] as number | null) ?? ''} disabled={!canEdit} onChange={e => setEd({ ...ed, [k]: n(e.target.value) })} /></div>
+  return <>
+    <div className="row toolbar between">
+      <div className="row wrap">
+        <div className="seg">{([['all', t('In use')], ['pest', t('Pesticides')], ['off', t('Not used anymore')]] as const).map(([k, l]) => <button key={k} className={f === k ? 'on' : ''} onClick={() => setF(k)}>{l}</button>)}</div>
+        <input className="search" type="search" placeholder={t('Product, maker, N-P-K')} value={q} onChange={e => setQ(e.target.value)} />
+      </div>
+      {canEdit && <button className="primary" onClick={() => setEd({ active: true, rate_unit: field ? 'fl oz/acre' : 'mL/gal' })}>{t('+ Product')}</button>}
+    </div>
+    <p className="muted small-note">{t(field ? 'Production\'s products. Rates are per acre. Used = times on a log; the total is this year.' : 'The Nursery\'s products. Rates are per gallon of water. Used = times on a log; the total is this year.')}</p>
+    {!shown.length ? <p className="muted">{t('No products here.')}</p> : <div className="cwrap"><table className="ctable">
+      <thead><tr><th>{t('Product')}</th><th className="hide-s">{t('Maker')}</th><th className="hide-s">{t('Type')}</th><th>{t('N-P-K')}</th><th className="num">{t('Rate')}</th>
+        <th className="num hide-s">{t('Price')}</th><th className="num">{t('Used')}</th><th className="hide-s">{t('Last used')}</th><th className="num hide-s">{t('{y} total', { y: yr })}</th></tr></thead>
+      <tbody>{shown.map(p => { const u = use.get(p.name.toLowerCase()); return (
+        <tr key={p.id} className="tap" onClick={() => setEd(p)}>
+          <td><b>{p.name}</b>{p.pesticide && <span className="pill warnp"> {t('pesticide')}</span>}</td><td className="hide-s small">{p.manufacturer}</td>
+          <td className="hide-s small">{p.form ?? p.kind}</td><td className="small">{p.npk}</td>
+          <td className="num nowrap">{p.rate != null ? `${num(p.rate, 2)} ${p.rate_unit ?? ''}` : ''}</td>
+          <td className="num hide-s nowrap">{p.price != null ? `$${num(p.price, 2)}/${p.price_unit ?? ''}` : ''}</td>
+          <td className="num">{u?.n ?? ''}</td><td className="hide-s nowrap">{u?.last ? md(u.last) + (u.last.startsWith(String(yr)) ? '' : ` ${u.last.slice(0, 4)}`) : ''}</td>
+          <td className="num hide-s nowrap">{u?.total ? `${num(u.total, 1)} ${u.unit}` : ''}</td></tr>) })}</tbody>
+    </table></div>}
+    {ed && <div className="scrim" onClick={() => setEd(null)}><div className="sheet form csheet wide" onClick={e => e.stopPropagation()}>
+      <div className="sheet-h"><h2>{ed.id ? ed.name : t('New product')}</h2><button className="ghost" onClick={() => setEd(null)}>✕</button></div>
+      {!canEdit && <p className="muted">{t('Only an Admin of this module can change products.')}</p>}
+      <div className="grid3">
+        {txt('name', 'Name')}{txt('manufacturer', 'Maker')}{txt('full_name', 'Full product name')}
+        {txt('form', 'Type / form', 'Liquid, WDG…')}{txt('npk', 'N-P-K', '2-7-0.3')}{txt('nutrients', 'Other nutrients', 'Calcium 5%, Boron…')}
+        {nm('rate', 'Typical rate')}{txt('rate_unit', 'Rate unit', `mL/${per}`)}<div />
+        {nm('price', 'Price ($)')}{txt('price_unit', 'Price per', 'gal, lb, fl oz')}<div />
+      </div>
+      <label className="check"><input type="checkbox" disabled={!canEdit} checked={!!ed.pesticide} onChange={e => setEd({ ...ed, pesticide: e.target.checked })} /> <span><b>{t('Pesticide')}</b> <span className="muted">{t('flags it on logs for the use report')}</span></span></label>
+      {ed.pesticide && <div className="grid3">{txt('epa_reg', 'EPA reg #')}{txt('active_ingredient', 'Active ingredient')}<div />{nm('rei_hours', 'REI (hours)')}{nm('phi_days', 'PHI (days)')}</div>}
+      {txt('label_url', 'Label / SDS link', 'https://…')}
+      {ed.label_url && /^https?:/.test(ed.label_url) && <p className="small-note"><a href={ed.label_url} target="_blank" rel="noreferrer">{t('Open the label')} ↗</a></p>}
+      {txt('notes', 'Notes')}
+      {(() => { const u = ed.name ? use.get(ed.name.toLowerCase()) : undefined; return u ? <p className="muted small-note">{t('On {n} logs, last {date}.', { n: u.n, date: md(u.last) })}</p> : null })()}
+      <label className="check"><input type="checkbox" disabled={!canEdit} checked={ed.active !== false} onChange={e => setEd({ ...ed, active: e.target.checked })} /> <span>{t('In use')}</span></label>
+      <div className="row between csave"><span />{canEdit ? <div className="row"><button className="ghost" onClick={() => setEd(null)}>{t('Cancel')}</button><button className="primary" disabled={busy || !ed.name?.trim()} onClick={save}>{busy ? t('Saving…') : t('Save')}</button></div>
+        : <button className="ghost" onClick={() => setEd(null)}>{t('Close')}</button>}</div>
     </div></div>}
   </>
 }

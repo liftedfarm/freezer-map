@@ -98,7 +98,7 @@ export interface Me { email: string; role: Role; display_name: string | null; cu
 export interface AppUser { email: string; role: Role; customer_id: number | null; display_name: string | null; added_by: string | null; created_at: string; last_seen: string | null; modules?: string[]; owner?: boolean; access?: Partial<Record<ModKey, Level>>; prefs?: Prefs }
 /** the parts of the app. Levels per person: off (missing), user, admin. Owners are admin everywhere. */
 export type ModKey = 'distribution' | 'sales' | 'cultivation' | 'nursery' | 'admin'
-export type Level = 'user' | 'admin'
+export type Level = 'view' | 'user' | 'admin'
 export const MODULES: { key: ModKey; label: string; what: string; user: string; admin: string }[] = [
   { key: 'distribution', label: 'Distribution', what: 'Freezer map, transit, review', user: 'Move, split, load and ship pallets', admin: '+ Distribution settings (vehicles, strains)' },
   { key: 'sales', label: 'Sales', what: 'Reserves, open menu, orders, prices', user: 'See prices, reserves and orders; confirm orders', admin: '+ approve reserve requests, deadlines, customers and terms' },

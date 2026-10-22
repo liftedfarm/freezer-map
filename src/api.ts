@@ -12,7 +12,14 @@ export interface Overview {
   reserves: { reserved: number; shipped: number; pending: number; remaining: number; customers: number }
   next: { year: number; deadline: string | null; reserved: number; customers: number; requested: number }
   sales: { requests: number; to_confirm: number; orders_month: number; lbs_ordered_month: number; lbs_shipped_month: number; value_month: number }
-  people: { staff: number; staff_week: number; customers: number; customers_month: number; owners: number; by_module: Record<string, number> | null }
+  people: { staff: number; staff_week: number; customers: number; customers_month: number; owners: number; by_module: Record<string, number> | null; view_only?: number }
+  // 038 and later (missing before it's run)
+  open_orders?: number
+  nursery?: { moms: number; mom_lots: number; rooting_batches: number; rooting: number; ready: number; open_orders: number; owed: number; late: number; delivered_month: number
+    delivered_year: number; positive_tests: number; no_tag: number; runs: number; hunts: number; phenos: number; scored: number; keepers: number }
+  billing?: { open: number; open_amt: number; overdue: number; overdue_amt: number; billed_month: number; paid_month: number; not_sent: number; nursery_open_amt: number }
+  logs?: { month: number; by: Record<string, number>; pesticide_month: number; labor_hours_month: number; last: string | null }
+  licenses?: { active: number; expiring: { license: string; kind: string; expires: string }[] }
 }
 
 export interface Backend {

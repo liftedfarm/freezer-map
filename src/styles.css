@@ -662,3 +662,8 @@ a.btn { display: inline-flex; align-items: center; text-decoration: none; color:
 .pill.acct-pending { background: var(--empty); color: var(--muted); } .pill.acct-sent { background: #dcfce7; color: #166534; } .pill.acct-error { background: #fee2e2; color: #991b1b; }
 .shareddoc { max-width: 960px; margin: 0 auto; padding: 16px; display: grid; gap: 8px; }
 @media (max-width: 600px) { .invedit .grid2 { grid-template-columns: 1fr; } .docframe { height: 60vh; } }
+
+/* View-only access to a module: say so, and hide the buttons that add or save (the database blocks changes anyway) */
+.viewbanner { margin: 0 0 10px; padding: 8px 12px; border-radius: 10px; font-size: 14px; background: color-mix(in srgb, var(--brand) 10%, var(--panel)); border: 1px solid color-mix(in srgb, var(--brand) 25%, var(--line)); }
+.viewonly main button.primary, .viewonly .sheet button.primary, .viewonly .sheet .csave .ghost.danger, .viewonly main .docact, .viewonly .sheet .docact,
+.viewonly main .selbar, .viewonly .sheet button.danger, .viewonly .csave > button:first-child { display: none !important; }

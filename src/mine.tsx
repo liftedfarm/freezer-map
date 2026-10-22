@@ -60,7 +60,7 @@ export function MySettings({ backend, me, flash, onSaved }: { backend: Backend; 
 
       <section className="dcard"><h3>{t('What you can use')}</h3>
         {me.access.owner ? <p>{t('Owner: every module, as Admin.')}</p> : mine.length ? <div className="dlist">{mine.map(m => (
-          <div key={m.key} className="drow"><span><b>{t(m.label)}</b><span className="muted"> · {lv[m.key] === 'admin' && m.key !== 'admin' ? `${t(m.user)} ${t(m.admin)}` : t(m.user)}</span></span><span className="pill">{t(m.key === 'admin' ? 'On' : lv[m.key] === 'admin' ? 'Admin' : 'User')}</span></div>))}</div>
+          <div key={m.key} className="drow"><span><b>{t(m.label)}</b><span className="muted"> · {lv[m.key] === 'admin' && m.key !== 'admin' ? `${t(m.user)} ${t(m.admin)}` : t(m.user)}</span></span><span className="pill">{t(m.key === 'admin' ? 'On' : lv[m.key] === 'admin' ? 'Admin' : lv[m.key] === 'view' ? 'View only' : 'User')}</span></div>))}</div>
           : <p className="muted">{t('Nothing yet.')}</p>}
         <p className="muted">{t('Ask someone with the Admin module if you need more.')}</p>
       </section>

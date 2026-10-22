@@ -748,3 +748,36 @@ Everything in Admin	Todo en Admin
 One run = one trailer: one donor (pollen) variety and as many receiver varieties as you put in. Donors start and flower separately (Trailer 3).	Una polinización = un tráiler: una variedad donadora (polen) y todas las receptoras que se metan. Los donadores empiezan y florean aparte (Tráiler 3).
 No phenos here yet. Number them above (they get #1, #2… in order).	Todavía no hay fenos aquí. Numéralos arriba (quedan #1, #2… en orden).
 Select	Seleccionar
+Last used	Último uso
+Maker	Fabricante
+New product	Producto nuevo
+No products here.	No hay productos aquí.
+Not used anymore	Ya no se usan
+On {n} logs, last {date}.	En {n} registros, el último el {date}.
+Only an Admin of this module can change products.	Solo un Admin de este módulo puede cambiar productos.
+Open the label	Abrir la etiqueta
+Pesticides	Pesticidas
+Product saved	Producto guardado
+Product, maker, N-P-K	Producto, fabricante, N-P-K
+Run 037_products.sql in Supabase first	Primero corre 037_products.sql en Supabase
+There's already a product with that name	Ya hay un producto con ese nombre
+Used	Usado
+View only: you can look at everything in {m}, but not change anything.	Solo ver: puedes ver todo en {m}, pero no cambiar nada.
+flags it on logs for the use report	lo marca en los registros para el reporte de uso
+{y} total	total {y}
+Full product name	Nombre completo del producto
+Type / form	Tipo / forma
+N-P-K	N-P-K
+Other nutrients	Otros nutrientes
+Typical rate	Dosis normal
+Rate unit	Unidad de dosis
+Price ($)	Precio ($)
+Price per	Precio por
+EPA reg #	Registro EPA #
+Active ingredient	Ingrediente activo
+REI (hours)	REI (horas)
+PHI (days)	PHI (días)
+Label / SDS link	Liga de etiqueta / SDS
+View only	Solo ver
+Production's products. Rates are per acre. Used = times on a log; the total is this year.	Productos de Producción. Las dosis son por acre. Usado = veces en un registro; el total es de este año.
+The Nursery's products. Rates are per gallon of water. Used = times on a log; the total is this year.	Productos del Vivero. Las dosis son por galón de agua. Usado = veces en un registro; el total es de este año.

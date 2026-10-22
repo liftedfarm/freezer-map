@@ -15,7 +15,7 @@ const isStaffRole = (r?: string) => r === 'admin' || r === 'sales' || r === 'cre
 export function accessText(u: AppUser) {
   if (u.owner) return 'Owner: everything'
   const a = u.access ?? {}
-  const parts = MODULES.filter(m => a[m.key]).map(m => m.key === 'admin' ? 'Admin module' : `${m.label}${a[m.key] === 'admin' ? ' (Admin)' : ''}`)
+  const parts = MODULES.filter(m => a[m.key]).map(m => m.key === 'admin' ? 'Admin module' : `${m.label}${a[m.key] === 'admin' ? ' (Admin)' : a[m.key] === 'view' ? ' (view only)' : ''}`)
   return parts.length ? parts.join(' · ') : 'no modules'
 }
 
@@ -151,10 +151,10 @@ function UserForm({ user, customers, me, isMe, onClose, onSave, onRemove, backen
               <div className="accgrid">
                 {MODULES.map(m => {
                   const lv = a[m.key] ?? null
-                  const opts: [Level | null, string][] = m.key === 'admin' ? [[null, 'Off'], ['admin', 'On']] : [[null, 'Off'], ['user', 'User'], ['admin', 'Admin']]
+                  const opts: [Level | null, string][] = m.key === 'admin' ? [[null, 'Off'], ['admin', 'On']] : [[null, 'Off'], ['view', 'View'], ['user', 'User'], ['admin', 'Admin']]
                   return (
                     <div key={m.key} className="accrow">
-                      <div><b>{m.label}</b><div className="muted">{lv === 'admin' && m.key !== 'admin' ? m.admin : lv ? m.user : m.what}</div></div>
+                      <div><b>{m.label}</b><div className="muted">{lv === 'admin' && m.key !== 'admin' ? m.admin : lv === 'view' ? 'Sees everything a User sees, can\'t change anything' : lv ? m.user : m.what}</div></div>
                       <div className="seg">{opts.map(([v, l]) => <button key={l} className={lv === v ? 'on' : ''} disabled={locked || (isMe && m.key === 'admin' && !iOwn)} onClick={() => setLevel(m.key, v)}>{l}</button>)}</div>
                     </div>
                   )
