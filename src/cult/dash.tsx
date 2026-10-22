@@ -40,7 +40,13 @@ export function CultDashboard({ d, c, site, onOpen, go }: { d: CultData; c: Ctx;
   const late = act.filter(r => r.status !== 'ORDER NOW').length
 
   // harvests whose day has passed but nobody logged them
-  const unlogged = live.filter(h => h.status === 'planned' && h.planned_on && h.planned_on < now).sort((a, b) => a.planned_on!.localeCompare(b.planned_on!))
+  const unlogged = live.filter(h => h.status === 'planned' && !h.stage && h.planned_on && h.planned_on < now).sort((a, b) => a.planned_on!.localeCompare(b.planned_on!))
+
+  // today on the Harvest screen
+  const ids = new Set(live.map(h => h.id))
+  const todayP = d.pallets.filter(p => ids.has(p.harvest_id) && p.harvest_date === now && !p.parent_id && p.status !== 'archived')
+  const going = live.filter(h => h.stage === 'harvesting')
+  const todayH = live.filter(h => h.planned_on === now && h.status === 'planned' && !h.stage)
 
   // season: fresh frozen actual vs estimate
   const ff = live.filter(h => h.kind === 'ff')
@@ -59,6 +65,8 @@ export function CultDashboard({ d, c, site, onOpen, go }: { d: CultData; c: Ctx;
     <div className="dash">
       <DashHead title="Dashboard" sub={`Production · ${site ?? 'both sites'} · ${new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}`} />
       {thisYear && <Tiles>
+        <Tile label="Harvest today" value={`${n0(sum(todayP.map(p => p.og_weight)))} lbs`} sub={[todayP.length && `${todayP.length} pallets packed`, going.length && `${going.length} harvesting now`, todayH.length && `${todayH.length} not started`].filter(Boolean).join(' · ') || 'nothing scheduled today'}
+          tone={going.length ? 'info' : undefined} onClick={() => go('harvest')} />
         <Tile label="Next 7 days" value={`${n0(week.lbs)} lbs`} sub={week.n ? `${week.n} harvests · ${n0(week.plants)} plants` : 'no harvests scheduled'} onClick={() => go('week')} />
         <Tile label="Most people needed" value={peak.people || 0} sub={peak.people ? `${fmtD(peak.day, true)} · ${peak.deleaf} deleaf, ${peak.buck} buck` : 'no crews needed'} tone={peak.people ? 'info' : undefined} onClick={() => go('week')} />
         <Tile label="Dry ice to order this week" value={`${n0(sum(iceNow.map(x => x.k.dryIce)))} lbs`} sub={iceNow.length ? `by ${fmtD(iceNow[0].k.dryIceOrder!, true)} for ${iceNow.length} harvests` : 'nothing due'} tone={iceNow.length ? 'warn' : 'ok'} />

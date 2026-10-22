@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { CPallet, CSite, CField, CTest, CultData, CultSettings, CultTable, Demand, Harvest, LogRow, NurseryOrder, Pick, PlanData, PlanRow, Planting, Protocol, Receipt, StrainLite, YieldHist } from './types'
+import type { CPallet, CWeight, CSite, CField, CTest, CultData, CultSettings, CultTable, Demand, Harvest, LogRow, NurseryOrder, Pick, PlanData, PlanRow, Planting, Protocol, Receipt, StrainLite, YieldHist } from './types'
 
 function fail(error: { message: string } | null) {
   if (error) throw new Error(error.message)
@@ -43,7 +43,7 @@ export class CultApi {
     for (let i = 0; i < ids.length; i += 150) {
       const chunk = ids.slice(i, i + 150)
       pallets.push(...await all<CPallet>((a, b) => this.sb.from('pallets')
-        .select('id,code,harvest_id,og_weight,current_weight,status,package_tag,harvest_date,slot_id,parent_id').in('harvest_id', chunk).range(a, b)))
+        .select('*').in('harvest_id', chunk).range(a, b)))
     }
     const settings: CultSettings = {
       sampleWeekday: Number(st.get('cult.sample_weekday') ?? 4),
@@ -145,7 +145,7 @@ export class CultApi {
     fail(error)
   }
 
-  async addPallets(harvestId: number, rows: { lbs: number; tag: string; code?: string }[]): Promise<string[]> {
+  async addPallets(harvestId: number, rows: { lbs: number; tag: string; code?: string; boxes?: number | null; partial?: boolean }[]): Promise<string[]> {
     const { data, error } = await this.sb.rpc('cult_add_pallets', { p_harvest: harvestId, p_rows: rows })
     fail(error)
     return (data ?? []) as string[]
@@ -154,6 +154,28 @@ export class CultApi {
   async setSetting(key: string, value: string) {
     const { error } = await this.sb.rpc('set_cult_setting', { p_key: key, p_value: value })
     fail(error)
+  }
+
+  // ---------- Harvest screen (026) ----------
+  async weights(harvestId: number): Promise<CWeight[]> {
+    const { data, error } = await this.sb.from('cult_weights').select('*').eq('harvest_id', harvestId).order('id')
+    if (error && /cult_weights/.test(error.message)) throw new Error('Run 026_harvest_logging.sql in Supabase first')
+    fail(error); return ((data ?? []) as CWeight[]).map(w => ({ ...w, lbs: Number(w.lbs) }))
+  }
+  async logWeight(harvestId: number, kind: 'raw' | 'tote' | 'dry', lbs: number, tag?: string | null) {
+    const { error } = await this.sb.rpc('cult_log_weight', { p_harvest: harvestId, p_kind: kind, p_lbs: lbs, p_tag: tag ?? null, p_note: null }); fail(error)
+  }
+  async removeWeight(id: number) { const { error } = await this.sb.rpc('cult_remove_weight', { p_id: id }); fail(error) }
+  async startHarvest(harvestId: number) { const { error } = await this.sb.rpc('cult_start', { p_harvest: harvestId }); fail(error) }
+  async startDrying(harvestId: number, date: string | null, acres: number | null) {
+    const { error } = await this.sb.rpc('cult_start_drying', { p_harvest: harvestId, p_date: date, p_acres: acres }); fail(error)
+  }
+  async finish(harvestId: number, plants: number | null, notes: string | null) {
+    const { error } = await this.sb.rpc('cult_finish', { p_harvest: harvestId, p_plants: plants, p_notes: notes }); fail(error)
+  }
+  async removePallet(palletId: number) { const { error } = await this.sb.rpc('cult_remove_pallet', { p_pallet: palletId }); fail(error) }
+  async nextTags(site: string, n = 6): Promise<string[]> {
+    const { data, error } = await this.sb.rpc('next_tags', { p_site: site, p_purpose: 'harvest', p_count: n }); return error ? [] : (data ?? []) as string[]
   }
 
   async log(limit = 150): Promise<LogRow[]> {

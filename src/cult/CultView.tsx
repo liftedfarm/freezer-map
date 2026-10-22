@@ -17,6 +17,7 @@ import './cult.css'
 
 import { cultLabel } from './tabs'
 import { ActivityTab, ReviewTab } from './review'
+import { HarvestTab } from './harvest'
 import type { CultTab as Tab } from './tabs'
 const remembered = <T extends string>(k: string, d: T): T => { try { return (localStorage.getItem(k) as T) || d } catch { return d } }
 const remember = (k: string, v: string) => { try { localStorage.setItem(k, v) } catch { /* private mode */ } }
@@ -67,6 +68,7 @@ export default function CultView({ backend, flash, onPalletsChanged, tab, go }: 
       {tab === 'plantings' && <PlantingsTab d={d} c={c} site={site} q={q} api={api} flash={flash} onSaved={saved} />}
       {tab === 'yields' && <YieldsTab d={d} c={c} site={site} q={q} api={api} />}
       {tab === 'plan' && <PlanTab d={d} c={c} api={api} flash={flash} q={q} />}
+      {tab === 'harvest' && <HarvestTab d={d} c={c} site={site} api={api} flash={flash} onSaved={async m => { await load(); flash(m) }} />}
       {tab === 'review' && <ReviewTab d={d} c={c} site={site} onOpen={setOpen} go={go} />}
       {tab === 'activity' && <ActivityTab api={api} />}
       {tab === 'setup' && <SetupTab d={d} api={api} flash={flash} onSaved={saved} />}

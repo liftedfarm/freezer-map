@@ -437,7 +437,8 @@ export default function App() {
   const review = snap.pallets.filter(p => p.needs_review)
   const pendingTags = snap.pallets.filter(p => p.tag_pending)
   const shippedChecks = (snap.shipped ?? []).filter(c => ix.pallet.has(c.pallet_id))
-  const reviewCount = review.length + pendingTags.length + unplaced.length + shippedChecks.length
+  const fromHarvest = snap.pallets.filter(p => p.harvest_id != null && p.status === 'in_freezer' && p.slot_id != null && ix.freezer.get(ix.slot.get(p.slot_id)?.freezer_id ?? -1)?.kind === 'staging')
+  const reviewCount = fromHarvest.length + review.length + pendingTags.length + unplaced.length + shippedChecks.length
   const selected = palletId != null ? (ix.pallet.get(palletId) ?? pool.find(p => p.id === palletId) ?? extra.find(p => p.id === palletId) ?? null) : null
   const where = (p: Pallet): string => {
     const m = p.container_id ? ix.pallet.get(p.container_id) : undefined
@@ -612,7 +613,9 @@ export default function App() {
         {view === 'mine' && <MySettings backend={backend} me={me!} flash={flash} onSaved={(p, name) => setMe(m => m && ({ ...m, display_name: name ?? m.display_name, access: { ...m.access, prefs: p } }))} />}
         {noMods && view !== 'mine' && <div className="list"><h2>No modules</h2><p className="muted">No parts of the app are switched on for your account yet. Ask someone with the Admin module to give you access.</p></div>}
         {view === 'dash' && cur === 'dist' && (
-          <DistDashboard goMap={() => { setView('map'); setFreezerId(null) }} fulfill={forders ? { open: (forders ?? []).filter(o => o.state === 'open').length, ready: (forders ?? []).filter(o => o.state === 'ready').length, waiting: (forders ?? []).filter(o => o.state === 'needs_ok').length, go: () => go('fulfill') } : undefined}
+          <DistDashboard staged={{ n: fromHarvest.length, lbs: fromHarvest.reduce((a, p) => a + Number(p.current_weight ?? 0), 0), sites: [...new Set(fromHarvest.map(p => ix.freezer.get(ix.slot.get(p.slot_id!)!.freezer_id)!.site))],
+            go: () => { const st = fromHarvest[0] ? ix.freezer.get(ix.slot.get(fromHarvest[0].slot_id!)!.freezer_id) : undefined; if (st) { setSite(st.site); openFreezer(st.id) } } }}
+            goMap={() => { setView('map'); setFreezerId(null) }} fulfill={forders ? { open: (forders ?? []).filter(o => o.state === 'open').length, ready: (forders ?? []).filter(o => o.state === 'ready').length, waiting: (forders ?? []).filter(o => o.state === 'needs_ok').length, go: () => go('fulfill') } : undefined}
             ctx={{
               snap, site, backend,
               slotsOf: id => ix.slotsOf.get(id) ?? [], inSlot: id => ix.inSlot.get(id) ?? [], weight: p => weightOf(ix, p),
@@ -657,6 +660,12 @@ export default function App() {
           {(snap.unmatched ?? []).length > 0 && <>
             <UnmatchedTags tags={snap.unmatched!} busy={busy} run={(fn, ok) => act(fn, ok)}
               find={s => { setQuery(s); setView('map') }} />
+            <div style={{ height: 18 }} />
+          </>}
+          {fromHarvest.length > 0 && <>
+            <ListView title={`Harvest staging (${fromHarvest.length})`} empty=""
+              note="Pallets logged at harvest, waiting in Staging. Open Staging on the map and move them into freezers."
+              items={fromHarvest} ix={ix} where={where} onPallet={setPalletId} />
             <div style={{ height: 18 }} />
           </>}
           {unplaced.length > 0 && <>
@@ -1249,6 +1258,7 @@ function PalletSheet({ ix, p, others, busy, where, onClose, onGo, onMove, onRemo
         )}
         <dl>
           <dt>Location</dt><dd>{live && (p.slot_id != null || container) ? <a onClick={onGo}>{container ? whereIs(ix, container.slot_id) : whereIs(ix, p.slot_id)}</a> : live ? where(p) : statusText[p.status] ?? p.status}</dd>
+          {(p.boxes || p.partial) ? <><dt>Boxes</dt><dd>{p.boxes ?? ''}{p.partial ? <span className="muted"> · last pallet (partial)</span> : null}</dd></> : null}
           <dt>Weight</dt><dd>{lbs(weightOf(ix, p)) || 'unknown'}{!isMixed && p.og_weight && p.og_weight !== p.current_weight ? <span className="muted"> (started at {lbs(p.og_weight)})</span> : null}</dd>
           {!isMixed && <>
             <dt>METRC tag</dt><dd className="mono">{p.package_tag ?? (p.tag_pending ? 'pending' : 'none')}</dd>

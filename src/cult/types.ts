@@ -26,6 +26,7 @@ export interface Harvest {
   dry_conversion: number | null; acres: number | null; est_yield_per_acre: number | null; days_to_merge: number | null; days_to_harvest: number | null
   harvested_on: string | null; plants_harvested: number | null; raw_bins: number[]; raw_lbs: number | null; ff_lbs: number | null
   bucked_lbs: number | null; trim_lbs: number | null; mold_lbs: number | null; metrc_name: string | null; notes: string | null
+  stage?: 'harvesting' | 'drying' | null; dry_lbs?: number | null
   updated_by?: string | null; updated_at?: string
 }
 export interface CTest {
@@ -38,7 +39,10 @@ export interface Pick { id: number; crop_year: number; strain: string; dry_lbs: 
 export interface CPallet {
   id: number; code: string; harvest_id: number; og_weight: number | null; current_weight: number | null; status: string
   package_tag: string | null; harvest_date: string | null; slot_id: number | null; parent_id: number | null
+  boxes?: number | null; partial?: boolean; tag_pending?: boolean
 }
+/** one weight logged on the Harvest screen (026) */
+export interface CWeight { id: number; harvest_id: number; kind: 'raw' | 'tote' | 'dry'; lbs: number; tag: string | null; note: string | null; created_by: string | null; created_at: string }
 export interface Demand { id: number; crop_year: number; strain: string; lbs: number; notes: string | null }
 export interface PlanRow {
   id: number; crop_year: number; site: SiteCode; field_id: number | null; strain: string; nursery: string | null; source: Source

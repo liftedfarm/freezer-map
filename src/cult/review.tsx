@@ -10,7 +10,7 @@ import { describeLog } from './setup'
 export function ReviewTab({ d, c, site, onOpen, go }: { d: CultData; c: Ctx; site: string | null; onOpen: (h: Harvest) => void; go: (t: CultTab) => void }) {
   const now = today()
   const live = d.harvests.filter(h => h.status !== 'cancelled' && (!site || h.site === site))
-  const unlogged = live.filter(h => h.status === 'planned' && h.planned_on && h.planned_on < now).sort((a, b) => a.planned_on!.localeCompare(b.planned_on!))
+  const unlogged = live.filter(h => h.status === 'planned' && !h.stage && h.planned_on && h.planned_on < now).sort((a, b) => a.planned_on!.localeCompare(b.planned_on!))
   const noWeight = live.filter(h => h.status === 'done' && h.kind === 'ff' && calcHarvest(c, h).actFF == null)
   const tests = useMemo(() => { const t = testRows(d, c, now); return [...t.area, ...t.strain].filter(r => (!site || r.site === site) && r.status === 'Window passed - sample ASAP') }, [d, c, site, now])
   // a planting is on the schedule if a harvest points at it, or one is planned for the same field and strain, or the whole field is (biomass)
@@ -27,7 +27,7 @@ export function ReviewTab({ d, c, site, onOpen, go }: { d: CultData; c: Ctx; sit
     <div className="dash">
       {total === 0 && <p className="muted">Nothing needs attention in the {d.year} season{site ? ` at ${site}` : ''}.</p>}
       {unlogged.length > 0 && <section className="dcard"><div className="dcard-h"><h3>Harvests not logged <span className="side-badge">{unlogged.length}</span></h3></div>
-        <p className="muted">The day has passed but nobody logged the harvest. Tap one to log it (or cancel it).</p>
+        <p className="muted">The day has passed but nobody logged the harvest. Log it on the Harvest screen, or tap one to edit or cancel it.</p>
         <div className="dlist">{unlogged.map(h => hRow(h, fmtD(h.planned_on, true)))}</div></section>}
       {noWeight.length > 0 && <section className="dcard"><div className="dcard-h"><h3>Harvested, no weight <span className="side-badge">{noWeight.length}</span></h3></div>
         <p className="muted">Marked done with no fresh frozen lbs and no pallets. Add the weight so yields and the season total are right.</p>

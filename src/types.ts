@@ -38,6 +38,9 @@ export interface Pallet {
   needs_review: string | null
   notes: string | null
   parent_id?: number | null
+  harvest_id?: number | null
+  boxes?: number | null
+  partial?: boolean
   merged_into?: number | null
   tag_pending?: boolean
   kind?: 'package' | 'mixed'

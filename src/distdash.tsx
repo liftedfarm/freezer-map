@@ -191,7 +191,7 @@ export function Activity({ ctx }: { ctx: SideCtx }) {
 
 export interface SalesNums { orders: number; requests: number; isAdmin: boolean; go: () => void }
 
-export function DistDashboard({ ctx, sales, goMap, fulfill }: { ctx: SideCtx; sales?: SalesNums; goMap: () => void; fulfill?: { open: number; ready: number; waiting: number; go: () => void } }) {
+export function DistDashboard({ ctx, sales, goMap, fulfill, staged }: { ctx: SideCtx; sales?: SalesNums; goMap: () => void; fulfill?: { open: number; ready: number; waiting: number; go: () => void }; staged?: { n: number; lbs: number; sites: string[]; go: () => void } }) {
   const fz = ctx.snap.freezers.filter(f => f.kind !== 'staging')
   const per = useMemo(() => {
     const out = new Map<number, { slots: number; used: number; pallets: number; lbs: number; open: number }>()
@@ -216,6 +216,7 @@ export function DistDashboard({ ctx, sales, goMap, fulfill }: { ctx: SideCtx; sa
     <div className="dash">
       <DashHead title="Dashboard" sub={`Distribution · ${new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}`} />
       <Tiles>
+        {staged && <Tile label="Harvest staging" value={staged.n} sub={staged.n ? `${n0(staged.lbs)} lbs in ${staged.sites.join(' + ')} Staging to put away` : 'nothing waiting'} tone={staged.n ? 'warn' : 'ok'} onClick={staged.n ? staged.go : undefined} />}
         <Tile label="Needs a spot" value={rc.spot} sub={rc.spot ? 'pallets not in a freezer' : 'all pallets placed'} tone={rc.spot ? 'warn' : 'ok'} onClick={ctx.goReview} />
         <Tile label="METRC tags pending" value={rc.tags} sub={rc.issues ? `${rc.issues} import issues` : ''} tone={rc.tags ? 'warn' : 'ok'} onClick={ctx.goReview} />
         {fulfill && <Tile label="Orders to fulfill" value={fulfill.open + fulfill.ready} sub={[fulfill.open && `${fulfill.open} need pallets`, fulfill.ready && `${fulfill.ready} ready to load`, fulfill.waiting && `${fulfill.waiting} waiting on Sales`].filter(Boolean).join(' · ') || 'all caught up'}
