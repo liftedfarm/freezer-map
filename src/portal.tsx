@@ -200,7 +200,7 @@ export function ReserveTable({ backend, year, current, deadline, open, onMsg }: 
     } catch (e) { onMsg(String((e as Error).message ?? e)) } finally { setBusy(false) }
   }
   return (
-    <div className="card-ish">
+    <div className="card-ish wide">
       {!current && <p className="muted">{open ? `Ask for the strains and lbs you want from the ${year} crop. Requests are open until ${dlText}. Lifted reviews each one.` : `${year} requests closed${dlText ? ` on ${dlText}` : ''}.`}
         {price != null && <> Your {year} price: ${price.toFixed(2)}/lb.</>}</p>}
       {strains.length === 0 && !edit && <p className="muted">No {year} reserves yet.</p>}

@@ -268,7 +268,7 @@ input[type=color] { width: 44px; height: 40px; padding: 2px; border: 1px solid v
 
 /* transit */
 .bottom { grid-template-columns: repeat(4, 1fr); }
-.pill { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 99px; background: var(--empty); vertical-align: 3px; }
+.pill { display: inline-block; white-space: nowrap; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 99px; background: var(--empty); vertical-align: 3px; line-height: 1.35; }
 .pill.s-planning { background: #e0e7ff; color: #3730a3; }
 .pill.s-loading { background: #fef3c7; color: #92400e; }
 .pill.s-in_transit { background: #dbeafe; color: #1e40af; }
@@ -365,6 +365,7 @@ select { padding: 10px; border: 1px solid var(--line); border-radius: 10px; back
 .portal-soon { margin-top: 16px; }
 .portal-soon h3 { margin: 14px 0 2px; }
 .card-ish { border: 1px solid var(--line, #ddd); border-radius: 12px; padding: 12px; margin: 8px 0; max-width: 380px; }
+.card-ish.wide { max-width: 640px; overflow-x: auto; }
 .portal .top .grow { flex: 1; }
 .restable { width: 100%; border-collapse: collapse; margin: 6px 0 12px; font-size: 14px; }
 .restable th, .restable td { padding: 7px 8px; border-bottom: 1px solid var(--line, #e3e3e3); text-align: left; vertical-align: top; }
@@ -413,7 +414,7 @@ select { padding: 10px; border: 1px solid var(--line); border-radius: 10px; back
 .orderfields { gap: 10px; } .orderfields .field { flex: 1; }
 .ordered { padding: 0 2px 8px; }
 .pill.o-submitted { background: #dbeafe; color: #1e40af; }
-.pill.old { background: #e5e7eb; color: #374151; margin-left: 6px; font-size: 10px; }
+.pill.old { background: color-mix(in srgb, var(--muted) 18%, var(--panel)); color: var(--ink); margin-left: 6px; font-size: 10px; }
 .cropyear { margin: 18px 0 4px; }
 .yearseg { margin: 4px 0 8px; }
 .reserves .seg.tabs { display: flex; overflow-x: auto; flex-wrap: nowrap; }
