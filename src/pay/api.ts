@@ -40,10 +40,14 @@ export class PayApi {
   async employees() { const { data, error } = await this.sb.from('employees').select('*').order('name'); fail(error); return (data ?? []) as Employee[] }
   async rates() { const { data, error } = await this.sb.from('piece_rates').select('*').order('task').order('effective_from', { ascending: false }); fail(error); return ((data ?? []) as Rate[]).map(r => ({ ...r, rate: Number(r.rate), target: Number(r.target) })) }
   async periods() { const { data, error } = await this.sb.from('pay_periods').select('*').order('starts', { ascending: false }); fail(error); return (data ?? []) as Period[] }
-  async entries(from: string, to: string) {
+  entries(from: string, to: string) { return this.pay(q => q.gte('work_date', from).lte('work_date', to)) }
+  /** every day logged on one run */
+  runEntries(run: number) { return this.pay(q => q.eq('run_id', run)) }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private async pay(f: (q: any) => any) {
     const out: Entry[] = []
     for (let a = 0; ; a += 1000) {
-      const { data, error } = await this.sb.from('piece_pay').select('*').gte('work_date', from).lte('work_date', to).order('work_date').order('id').range(a, a + 999)
+      const { data, error } = await f(this.sb.from('piece_pay').select('*')).order('work_date').order('id').range(a, a + 999)
       fail(error)
       const rows = (data ?? []) as Record<string, unknown>[]
       out.push(...rows.map(r => ({ ...r, lbs: Number(r.lbs), mold: Number(r.mold), smalls: Number(r.smalls), trim: Number(r.trim), hours: Number(r.hours), rate: num(r.rate), target: num(r.target), lbs_hr: num(r.lbs_hr), pay: Number(r.pay) }) as unknown as Entry))

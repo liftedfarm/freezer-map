@@ -878,7 +878,17 @@ export const ES: Record<string, string> = {
  "Processing run": "Corrida",
  "Bucking": "Desmonando",
  "Trimming": "Trimeando",
- "Couldn't load the crew.": "No se pudo cargar el equipo."
+ "Couldn't load the crew.": "No se pudo cargar el equipo.",
+ "Log today": "Registrar hoy",
+ "Crew days are logged inside a run. Start a bucking or trimming run in Runs, then log each day there.": "Los días del equipo se registran dentro de una corrida. Empieza una corrida de desmonar o trimear en Runs y registra cada día ahí.",
+ "Days logged": "Días registrados",
+ "Piece rates": "Pago por libra",
+ "2 weeks": "2 semanas",
+ "6 weeks": "6 semanas",
+ "4 months": "4 meses",
+ "+ Same crew as {d} ({n})": "+ Mismo equipo que {d} ({n})",
+ "Days on this run": "Días en esta corrida",
+ "No days logged on this run yet.": "Todavía no hay días registrados en esta corrida."
 }
 export const EN: Record<string, string> = {
  "PLAN_HOWTO_1": "Works back from the clone orders for {year} (Production's nursery deliveries and outside orders): G4 cuttings = order + {buffer}% in trays of {tray}. G3 field moms = G4 cuttings ÷ {g3} cuts per mom. Each generation above is cut with +{buffer}% and G2 at {g2} cuts per mom.",

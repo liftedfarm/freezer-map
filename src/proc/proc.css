@@ -29,3 +29,5 @@
 .proc .fc { background: color-mix(in srgb, var(--brand) 8%, var(--panel)); border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px; margin: 8px 0; font-size: 14px; }
 .proc .fc .muted { font-size: 12px; }
 .proc .list.wide { max-width: 1180px; }
+.proc .drow .rowbtn { background: none; border: 0; padding: 0; margin: 0; text-align: left; color: inherit; font: inherit; cursor: pointer; min-width: 0; }
+.proc .backrun { margin-bottom: 12px; }

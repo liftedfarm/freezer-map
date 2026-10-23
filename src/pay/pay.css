@@ -17,3 +17,6 @@
 .crew .crew-add input { flex: 1 1 160px; }
 .payroll .pay-status { gap: 8px; align-items: center; margin: 6px 0 10px; }
 .payroll .paytable th { white-space: nowrap; }
+.crew-runs { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 12px; }
+.crew-runs button { text-align: left; }
+.crew .dlist .drow.on { box-shadow: inset 3px 0 0 var(--brand); }
