@@ -15,7 +15,7 @@ M = {  # photo slug -> app strain name(s) (matched on name or alias, any case)
  'super-lemon-haze':['Super Lemon Haze'],'superboof':['Super Boof'],'swamp-water':['Swampwater Fumez'],'tahoe-og':['Tahoe OG'],'tangieberto':['Tangieberto'],
  'the-hive':['The Hive'],'turbo-snax':['Turbo Snax'],'zowah':['Zowah'],
 }
-ASK = {'madd-fruit-2':'Madd Fruit? (gallery says Madd Fruit #2)','rainbow-guava-x-hive':'Gabilan Guava? (Hive x RG #12)','honeycomb-x-rainbow':'Honeycomb Rainbow already has the Hive x RG #1 photo','sour-diesel-x-cali-kush':'no strain by that name'}
+ASK = {'madd-fruit-2':'Madd Fruit (skipped for now)','rainbow-guava-x-hive':'Gabilan Guava: set in 044','honeycomb-x-rainbow':'unused: Honeycomb Rainbow keeps the Hive x RG #1 photo','sour-diesel-x-cali-kush':'Cali Mist: set in 044'}
 have = {f[:-4] for f in os.listdir('public/strains')}
 assert set(M) | set(ASK) == have, (have - set(M) - set(ASK), set(M) - have)
 q = lambda s: "'" + s.replace("'", "''") + "'"
