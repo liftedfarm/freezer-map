@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { Backend } from './api'
-import type { Customer, Invoice, NewOrderLine, PaymentTerm, Strain } from './types'
+import type { Customer, Invoice, NewOrderLine, PaymentTerm, Product, Strain } from './types'
+import { PRODUCT_LABEL, SALE_PRODUCTS } from './types'
 import type { SalesDoc } from './docs'
 import { dfmt, docTitle, downloadPdf, emailHref, makePdf, money, shareUrl, textHref } from './docs'
 import { Tile, Tiles } from './dash'
@@ -177,7 +178,7 @@ export function NewOrderSheet({ backend, customers, strains, flash, onClose, onD
   const [termsCode, setTermsCode] = useState<string>('')
   const [shipping, setShipping] = useState('')
   const [terms, setTerms] = useState<PaymentTerm[]>([])
-  const [lines, setLines] = useState<{ strain: string; lbs: string; price: string }[]>([{ strain: '', lbs: '', price: '' }])
+  const [lines, setLines] = useState<{ strain: string; lbs: string; price: string; product: Product }[]>([{ strain: '', lbs: '', price: '', product: 'fresh_frozen' }])
   const [busy, setBusy] = useState(false)
   useEffect(() => { backend.paymentTerms().then(setTerms).catch(() => {}) }, [])
   const c = customers.find(x => x.id === cust)
@@ -186,7 +187,7 @@ export function NewOrderSheet({ backend, customers, strains, flash, onClose, onD
   async function save() {
     setBusy(true)
     try {
-      const ls: NewOrderLine[] = lines.filter(l => l.strain.trim() && Number(l.lbs) > 0).map(l => ({ strain: l.strain.trim(), lbs: Number(l.lbs), price: l.price === '' ? null : Number(l.price) }))
+      const ls: NewOrderLine[] = lines.filter(l => l.strain.trim() && Number(l.lbs) > 0).map(l => ({ strain: l.strain.trim(), lbs: Number(l.lbs), price: l.price === '' ? null : Number(l.price), product: l.product }))
       const o = await backend.createOrder(cust!, ls, po, wanted || null, notes, termsCode || null)
       if (shipping !== '') {
         const { error } = await backend.client()?.rpc('set_order_shipping', { p_order: o.id, p_amount: Number(shipping) }) ?? { error: null }
@@ -205,17 +206,19 @@ export function NewOrderSheet({ backend, customers, strains, flash, onClose, onD
             {customers.filter(x => x.active && x.kind === 'external').sort((a, b) => a.name.localeCompare(b.name)).map(x => <option key={x.id} value={x.id}>{x.name}</option>)}
           </select>
           {c && <span className="muted">{c.price_per_lb != null ? `Contract price ${money(Number(c.price_per_lb))}/lb` : 'No contract price set'} · {terms.find(t => t.code === c.payment_terms)?.label ?? 'Due on receipt'}</span>}</div>
-        <div className="field"><label>Lines <span className="muted">(price blank = their contract price)</span></label>
+        <div className="field"><label>Lines <span className="muted">(price blank = their contract price for fresh frozen; dry products get priced on the invoice)</span></label>
           <datalist id="no-strains">{strains.filter(s => s.active).map(s => <option key={s.id} value={s.name} />)}</datalist>
           {lines.map((l, i) => (
             <div key={i} className="row noline">
+              <select value={l.product} aria-label="Product" onChange={e => setLines(ls => ls.map((x, j) => j === i ? { ...x, product: e.target.value as Product } : x))}>
+                {SALE_PRODUCTS.map(p => <option key={p} value={p}>{PRODUCT_LABEL[p]}</option>)}</select>
               <input list="no-strains" placeholder="Strain" value={l.strain} onChange={e => setLines(ls => ls.map((x, j) => j === i ? { ...x, strain: e.target.value } : x))} />
               <input type="number" placeholder="lbs" value={l.lbs} onChange={e => setLines(ls => ls.map((x, j) => j === i ? { ...x, lbs: e.target.value } : x))} />
               <input type="number" placeholder="$/lb" value={l.price} onChange={e => setLines(ls => ls.map((x, j) => j === i ? { ...x, price: e.target.value } : x))} />
               {lines.length > 1 && <button className="ghost small" onClick={() => setLines(ls => ls.filter((_, j) => j !== i))}>✕</button>}
             </div>
           ))}
-          <button className="ghost small" onClick={() => setLines(ls => [...ls, { strain: '', lbs: '', price: '' }])}>+ Line</button></div>
+          <button className="ghost small" onClick={() => setLines(ls => [...ls, { strain: '', lbs: '', price: '', product: ls[ls.length - 1]?.product ?? 'fresh_frozen' }])}>+ Line</button></div>
         <div className="grid2">
           <div className="field"><label>Customer PO</label><input value={po} onChange={e => setPo(e.target.value)} /></div>
           <div className="field"><label>Wanted by</label><input type="date" value={wanted} onChange={e => setWanted(e.target.value)} /></div>

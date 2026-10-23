@@ -703,3 +703,11 @@ button.plain { background: none; border: 0; padding: 0; text-align: left; color:
 .restable.rules select { max-width: 170px; }
 .restable.rules .nowrap { white-space: nowrap; }
 @media (max-width: 700px) { .acctlines { font-size: 13px; } .acctlines select { max-width: 130px; } .acctsheet .restable { display: block; overflow-x: auto; } }
+
+/* ---------- Processing (047) ---------- */
+.pill.prod { background: color-mix(in srgb, #b45309 16%, var(--panel)); color: #b45309; margin-left: 6px; font-size: 10px; }
+.prodtag { font-style: normal; font-size: 10px; font-weight: 700; margin-right: 4px; padding: 0 4px; border-radius: 4px; background: rgba(0,0,0,.18); }
+.map-sec { margin: 18px 0 6px; font-size: 15px; }
+.map-sec .muted { font-weight: 400; font-size: 12px; margin-left: 6px; }
+.noline > select { flex: 0 0 auto; max-width: 130px; padding: 8px 6px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); }
+.noline select + input { flex: 3; }

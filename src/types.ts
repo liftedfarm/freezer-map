@@ -6,7 +6,7 @@ export interface Freezer {
   id: number
   site: Site
   number: number
-  kind?: 'freezer' | 'staging'
+  kind?: 'freezer' | 'staging' | 'trailer'
   status: FreezerStatus
   notes?: string | null
 }
@@ -20,7 +20,13 @@ export interface Slot {
   front_rank: number
 }
 
-export type PalletStatus = 'in_freezer' | 'unslotted' | 'in_transit' | 'shipped' | 'depleted' | 'archived' | 'merged'
+export type PalletStatus = 'in_freezer' | 'unslotted' | 'in_transit' | 'at_processor' | 'shipped' | 'depleted' | 'archived' | 'merged'
+/** what's in the package: fresh frozen, or a dry flower stage (047) */
+export type Product = 'fresh_frozen' | 'wet' | 'unbucked' | 'bucked' | 'standards' | 'smalls' | 'trim'
+export const PRODUCT_LABEL: Record<Product, string> = { fresh_frozen: 'Fresh Frozen', wet: 'Wet (raw)', unbucked: 'Unbucked', bucked: 'Bucked', standards: 'Standards', smalls: 'Smalls', trim: 'Trim' }
+export const PRODUCT_SHORT: Record<Product, string> = { fresh_frozen: 'FF', wet: 'Wet', unbucked: 'Unbk', bucked: 'Bkd', standards: 'Std', smalls: 'Sml', trim: 'Trim' }
+/** products Sales can put on an order line */
+export const SALE_PRODUCTS: Product[] = ['fresh_frozen', 'standards', 'smalls', 'trim', 'bucked', 'unbucked']
 
 export interface Pallet {
   id: number
@@ -47,6 +53,12 @@ export interface Pallet {
   container_id?: number | null
   received_site?: string | null
   origin_site?: string | null        // farm it was grown at: OHR, GVR, or GVR+OHR
+  product?: Product
+  crop_year?: number | null
+  from_harvest?: number | null
+  processor_id?: number | null
+  sent_on?: string | null
+  run_id?: number | null
 }
 
 /** one line when building or adding to a mixed pallet: whole package (lbs null) or lbs split off with a new tag */
@@ -98,13 +110,14 @@ export type Role = 'admin' | 'sales' | 'crew' | 'customer' | 'none'
 export interface Me { email: string; role: Role; display_name: string | null; customer_id: number | null; customer_name: string | null; viewing_as?: boolean; real_email?: string; access: Access }
 export interface AppUser { email: string; role: Role; customer_id: number | null; display_name: string | null; added_by: string | null; created_at: string; last_seen: string | null; modules?: string[]; owner?: boolean; access?: Partial<Record<ModKey, Level>>; prefs?: Prefs }
 /** the parts of the app. Levels per person: off (missing), user, admin. Owners are admin everywhere. */
-export type ModKey = 'distribution' | 'sales' | 'cultivation' | 'nursery' | 'accounting' | 'admin'
+export type ModKey = 'distribution' | 'sales' | 'cultivation' | 'nursery' | 'processing' | 'accounting' | 'admin'
 export type Level = 'view' | 'user' | 'admin'
 export const MODULES: { key: ModKey; label: string; what: string; user: string; admin: string }[] = [
   { key: 'distribution', label: 'Distribution', what: 'Freezer map, transit, review', user: 'Move, split, load and ship pallets', admin: '+ Distribution settings (vehicles, strains)' },
   { key: 'sales', label: 'Sales', what: 'Reserves, open menu, orders, prices', user: 'See prices, reserves and orders; confirm orders', admin: '+ approve reserve requests, deadlines, customers and terms' },
   { key: 'cultivation', label: 'Production', what: 'Harvest schedule, testing, fields, planning', user: 'Schedule and log harvests, fields, plan', admin: '+ Production settings (sites, fields, labs, equipment)' },
   { key: 'nursery', label: 'Nursery', what: 'Mother plants, cuttings, clone orders and deliveries', user: 'Mothers, batches, deliver clones, invoices', admin: '+ Nursery settings (rooms, prices, tag ranges); void invoices' },
+  { key: 'processing', label: 'Processing', what: 'Dry flower: drying, bucking, trimming, trim requests', user: 'Wet packages, send out / receive, bucking and trimming runs, commit to orders', admin: '+ Processing settings (processors)' },
   { key: 'accounting', label: 'Accounting', what: 'Invoices to QuickBooks, payments, classes', user: 'Check and send invoices to QuickBooks', admin: '+ connect QuickBooks, products, classes and class rules' },
   { key: 'admin', label: 'Admin', what: 'Company dashboard, users and access, app settings', user: 'Everything in Admin', admin: 'Everything in Admin' },
 ]
@@ -127,7 +140,7 @@ export interface Balance { id: number; customer_id: number; strain: string; rese
 /** reserve crop years: the current crop plus future crops with a request deadline */
 export interface ReserveYears { current: number; years: { year: number; deadline: string | null; open: boolean }[] }
 export interface CustomerTerms { customer_id: number; crop_year: number; price_per_lb: number | null; contract_lbs: number | null; monthly_min_lbs: number | null; deposit_usd: number | null; storage_fee: number | null }
-export interface OrderLine { id: number; order_id: number; strain: string; lbs: number; price_per_lb: number | null; price_override: boolean; farm: string | null; package_tag: string | null; crop_year?: number }
+export interface OrderLine { id: number; order_id: number; strain: string; product?: Product; lbs: number; price_per_lb: number | null; price_override: boolean; farm: string | null; package_tag: string | null; crop_year?: number }
 export interface Order { id: number; so_number: string | null; customer_id: number; status: 'draft' | 'submitted' | 'pending' | 'shipped' | 'cancelled'; roshi_status: string | null; order_date: string | null; shipped_date: string | null; source: string; notes: string | null; po_number?: string | null; wanted_date?: string | null; placed_by?: string | null; confirmed_by?: string | null; order_lines: OrderLine[] }
 export interface RoshiRow { line_id: string; so_number: string; customer: string; sku_name: string; sku_id: string | null; status: string; gross: number | null; units: number | null; order_date: string | null; shipped_date: string | null; package_tag: string | null }
 export interface ImportResult { orders_added: number; orders_updated: number; lines_added: number; lines_updated: number; skipped: number; new_customers: string[]; new_strains: string[] }
@@ -142,7 +155,7 @@ export interface Terms { name: string; price_per_lb: number | null; contract_lbs
 /** Fulfillment (025): an order as Distribution sees it (no prices) */
 export type FState = 'open' | 'needs_ok' | 'ready' | 'loaded' | 'shipped' | 'cancelled' | 'submitted' | 'draft'
 export interface FPick { id: number; pallet_id: number; lbs: number; code: string; tag: string | null; tag_pending: boolean; slot_id: number | null }
-export interface FLine { id: number; strain: string; lbs: number; ordered_lbs: number | null; crop_year: number; cant_fill?: boolean; picks: FPick[] }
+export interface FLine { id: number; strain: string; product?: Product; lbs: number; ordered_lbs: number | null; crop_year: number; cant_fill?: boolean; picks: FPick[] }
 export interface FOrder {
   id: number; so: string | null; po: string | null; customer_id: number; customer: string; status: string; state: FState; source: string
   order_date: string | null; wanted_date: string | null; shipped_date: string | null; notes: string | null
@@ -158,7 +171,7 @@ export interface Invoice {
   notes: string | null; share_token: string; sent_at: string | null; acct_status: 'pending' | 'sent' | 'error' | 'skip'; acct_ref: string | null; acct_error: string | null
   paid_at: string | null; created_at: string; seller_license?: string | null; nursery_order_id?: number | null
 }
-export interface NewOrderLine { strain: string; lbs: number; price?: number | null; crop_year?: number }
+export interface NewOrderLine { strain: string; lbs: number; price?: number | null; crop_year?: number; product?: Product }
 
 // what someone needs to complete the METRC manifest for one stop (045 stop_manifest)
 export interface ManifestLicense { license: string; kind?: string; entity?: string; dba?: string | null; site?: string | null; premises?: string | null; address?: string | null; phone?: string | null; from_site?: string; name?: string; contact?: string | null }

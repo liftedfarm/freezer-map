@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { PRODUCT_LABEL } from './types'
 import type { Backend } from './api'
 import { readSheet } from 'read-excel-file/browser'
 import { parseCsv } from './settings'
@@ -78,7 +79,7 @@ export function ReservesView({ backend, customers, strains, onHand, flash, isAdm
   const onHandOf = (s: string) => onHand.get(s.toLowerCase()) ?? 0
   const pendingByStrain = useMemo(() => {
     const m = new Map<string, number>()
-    for (const o of orders) if (o.status === 'pending') for (const l of o.order_lines) m.set(l.strain.toLowerCase(), (m.get(l.strain.toLowerCase()) ?? 0) + Number(l.lbs))
+    for (const o of orders) if (o.status === 'pending') for (const l of o.order_lines) if ((l.product ?? 'fresh_frozen') === 'fresh_frozen') m.set(l.strain.toLowerCase(), (m.get(l.strain.toLowerCase()) ?? 0) + Number(l.lbs))
     return m
   }, [orders])
 
@@ -328,7 +329,7 @@ export function MyOrders({ backend, onChange }: { backend: Backend; onChange?: (
           {open === o.id && (
             <table className="restable">
               <thead><tr><th>Strain</th><th className="num">Lbs</th><th className="num">$/lb</th></tr></thead>
-              <tbody>{o.order_lines.map(l => <tr key={l.id}><td>{l.strain}{l.crop_year && l.crop_year < maxYear ? <span className="pill old">{l.crop_year} crop</span> : null}</td><td className="num">{n0(Number(l.lbs))}</td><td className="num">{l.price_per_lb != null ? `$${Number(l.price_per_lb).toFixed(2)}` : ''}</td></tr>)}</tbody>
+              <tbody>{o.order_lines.map(l => <tr key={l.id}><td>{l.strain}{l.product && l.product !== 'fresh_frozen' ? <span className="pill prod">{PRODUCT_LABEL[l.product]}</span> : null}{l.crop_year && l.crop_year < maxYear ? <span className="pill old">{l.crop_year} crop</span> : null}</td><td className="num">{n0(Number(l.lbs))}</td><td className="num">{l.price_per_lb != null ? `$${Number(l.price_per_lb).toFixed(2)}` : ''}</td></tr>)}</tbody>
               {(o.po_number || o.notes || o.status === 'submitted') && <tfoot><tr><td colSpan={3}>
                 {o.po_number && <div className="muted">PO {o.po_number}</div>}{o.notes && <div className="muted">"{o.notes}"</div>}
                 {o.status === 'submitted' && <button className="ghost small" onClick={async () => {
@@ -365,7 +366,7 @@ function OrderEditor({ backend, o, strains, flash, onChanged }: {
           const e = edits[l.id]
           return (
             <tr key={l.id}>
-              <td>{l.strain}<span className="muted">{l.farm ? ` · ${l.farm}` : ''}{l.crop_year ? ` · ${l.crop_year}` : ''}</span>{l.price_override && <div className="muted small">price overridden</div>}</td>
+              <td>{l.strain}{l.product && l.product !== 'fresh_frozen' ? <span className="pill prod">{PRODUCT_LABEL[l.product]}</span> : null}<span className="muted">{l.farm ? ` · ${l.farm}` : ''}{l.crop_year ? ` · ${l.crop_year}` : ''}</span>{l.price_override && <div className="muted small">price overridden</div>}</td>
               {e ? <>
                 <td className="num"><input className="qty" type="number" step="10" min="0" value={e.lbs} onChange={x => setEdits({ ...edits, [l.id]: { ...e, lbs: x.target.value } })} /></td>
                 <td className="num"><input className="qty" type="number" step="0.5" min="0" value={e.price} onChange={x => setEdits({ ...edits, [l.id]: { ...e, price: x.target.value } })} /></td>

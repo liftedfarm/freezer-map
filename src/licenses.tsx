@@ -18,7 +18,7 @@ export const KIND_LABEL: Record<string, string> = {
   cultivation: 'Cultivation', processor: 'Processor', nursery: 'Nursery', distributor: 'Distributor (Type 11)', transport: 'Distributor, transport only (Type 13)',
   manufacturer: 'Manufacturer', retail: 'Retail', other: 'Other',
 }
-export const PURPOSE_LABEL: Record<string, string> = { mixed: 'Mixed pallets', harvest: 'Harvest pallets (fresh frozen)', plant: 'Plant tags (mothers, batches)', package: 'Packages' }
+export const PURPOSE_LABEL: Record<string, string> = { mixed: 'Mixed pallets', harvest: 'Harvest pallets (fresh frozen)', plant: 'Plant tags (mothers, batches)', package: 'Packages', processing: 'Processing packages (wet, bucked, trimmed)' }
 const tag = (r: Range, n: number) => r.prefix + String(n).padStart(r.digits, '0')
 
 async function rpc<T>(sb: SupabaseClient, fn: string, args: Record<string, unknown>): Promise<T> {

@@ -70,3 +70,16 @@ Run `supabase/046_accounting.sql`. Then in Vercel > Settings > Environment Varia
 
 The redirect URI must also be listed in the Intuit app (Settings > Redirect URIs). An Accounting Admin connects in Accounting > Settings.
 Server functions: `api/qbo/connect.js` (start sign-in), `callback.js` (Intuit sends the browser back), `run.js` (status, push, sync, check, setup, disconnect), `cron.js` (nightly balances).
+
+## Processing: dry flower (047)
+
+Run `supabase/047_processing.sql`. It adds the Processing module (Off / View / User / Admin), a product on every pallet
+(fresh frozen, wet, unbucked, bucked, standards, smalls, trim), 4 reefer trailers at GVR (R1-R4, 26 spots each, processor license),
+processors (CCP, STACS, Strong Ag, our trailers), bucking and trimming runs, trim requests, and dry products on sales orders.
+
+- Drying: dry harvest > wet package (raw wet weight + METRC tag) > sent to a processor or dried in house > back unbucked (not weighed).
+- Runs: bucking takes whole unbucked packages and makes bucked + buck trim + mold; moisture = wet - everything out. Trimming takes bucked
+  (whole or part) and makes standards, smalls, trim + mold. Outputs land as "Needs a spot" packages (D + last digits of the tag).
+- Requests: what to trim and by when (customer or stock). Packages get committed to confirmed order lines from Inventory (whole, or split).
+- "Fill next tags" uses tag ranges with purpose "Processing packages" (Admin > Settings > Licenses).
+- The open menu, reserves and fresh frozen numbers only count fresh frozen.

@@ -2,7 +2,7 @@ import { ScanButton } from './scan'
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Backend, CONFIG_MISSING, IS_PORTAL, makeBackend, portalUrl } from './api'
-import { FREEZER_STATUSES } from './types'
+import { FREEZER_STATUSES, PRODUCT_LABEL, PRODUCT_SHORT } from './types'
 import { MergeForm, MergeHere, MixedBuilder, NewPalletChooser, PickMixed, SingleForm, SplitForm, TagForm, WeightForm, lbs } from './forms'
 import { SettingsView } from './settings'
 import { ModulePeople, UsersTab } from './users'
@@ -27,6 +27,8 @@ import type { CultTab } from './cult/tabs'
 import { NURSERY_TABS, NURSERY_TAIL } from './nursery/tabs'
 import type { NTab } from './nursery/tabs'
 import { ACCT_TABS, ACCT_TAIL } from './acct/tabs'
+import { PROC_TABS, PROC_TAIL } from './proc/tabs'
+import type { PTab } from './proc/tabs'
 import type { ATab } from './acct/tabs'
 import { LicensesPanel } from './licenses'
 import { LoadForm, LoadView, PickLoad, TransitView, stopColor } from './loads'
@@ -40,15 +42,16 @@ const backend: Backend = makeBackend()
 const CultView = lazy(() => import('./cult/CultView'))
 const NurseryView = lazy(() => import('./nursery/NurseryView'))
 const AccountingView = lazy(() => import('./acct/AccountingView'))
+const ProcessingView = lazy(() => import('./proc/ProcessingView'))
 
-type View = 'dash' | 'fulfill' | 'map' | 'freezer' | 'transit' | 'load' | 'review' | 'activity' | 'settings' | 'sales' | 'cult' | 'nursery' | 'acct' | 'admin' | 'mine'
+type View = 'dash' | 'fulfill' | 'map' | 'freezer' | 'transit' | 'load' | 'review' | 'activity' | 'settings' | 'sales' | 'cult' | 'nursery' | 'proc' | 'acct' | 'admin' | 'mine'
 // modules: each person has a level (User / Admin) per module; Owners have all of them (Admin > Settings > Users)
-type Mod = 'dist' | 'sales' | 'cult' | 'nurs' | 'acct' | 'admin'
-const MOD_KEY: Record<Mod, ModKey> = { dist: 'distribution', sales: 'sales', cult: 'cultivation', nurs: 'nursery', acct: 'accounting', admin: 'admin' }
-const KEY_MOD: Record<ModKey, Mod> = { distribution: 'dist', sales: 'sales', cultivation: 'cult', nursery: 'nurs', accounting: 'acct', admin: 'admin' }
-const MOD_LABEL: Record<Mod, string> = { dist: 'Distribution', sales: 'Sales', cult: 'Production', nurs: 'Nursery', acct: 'Accounting', admin: 'Admin' }
+type Mod = 'dist' | 'sales' | 'cult' | 'nurs' | 'proc' | 'acct' | 'admin'
+const MOD_KEY: Record<Mod, ModKey> = { dist: 'distribution', sales: 'sales', cult: 'cultivation', nurs: 'nursery', proc: 'processing', acct: 'accounting', admin: 'admin' }
+const KEY_MOD: Record<ModKey, Mod> = { distribution: 'dist', sales: 'sales', cultivation: 'cult', nursery: 'nurs', processing: 'proc', accounting: 'acct', admin: 'admin' }
+const MOD_LABEL: Record<Mod, string> = { dist: 'Distribution', sales: 'Sales', cult: 'Production', nurs: 'Nursery', proc: 'Processing', acct: 'Accounting', admin: 'Admin' }
 const ML = (m: Mod) => t(MOD_LABEL[m])
-const MOD_WHAT: Record<Mod, string> = { dist: 'Freezer map · transit · review', sales: 'Reserves · menu · orders', cult: 'Harvests · fields · plan', nurs: 'Mothers · cuttings · deliveries', acct: 'Invoices to QuickBooks · payments', admin: 'Company · users · app settings' }
+const MOD_WHAT: Record<Mod, string> = { dist: 'Freezer map · transit · review', sales: 'Reserves · menu · orders', cult: 'Harvests · fields · plan', nurs: 'Mothers · cuttings · deliveries', proc: 'Drying · bucking · trimming', acct: 'Invoices to QuickBooks · payments', admin: 'Company · users · app settings' }
 type SalesTab = 'dash' | SalesMode | 'invoices' | 'review' | 'activity' | 'settings'
 type AdminTab = 'dash' | 'review' | 'activity' | 'settings'
 interface NavItem { k: string; l: ReactNode; on: boolean; go: () => void }
@@ -57,6 +60,7 @@ const MOD_ICON: Record<Mod, ReactNode> = {
   sales: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z" /><circle cx="7.5" cy="7.5" r="1.5" /></svg>,
   cult: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M12 22V12M12 12C12 7 8 4 3 4c0 5 4 8 9 8zM12 12c0-4 3-7 8-7 0 4-3 7-8 7z" /></svg>,
   nurs: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M7 20h10l-1.5-6h-7z" /><path d="M12 14V9" /><path d="M12 9c0-3-2-5-5-5 0 3 2 5 5 5zM12 9c0-2.5 2-4.5 5-4.5 0 2.5-2 4.5-5 4.5z" /></svg>,
+  proc: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="6" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><path d="M20 4 8.1 15.9M14.5 14.5 20 20M8.1 8.1 12 12" /></svg>,
   acct: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><rect x="4" y="2" width="16" height="20" rx="2" /><path d="M8 6h8M8 10h2M14 10h2M8 14h2M14 14h2M8 18h2M14 18h2" /></svg>,
   admin: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M12 2 4 5v6c0 5 3.4 9.3 8 11 4.6-1.7 8-6 8-11V5l-8-3z" /><path d="m9 12 2 2 4-4" /></svg>,
 }
@@ -128,12 +132,16 @@ function weightOf(ix: Index, p: Pallet) {
 const isPackage = (p: Pallet) => p.kind !== 'mixed'
 const loose = (p: Pallet) => isPackage(p) && !p.container_id && (p.status === 'in_freezer' || p.status === 'unslotted')
 
+/** freezer names: F12 / Freezer 12, trailers R1 / Reefer 1 (GVR 101-104) */
+export const fShort = (f: Freezer) => f.kind === 'trailer' ? `R${f.number - 100}` : `F${f.number}`
+export const fName = (f: Freezer) => f.kind === 'trailer' ? `Reefer ${f.number - 100}` : `Freezer ${f.number}`
+
 function whereIs(ix: Index, slotId: number | null) {
   if (slotId == null) return 'Needs a spot'
   const s = ix.slot.get(slotId)
   if (!s) return '?'
   const f = ix.freezer.get(s.freezer_id)!
-  return f.kind === 'staging' ? `${f.site} Staging · ${s.row}` : `${f.site} F${f.number} · ${s.code}`
+  return f.kind === 'staging' ? `${f.site} Staging · ${s.row}` : f.kind === 'trailer' ? `${f.site} ${fName(f)} · ${s.code.slice(2)}` : `${f.site} F${f.number} · ${s.code}`
 }
 
 function describe(ix: Index, e: InvEvent, names?: Map<number, string>) {
@@ -228,6 +236,23 @@ function describe(ix: Index, e: InvEvent, names?: Map<number, string>) {
       return `${d?.email} modules: ${(d?.modules ?? []).join(', ') || 'none'}` }
     case 'harvested': { const d = e.details as { strain?: string; site?: string; field?: string; tag?: string | null } | null
       return `${code} harvested: ${d?.strain} from ${d?.site} ${d?.field ?? ''} (${lbs(e.lbs)})${d?.tag ? '' : ', tag pending'}, needs a spot` }
+    case 'proc_wet': { const d = e.details as { strain?: string; site?: string; field?: string; processor?: string; sent?: boolean; tag?: string | null } | null
+      return `${code} wet package: ${d?.strain} from ${d?.site} ${d?.field ?? ''} (${lbs(e.lbs)})${d?.tag ? '' : ', tag pending'}${d?.sent ? `, sent to ${d.processor}` : ''}` }
+    case 'proc_sent': { const d = e.details as { processor?: string } | null; return `${code} sent to ${d?.processor} for drying (${lbs(e.lbs)})` }
+    case 'proc_received': { const d = e.details as { processor?: string; site?: string; new_tag?: string | null } | null
+      return `${code} back from ${d?.processor ?? 'the processor'} unbucked, at ${d?.site}${d?.new_tag ? ` (new tag …${d.new_tag.slice(-6)})` : ''}` }
+    case 'proc_dried': return `${code} dried in house, now unbucked`
+    case 'proc_run_started': { const d = e.details as { run?: string; kind?: string; strain?: string; packages?: string[] } | null
+      return `${d?.run} ${d?.kind === 'buck' ? 'bucking' : 'trimming'} started: ${d?.strain}, ${(d?.packages ?? []).join(', ')} (${lbs(e.lbs)})` }
+    case 'proc_run_done': { const d = e.details as { run?: string; kind?: string; strain?: string; in?: number; out?: number; mold?: number; loss?: number } | null
+      return `${d?.run} ${d?.kind === 'buck' ? 'bucked' : 'trimmed'}: ${d?.strain} ${lbs(Number(d?.in ?? 0))} in, ${lbs(Number(d?.out ?? 0))} out, ${lbs(Number(d?.mold ?? 0))} mold, ${lbs(Number(d?.loss ?? 0))} ${d?.kind === 'buck' ? 'moisture' : 'difference'}` }
+    case 'proc_run_cancelled': { const d = e.details as { run?: string } | null; return `${d?.run} cancelled` }
+    case 'proc_output': { const d = e.details as { run?: string; product?: string; strain?: string } | null; return `${code} ${d?.product} from ${d?.run}: ${d?.strain} (${lbs(e.lbs)}), needs a spot` }
+    case 'proc_used': { const d = e.details as { run?: string; whole?: boolean } | null; return `${code} ${d?.whole ? 'used up' : `${lbs(e.lbs)} used`} in ${d?.run}` }
+    case 'proc_request': { const d = e.details as { strain?: string; product?: string; due?: string; customer?: string; new?: boolean } | null
+      return `Trim request ${d?.new ? 'added' : 'changed'}: ${lbs(e.lbs)} ${d?.strain} ${d?.product}${d?.customer ? ` for ${d.customer}` : ''}${d?.due ? `, due ${d.due}` : ''}` }
+    case 'proc_request_status': { const d = e.details as { status?: string } | null; return `Trim request marked ${d?.status}` }
+    case 'proc_settings': return `Processing settings: ${e.note}`
     case 'acct_sent': { const d = e.details as { inv?: string; env?: string; total?: number } | null
       return `${d?.inv} sent to ${d?.env === 'production' ? 'QuickBooks' : 'the QuickBooks sandbox'}${d?.total != null ? ` (${money(Number(d.total))})` : ''}` }
     case 'acct_error': { const d = e.details as { inv?: string; env?: string } | null; return `${d?.inv} couldn't go to ${d?.env === 'production' ? 'QuickBooks' : 'the sandbox'}` }
@@ -262,11 +287,12 @@ export default function App() {
   const [site, setSite] = useState<Site>('OHR')
   useEffect(() => { if (GO) history.replaceState(null, '', location.pathname) }, [])
   const storedMod = stored('fm.mod') as Mod | null
-  const [view, setView] = useState<View>(GO_ACCT ? 'acct' : GO_TAB ? 'sales' : storedMod === 'cult' ? 'cult' : storedMod === 'nurs' ? 'nursery' : storedMod === 'acct' ? 'acct' : storedMod === 'sales' ? 'sales' : storedMod === 'admin' ? 'admin' : 'dash')
+  const [view, setView] = useState<View>(GO_ACCT ? 'acct' : GO_TAB ? 'sales' : storedMod === 'cult' ? 'cult' : storedMod === 'nurs' ? 'nursery' : storedMod === 'acct' ? 'acct' : storedMod === 'proc' ? 'proc' : storedMod === 'sales' ? 'sales' : storedMod === 'admin' ? 'admin' : 'dash')
   const [mod, setModS] = useState<Mod>(GO_ACCT ? 'acct' : GO_TAB ? 'sales' : storedMod && storedMod in MOD_KEY ? storedMod : 'dist')
   const [cultTab, setCultTabS] = useState<CultTab>(() => ([...CULT_TABS, ...CULT_TAIL].find(t => t.t === stored('cult.tab'))?.t ?? 'dashboard'))
   const [salesTab, setSalesTabS] = useState<SalesTab>(GO_TAB ?? 'dash')
   const [adminTab, setAdminTabS] = useState<AdminTab>('dash')
+  const [procTab, setProcTabS] = useState<PTab>(() => ([...PROC_TABS, ...PROC_TAIL].find(x => x.t === stored('proc.tab'))?.t ?? 'dashboard'))
   const [acctTab, setAcctTabS] = useState<ATab>(GO_ACCT ? (QBO_BACK ? 'settings' : 'dashboard') : 'dashboard')
   const [nurTab, setNurTabS] = useState<NTab>(() => ([...NURSERY_TABS, ...NURSERY_TAIL].find(t => t.t === stored('nur.tab'))?.t ?? 'dashboard'))
   const [modMenu, setModMenu] = useState(false)
@@ -277,6 +303,7 @@ export default function App() {
   const setAdminTab = (t: AdminTab) => { setAdminTabS(t); setView('admin'); top() }
   const setNurTab = (t: NTab) => { setNurTabS(t); store('nur.tab', t); setView('nursery'); top() }
   const setAcctTab = (t: ATab) => { setAcctTabS(t); setView('acct'); top() }
+  const setProcTab = (t: PTab) => { setProcTabS(t); store('proc.tab', t); setView('proc'); top() }
   const lastView = useRef<View>('dash')
   const go = (v: View) => { if (view !== 'mine') lastView.current = view; setView(v); top() }
   const [freezerId, setFreezerId] = useState<number | null>(null)
@@ -330,7 +357,7 @@ export default function App() {
   const isAdminOf = (m: Mod) => lv[MOD_KEY[m]] === 'admin'
   const goMod = (m: Mod) => {
     setModS(m); store('fm.mod', m); setModMenu(false)
-    if (m === 'cult') setCultTab('dashboard'); else if (m === 'nurs') setNurTab('dashboard'); else if (m === 'acct') setAcctTab('dashboard'); else if (m === 'sales') setSalesTab('dash'); else if (m === 'admin') setAdminTab('dash'); else go('dash')
+    if (m === 'cult') setCultTab('dashboard'); else if (m === 'nurs') setNurTab('dashboard'); else if (m === 'acct') setAcctTab('dashboard'); else if (m === 'proc') setProcTab('dashboard'); else if (m === 'sales') setSalesTab('dash'); else if (m === 'admin') setAdminTab('dash'); else go('dash')
   }
   // signed in: personal settings (theme, where to start, which site)
   useEffect(() => {
@@ -423,7 +450,7 @@ export default function App() {
 
   function slotLabel(slot: Slot) {
     const f = ix!.freezer.get(slot.freezer_id)!
-    return f.kind === 'staging' ? `${f.site} Staging · ${slot.row}` : `${f.site} F${f.number} · ${slot.code}`
+    return f.kind === 'staging' ? `${f.site} Staging · ${slot.row}` : f.kind === 'trailer' ? `${f.site} ${fName(f)} · ${slot.code.slice(2)}` : `${f.site} F${f.number} · ${slot.code}`
   }
 
   function tapSlot(slot: Slot) {
@@ -440,7 +467,7 @@ export default function App() {
     if (plan.current != null) { doPlace(plan.current, slot); return }
     if (selecting) return
     if (here.length) setPalletId(here[0].id)
-    else if (f.status === 'Not Working') flash(`Freezer ${f.number} is marked Not Working`, true)
+    else if (f.status === 'Not Working') flash(`${fName(f)} is marked Not Working`, true)
     else setForm({ kind: 'newchoice', slot })
   }
 
@@ -470,7 +497,8 @@ export default function App() {
   )
   if (!snap || !ix) return <Splash />
 
-  const siteFreezers = snap.freezers.filter(f => f.site === site && f.kind !== 'staging').sort((a, b) => a.number - b.number)
+  const siteFreezers = snap.freezers.filter(f => f.site === site && (f.kind ?? 'freezer') === 'freezer').sort((a, b) => a.number - b.number)
+  const siteTrailers = snap.freezers.filter(f => f.site === site && f.kind === 'trailer').sort((a, b) => a.number - b.number)
   const unplaced = snap.pallets.filter(p => p.status === 'unslotted' && !p.container_id)
   const review = snap.pallets.filter(p => p.needs_review)
   const pendingTags = snap.pallets.filter(p => p.tag_pending)
@@ -582,11 +610,14 @@ export default function App() {
   const nItem = (t: NTab, l: string): NavItem => ({ k: t, l, on: view === 'nursery' && nurTab === t, go: () => setNurTab(t) })
   const nurMain = NURSERY_TABS.map(x => nItem(x.t, t(x.l)))
   const nurTail = NURSERY_TAIL.filter(x => x.t !== 'settings' || isAdminOf('nurs')).map(x => nItem(x.t, t(x.l)))
+  const prItem = (t: PTab, l: string): NavItem => ({ k: t, l, on: view === 'proc' && procTab === t, go: () => setProcTab(t) })
+  const procMain = PROC_TABS.map(x => prItem(x.t, t(x.l)))
+  const procTail = PROC_TAIL.filter(x => x.t !== 'settings' || isAdminOf('proc')).map(x => prItem(x.t, t(x.l)))
   const acItem = (t: ATab, l: string): NavItem => ({ k: t, l, on: view === 'acct' && acctTab === t, go: () => setAcctTab(t) })
   const acctMain = ACCT_TABS.map(x => acItem(x.t, x.l))
   const acctTail = ACCT_TAIL.filter(x => x.t !== 'settings' || isAdminOf('acct')).map(x => acItem(x.t, x.l))
   const NAV: Record<Mod, { main: NavItem[]; tail: NavItem[] }> = {
-    acct: { main: acctMain, tail: acctTail },
+    acct: { main: acctMain, tail: acctTail }, proc: { main: procMain, tail: procTail },
     dist: { main: distMain, tail: distTail }, sales: { main: salesMain, tail: salesTail }, cult: { main: cultMain, tail: cultTail }, nurs: { main: nurMain, tail: nurTail }, admin: { main: adminMain, tail: adminTail } }
   const nav = NAV[cur]
   const all = [...nav.main, ...nav.tail]
@@ -598,7 +629,7 @@ export default function App() {
     const [m, t] = j.split('.') as [Mod, string]
     if (!lv[MOD_KEY[m]]) { flash(`You don't have ${MOD_LABEL[m]}`, true); return }
     setModS(m); store('fm.mod', m)
-    if (m === 'dist') go(t as View); else if (m === 'sales') setSalesTab(t as SalesTab); else if (m === 'cult') setCultTab(t as CultTab); else if (m === 'nurs') setNurTab(t as NTab); else if (m === 'acct') setAcctTab(t as ATab); else setAdminTab(t === 'users' ? 'settings' : t as AdminTab)
+    if (m === 'dist') go(t as View); else if (m === 'sales') setSalesTab(t as SalesTab); else if (m === 'cult') setCultTab(t as CultTab); else if (m === 'nurs') setNurTab(t as NTab); else if (m === 'acct') setAcctTab(t as ATab); else if (m === 'proc') setProcTab(t as PTab); else setAdminTab(t === 'users' ? 'settings' : t as AdminTab)
   }
   const appName = ML(cur)
   document.title = noMods ? 'Lifted Farms' : `${view === 'mine' ? t('My settings') : ML(cur)} · Lifted Farms`
@@ -688,13 +719,13 @@ export default function App() {
             }} />
         )}
         {view === 'map' && (
-          <MapView ix={ix} freezers={siteFreezers} staging={stagingOf(site)} query={query} extra={extra} where={where}
+          <MapView ix={ix} freezers={siteFreezers} trailers={siteTrailers} staging={stagingOf(site)} query={query} extra={extra} where={where}
             onOpen={openFreezer} onPallet={setPalletId} />
         )}
         {view === 'freezer' && freezerId != null && (
           <FreezerView ix={ix} L={L!} plan={plan} freezer={ix.freezer.get(freezerId)!} query={query} placing={!!placing}
             selecting={selecting} sel={sel}
-            siblings={siteFreezers}
+            siblings={ix.freezer.get(freezerId)?.kind === 'trailer' ? siteTrailers : siteFreezers}
             onOpen={openFreezer}
             onBack={() => setView('map')}
             onSlot={tapSlot}
@@ -702,7 +733,7 @@ export default function App() {
             onSelect={() => { if (selecting) { setSelecting(false); setSel([]) } else setSelecting(true) }}
             onCompact={compact}
             onStatus={(st) => setConfirm({
-              text: `Set Freezer ${ix.freezer.get(freezerId)!.number} to "${st}"?`, ok: 'Update',
+              text: `Set ${fName(ix.freezer.get(freezerId)!)} to "${st}"?`, ok: 'Update',
               run: () => act(() => backend.setFreezerStatus(freezerId, st), 'Freezer status updated'),
             })} />
         )}
@@ -763,6 +794,9 @@ export default function App() {
         {view === 'cult' && inCult && <Suspense fallback={<p className="muted">Loading…</p>}><CultView backend={backend} flash={flash} tab={cultTab} go={setCultTab} onPalletsChanged={() => { reload() }} /></Suspense>}
         {view === 'cult' && inCult && cultTab === 'setup' && <div className="modset"><SettingsView backend={backend} flash={flash} onChanged={() => { reload() }} inventoryStrains={invStrains} title="Strains" lists={['strains']} /></div>}
         {view === 'nursery' && cur === 'nurs' && <Suspense fallback={<p className="muted">Loading…</p>}><NurseryView backend={backend} flash={flash} tab={nurTab} go={setNurTab} customers={snap.customers ?? []} isAdmin={isAdminOf('nurs')} sender={me?.display_name} me={me?.email} /></Suspense>}
+        {view === 'proc' && cur === 'proc' && procTab === 'activity' && <ActivityView ix={ix} module="processing" />}
+        {view === 'proc' && cur === 'proc' && procTab !== 'activity' && <Suspense fallback={<p className="muted">Loading…</p>}><ProcessingView backend={backend} flash={flash} tab={procTab} go={setProcTab}
+          isAdmin={isAdminOf('proc')} canEdit={lv.processing === 'user' || lv.processing === 'admin'} customers={snap.customers ?? []} strains={snap.strains ?? []} onChanged={() => { reload() }} /></Suspense>}
         {view === 'acct' && cur === 'acct' && acctTab === 'activity' && <ActivityView ix={ix} module="accounting" />}
         {view === 'acct' && cur === 'acct' && acctTab !== 'activity' && <Suspense fallback={<p className="muted">Loading…</p>}><AccountingView backend={backend} flash={flash} tab={acctTab} go={setAcctTab}
           isAdmin={isAdminOf('acct')} canEdit={lv.accounting === 'user' || lv.accounting === 'admin'} notice={GO_ACCT ? QBO_BACK : null} /></Suspense>}
@@ -988,8 +1022,8 @@ function MiniGrid({ ix, slots, query }: { ix: Index; slots: Slot[]; query: strin
   )
 }
 
-function MapView({ ix, freezers, staging, query, extra, where, onOpen, onPallet }: {
-  ix: Index; freezers: Freezer[]; staging?: Freezer; query: string; extra: Pallet[]; where: (p: Pallet) => string
+function MapView({ ix, freezers, trailers = [], staging, query, extra, where, onOpen, onPallet }: {
+  ix: Index; freezers: Freezer[]; trailers?: Freezer[]; staging?: Freezer; query: string; extra: Pallet[]; where: (p: Pallet) => string
   onOpen: (id: number) => void; onPallet: (id: number) => void
 }) {
   const ids = new Set(freezers.map(f => f.id))
@@ -1037,21 +1071,26 @@ function MapView({ ix, freezers, staging, query, extra, where, onOpen, onPallet 
           </button>
         )
       })()}
-      <div className="cards">
-        {freezers.map(f => {
-          const slots = ix.slotsOf.get(f.id) ?? []
-          const ps = slots.flatMap(s => ix.inSlot.get(s.id) ?? [])
-          const used = slots.filter(s => ix.inSlot.get(s.id)?.length).length
-          const w = ps.reduce((a, p) => a + weightOf(ix, p), 0)
-          return (
-            <button key={f.id} className={`card st-${f.status.replace(/ /g, '-')}`} onClick={() => onOpen(f.id)}>
-              <div className="card-h"><b>F{f.number}</b><span className="dot" title={f.status} /></div>
-              <MiniGrid ix={ix} slots={slots} query={query} />
-              <div className="card-f">{used}/18 · {Math.round(w / 100) / 10}k</div>
-            </button>
-          )
-        })}
-      </div>
+      {[freezers, trailers].map((list, li) => list.length > 0 && (
+        <div key={li}>
+          {li === 1 && <h3 className="map-sec">Reefer trailers <span className="muted">dry flower · processor license</span></h3>}
+          <div className={`cards ${li === 1 ? 'trailers' : ''}`}>
+            {list.map(f => {
+              const slots = ix.slotsOf.get(f.id) ?? []
+              const ps = slots.flatMap(s => ix.inSlot.get(s.id) ?? [])
+              const used = slots.filter(s => ix.inSlot.get(s.id)?.length).length
+              const w = ps.reduce((a, p) => a + weightOf(ix, p), 0)
+              return (
+                <button key={f.id} className={`card st-${f.status.replace(/ /g, '-')}`} onClick={() => onOpen(f.id)}>
+                  <div className="card-h"><b>{fShort(f)}</b><span className="dot" title={f.status} /></div>
+                  <MiniGrid ix={ix} slots={slots} query={query} />
+                  <div className="card-f">{used}/{slots.length} · {Math.round(w / 100) / 10}k</div>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      ))}
     </>
   )
 }
@@ -1084,7 +1123,7 @@ function FreezerView({ ix, L, plan, freezer, query, placing, selecting, sel, sib
         {...(role !== 'leaving' && !placing ? draggable({ id: p.id, label: `${p.code} · ${p.kind === 'mixed' ? 'Mixed' : p.strain ?? ''}` }) : {})}
         onClick={e => { e.stopPropagation(); onPalletTap(p, role, s) }}>
         <b>{selecting && <span className={`tick ${picked ? 'on' : ''}`}>{picked ? '✓' : ''}</span>}{p.code}{p.needs_review && <span className="flag" title={p.needs_review}>!</span>}{(p.tag_pending || on.some(c => c.tag_pending)) && <span className="flag tag" title="METRC tag pending">T</span>}{ix.loadOf.has(p.id) && <span className="flag load" title={`Planned on ${ix.loadOf.get(p.id)!.load.code}`}>L</span>}</b>
-        <span className="strain">{note ? <i className="pnote">{note}</i> : p.kind === 'mixed' ? `Mixed · ${on.length} pkg${on.length === 1 ? '' : 's'}: ${[...new Set(on.map(c => c.strain))].join(', ')}` : p.strain ?? p.label ?? 'No strain'}</span>
+        <span className="strain">{note ? <i className="pnote">{note}</i> : p.kind === 'mixed' ? `Mixed · ${on.length} pkg${on.length === 1 ? '' : 's'}: ${[...new Set(on.map(c => c.strain))].join(', ')}` : <>{p.product && p.product !== 'fresh_frozen' && <em className="prodtag">{PRODUCT_SHORT[p.product]}</em>}{p.strain ?? p.label ?? 'No strain'}</>}</span>
         <span className="w">{p.kind !== 'mixed' && p.current_weight == null ? 'no weight' : lbs(weightOf(ix, p))}</span>
       </span>
     )
@@ -1094,7 +1133,7 @@ function FreezerView({ ix, L, plan, freezer, query, placing, selecting, sel, sib
       <div className="fz-head">
         <button className="ghost" onClick={onBack}>‹ All</button>
         <div className="fz-title">
-          <h2>{freezer.site} {staging ? 'Staging' : `Freezer ${freezer.number}`}</h2>
+          <h2>{freezer.site} {staging ? 'Staging' : fName(freezer)}</h2>
           <div className="muted">{ps.length} pallet{ps.length === 1 ? '' : 's'}{staging ? ` of 26` : ''} · {lbs(ps.reduce((a, p) => a + weightOf(ix, p), 0))}</div>
         </div>
         {!staging && <select className={`status st-${freezer.status.replace(/ /g, '-')}`} value={freezer.status}
@@ -1103,12 +1142,12 @@ function FreezerView({ ix, L, plan, freezer, query, placing, selecting, sel, sib
         </select>}
       </div>
       <div className="row between fz-tools">
-        {!staging ? <button className="ghost small" disabled={!prev} onClick={() => prev && onOpen(prev.id)}>‹ F{prev?.number ?? ''}</button> : <span />}
+        {!staging ? <button className="ghost small" disabled={!prev} onClick={() => prev && onOpen(prev.id)}>‹ {prev ? fShort(prev) : ''}</button> : <span />}
         <div className="row">
           <button className={`ghost small ${selecting ? 'on-btn' : ''}`} onClick={onSelect}>{selecting ? 'Selecting' : 'Select'}</button>
           {!staging && <button className="ghost small" onClick={onCompact}>Compact</button>}
         </div>
-        {!staging ? <button className="ghost small" disabled={!next} onClick={() => next && onOpen(next.id)}>F{next?.number ?? ''} ›</button> : <span />}
+        {!staging ? <button className="ghost small" disabled={!next} onClick={() => next && onOpen(next.id)}>{next ? fShort(next) : ''} ›</button> : <span />}
       </div>
       {!staging && <div className="muted small-t center-t">BACK</div>}
       {staging && <p className="muted small-note">Where orders get built. Positions fill in the order you place pallets.</p>}
@@ -1129,7 +1168,7 @@ function FreezerView({ ix, L, plan, freezer, query, placing, selecting, sel, sib
               style={all && !mixed && !stacked ? sw.style : undefined}
               disabled={placingNow && dead}
               onClick={() => onSlot(s)}>
-              <span className="code">{staging ? s.row : s.code}</span>
+              <span className="code">{staging ? s.row : freezer.kind === 'trailer' ? s.code.slice(2) : s.code}</span>
               {all === 0 && <span className="muted">{placingNow ? (dead ? 'Not working' : 'Place here') : dead ? 'empty' : staging ? '' : '+ New pallet'}</span>}
               {v.stay.map(p => tile(p, 'stay', s, stacked))}
               {v.incoming.map(x => tile(x.p, 'incoming', s, stacked, x.m))}
@@ -1228,10 +1267,11 @@ function ListView({ title, note, empty, items, ix, where, onPallet, showReason }
 }
 
 /** which module an activity line belongs to */
-function eventModule(e: InvEvent): 'distribution' | 'sales' | 'admin' | 'nursery' | 'cultivation' | 'accounting' {
+function eventModule(e: InvEvent): 'distribution' | 'sales' | 'admin' | 'nursery' | 'cultivation' | 'processing' | 'accounting' {
   const t = e.type, d = e.details as { list?: string; via?: string } | null
   if (/^acct_/.test(t) || (t === 'invoice_paid' && d?.via === 'QuickBooks')) return 'accounting'
   if (/^nursery/.test(t)) return 'nursery'
+  if (/^proc_/.test(t)) return 'processing'
   if (/^cult_log/.test(t)) return 'cultivation'
   if (/^invoice/.test(t)) return 'sales'
   if (/^license/.test(t)) return 'admin'
@@ -1241,7 +1281,7 @@ function eventModule(e: InvEvent): 'distribution' | 'sales' | 'admin' | 'nursery
 }
 const CULT_TBL: Record<string, string> = { cult_harvests: 'Harvest', cult_plantings: 'Planting', cult_tests: 'Test', cult_flower_picks: 'Dry flower pick', cult_demand: 'Plan strain',
   cult_plan: 'Plan row', cult_nursery_orders: 'Nursery delivery', cult_receipts: 'Plants received', app_settings: 'Production setting' }
-interface Line { id: string; at: string; who: string | null; text: ReactNode; note?: string | null; mod: 'distribution' | 'sales' | 'admin' | 'cultivation' | 'nursery' | 'accounting' }
+interface Line { id: string; at: string; who: string | null; text: ReactNode; note?: string | null; mod: 'distribution' | 'sales' | 'admin' | 'cultivation' | 'nursery' | 'processing' | 'accounting' }
 
 /** Activity: each module shows its own; Admin shows everything with a filter */
 /** loading screen: the logo and a quiet spinner, same for every module */
@@ -1249,7 +1289,7 @@ function Splash() {
   return <div className="center splash"><img className="logo-login" src="/logo.png" alt="Lifted Farms" /><div className="spin" aria-label="Loading" /></div>
 }
 
-function ActivityView({ ix, module }: { ix: Index; module: 'distribution' | 'sales' | 'accounting' | 'all' }) {
+function ActivityView({ ix, module }: { ix: Index; module: 'distribution' | 'sales' | 'processing' | 'accounting' | 'all' }) {
   const [events, setEvents] = useState<InvEvent[] | null>(null)
   const [cult, setCult] = useState<Line[]>([])
   const [names, setNames] = useState<Map<number, string>>(new Map())
@@ -1270,7 +1310,7 @@ function ActivityView({ ix, module }: { ix: Index; module: 'distribution' | 'sal
   const lines: Line[] = [...(events ?? []).map(e => ({ id: `e${e.id}`, at: e.at, who: e.user_email, text: describe(ix, e, names), note: e.note, mod: eventModule(e) } as Line)), ...cult]
     .filter(l => module === 'all' ? only === 'all' || l.mod === only : l.mod === module)
     .sort((a, b) => b.at.localeCompare(a.at))
-  const CH: [string, string][] = [['all', 'Everything'], ['distribution', 'Distribution'], ['sales', 'Sales'], ['cultivation', 'Production'], ['nursery', 'Nursery'], ['accounting', 'Accounting'], ['admin', 'Admin']]
+  const CH: [string, string][] = [['all', 'Everything'], ['distribution', 'Distribution'], ['sales', 'Sales'], ['cultivation', 'Production'], ['nursery', 'Nursery'], ['processing', 'Processing'], ['accounting', 'Accounting'], ['admin', 'Admin']]
   return (
     <div className="list">
       <h2>Activity</h2>
@@ -1322,7 +1362,7 @@ function PalletSheet({ ix, p, others, busy, where, onClose, onGo, onMove, onRemo
         <div className="sheet-h">
           <div>
             <h2>{p.code}</h2>
-            <div>{isMixed ? `Mixed pallet · ${contents.length} package${contents.length === 1 ? '' : 's'}` : p.strain ?? p.label ?? 'No strain'}</div>
+            <div>{isMixed ? `Mixed pallet · ${contents.length} package${contents.length === 1 ? '' : 's'}` : p.strain ?? p.label ?? 'No strain'}{!isMixed && p.product && p.product !== 'fresh_frozen' && <span className="pill prod">{PRODUCT_LABEL[p.product]}</span>}</div>
           </div>
           <button className="ghost" onClick={onClose}>✕</button>
         </div>
