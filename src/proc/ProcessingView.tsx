@@ -96,7 +96,7 @@ export default function ProcessingView({ backend, flash, tab, go, isAdmin, canEd
       {tab === 'incoming' && <Drying c={c} />}
       {tab === 'runs' && <Runs c={c} onStart={k => setStartKind({ kind: k })} />}
       {tab === 'crew' && sb && <CrewTab sb={sb} runs={d.runs} flash={flash} canEdit={canEdit} strainNames={strainNames} />}
-      {tab === 'available' && <Available c={c} />}
+      {tab === 'orders' && <Orders c={c} />}
       {tab === 'inventory' && <Inventory c={c} />}
       {tab === 'yields' && <Yields c={c} />}
       {tab === 'review' && <Review c={c} go={go} />}
@@ -145,7 +145,6 @@ export function forecast(d: PData, p: Pallet) {
   return { f, bucked: bk, buckTrim: p.product === 'bucked' ? 0 : bk * f.bt[0], std: bk * f.std[0], sml: bk * f.sml[0], trm: bk * f.trm[0] }
 }
 const SRC: Record<Src, string> = { strain: "this strain's history", all: 'all strains', default: 'the default' }
-const promisedOn = (d: PData, id: number, product?: string) => sum(d.promises.filter(x => x.pallet_id === id && (!product || x.product === product)).map(x => x.lbs))
 
 
 // ---------- Dashboard ----------
@@ -154,30 +153,30 @@ function Dashboard({ c, go }: { c: Ctx; go: (t: PTab) => void }) {
   const oh = onHand(d), g = (k: Product) => oh.get(k) ?? { n: 0, lbs: 0 }
   const away = d.pallets.filter(p => p.status === 'at_processor')
   const openRuns = d.runs.filter(r => r.status === 'open')
-  const waiting = d.lines.filter(l => l.picked + l.promised < l.lbs - 0.01)
+  const waiting = d.lines.filter(l => l.picked < l.lbs - 0.01)
   const spot = d.pallets.filter(p => p.status === 'unslotted')
   const pend = d.pallets.filter(p => live(p) && p.tag_pending)
   const toPack = toPackage(d)
   const trimmed = ['standards', 'smalls', 'trim'] as Product[]
   return (
-    <div className="list">
+    <div className="dash">
       <DashHead title="Processing" sub="Dry flower: drying, bucking, trimming" />
       <Tiles>
-        <Tile label="At processors" value={`${n0(sum(away.map(w)))} lbs`} sub={away.length ? `${away.length} wet packages out drying` : 'nothing out'} onClick={() => go('incoming')} />
+        <Tile label="At processors" value={`${n0(sum(away.map(w)))} lbs`} sub={away.length ? `${away.length} wet package${away.length === 1 ? '' : 's'} out drying` : 'nothing out'} onClick={() => go('incoming')} />
         <Tile label="Unbucked on hand" value={`${n0(g('unbucked').lbs)} lbs`} sub={g('unbucked').n ? `${g('unbucked').n} package${g('unbucked').n === 1 ? '' : 's'} · wet weight on paper` : 'none'} onClick={() => go('inventory')} />
         <Tile label="Bucked on hand" value={`${n0(g('bucked').lbs)} lbs`} sub={g('bucked').n ? `${g('bucked').n} package${g('bucked').n === 1 ? '' : 's'} ready to trim` : 'none'} onClick={() => go('inventory')} />
         <Tile label="Trimmed on hand" value={`${n0(sum(trimmed.map(k => g(k).lbs)))} lbs`} sub={trimmed.map(k => `${PL(k)} ${n0(g(k).lbs)}`).join(' · ')} onClick={() => go('inventory')} />
-        <Tile label="Orders waiting" value={waiting.length} sub={waiting.length ? `${n0(sum(waiting.map(l => l.lbs - l.picked - l.promised)))} lbs of dry product not covered yet` : 'every dry order line is covered'}
-          tone={waiting.length ? 'warn' : 'ok'} onClick={() => go('available')} />
+        <Tile label="Dry orders" value={waiting.length} sub={waiting.length ? `${n0(sum(waiting.map(l => l.lbs - l.picked)))} lbs still to fill (Fulfillment)` : 'nothing waiting'}
+          tone={waiting.length ? 'warn' : 'ok'} onClick={() => go('orders')} />
         <Tile label="Open runs" value={openRuns.length} sub={openRuns.length ? openRuns.map(r => r.code).slice(0, 3).join(', ') : 'nothing being worked'} onClick={() => go('runs')} />
         <Tile label="Needs a spot" value={spot.length} sub={spot.length ? `${n0(sum(spot.map(w)))} lbs to put in a trailer` : 'all put away'} tone={spot.length ? 'warn' : 'ok'} onClick={() => go('review')} />
         {(pend.length > 0 || toPack.length > 0) && <Tile label="To do" value={pend.length + toPack.length} sub={[toPack.length && `${toPack.length} dry harvests to package`, pend.length && `${pend.length} tags pending`].filter(Boolean).join(' · ')} tone="warn" onClick={() => go('review')} />}
       </Tiles>
       <Cards>
-        <Card title="Dry orders waiting" badge={waiting.length} action="Available" onAction={() => go('available')}>
+        <Card title="Dry orders waiting" badge={waiting.length} action="Orders" onAction={() => go('orders')}>
           {waiting.length ? <div className="dlist">{waiting.slice(0, 8).map(l =>
             <div key={l.id} className="drow"><span className="grow"><b>{l.strain}</b> {PL(l.product)} <span className="muted">{l.so} · {l.customer}</span></span>
-              <span className="muted">{l.wanted ? fmtD(l.wanted) : ''}</span><b>{n0(l.picked + l.promised)}/{n0(l.lbs)}</b></div>)}</div>
+              <span className="muted">{l.wanted ? fmtD(l.wanted) : ''}</span><b>{n0(l.picked)}/{n0(l.lbs)}</b></div>)}</div>
             : <Empty>No dry orders waiting.</Empty>}
         </Card>
         <Card title="Being worked" badge={openRuns.length} action="Runs" onAction={() => go('runs')}>
@@ -185,7 +184,7 @@ function Dashboard({ c, go }: { c: Ctx; go: (t: PTab) => void }) {
             <span className="grow"><b>{r.code}</b> {KIND[r.kind]} · {r.strain}</span><span className="muted">since {fmtD(r.started_on)}</span><b>{n0(r.input_lbs)} lbs</b></button>)}</div>
             : <Empty>No runs open.</Empty>}
         </Card>
-        <Card title="On hand by strain" action="Inventory" onAction={() => go('inventory')}>
+        <Card wide title="On hand by strain, with forecast" action="Inventory" onAction={() => go('inventory')}>
           <ByStrain d={d} />
         </Card>
       </Cards>
@@ -194,17 +193,21 @@ function Dashboard({ c, go }: { c: Ctx; go: (t: PTab) => void }) {
 }
 
 function ByStrain({ d }: { d: PData }) {
-  const cols: Product[] = ['unbucked', 'bucked', 'standards', 'smalls', 'trim']
-  const m = new Map<string, Record<string, number>>()
+  const cols: Product[] = ['wet', 'unbucked', 'bucked', 'standards', 'smalls', 'trim']
+  const m = new Map<string, { lbs: Record<string, number>; std: number; sml: number; trm: number }>()
   for (const p of d.pallets) {
-    if (!live(p) || !cols.includes(p.product as Product)) continue
-    const k = p.strain ?? '?'; const r = m.get(k) ?? {}; r[p.product!] = (r[p.product!] ?? 0) + w(p); m.set(k, r)
+    if (!(live(p) || p.status === 'at_processor') || !cols.includes(p.product as Product)) continue
+    const k = p.strain ?? '?'; const r = m.get(k) ?? { lbs: {}, std: 0, sml: 0, trm: 0 }
+    r.lbs[p.product!] = (r.lbs[p.product!] ?? 0) + w(p)
+    const f = forecast(d, p); r.std += f.std; r.sml += f.sml; r.trm += f.trm
+    m.set(k, r)
   }
   const rows = [...m.entries()].sort((a, b) => a[0].localeCompare(b[0]))
   if (!rows.length) return <Empty>Nothing on hand yet.</Empty>
   return <div className="cwrap"><table className="ctable small-t">
-    <thead><tr><th>Strain</th>{cols.map(k => <th key={k} className="num">{PL(k)}</th>)}</tr></thead>
-    <tbody>{rows.map(([s, r]) => <tr key={s}><td>{s}</td>{cols.map(k => <td key={k} className="num">{n0(r[k])}</td>)}</tr>)}</tbody>
+    <thead><tr><th>Strain</th>{cols.map(k => <th key={k} className="num">{PL(k)}</th>)}<th className="num">~Std to come</th><th className="num">~Smalls</th><th className="num">~Trim</th></tr></thead>
+    <tbody>{rows.map(([s, r]) => <tr key={s}><td>{s}</td>{cols.map(k => <td key={k} className="num">{n0(r.lbs[k])}</td>)}
+      <td className="num muted">{r.std ? `~${n0(r.std)}` : ''}</td><td className="num muted">{r.sml ? `~${n0(r.sml)}` : ''}</td><td className="num muted">{r.trm ? `~${n0(r.trm)}` : ''}</td></tr>)}</tbody>
   </table></div>
 }
 
@@ -226,9 +229,9 @@ function Drying({ c }: { c: Ctx }) {
       <p className="muted">Dry flower leaves the farm as raw wet weight (not deleafed) in one METRC package, goes to a drying processor or our trailers, and comes back unbucked. It isn't weighed on the stem: the wet weight stays on paper until bucking.</p>
 
       <h3 className="csec">Dry harvests to package <span className="muted">{toPack.length || ''}</span></h3>
-      {toPack.length ? <div className="cwrap"><table className="ctable">
-        <thead><tr><th>Harvested</th><th>Strain</th><th>Site · field</th><th className="num">Raw lbs</th><th /></tr></thead>
-        <tbody>{toPack.map(h => <tr key={h.id}><td className="nowrap">{fmtD(h.harvested_on ?? h.planned_on)}</td><td>{h.strain}</td><td>{h.site} {h.field ?? ''}</td>
+      {toPack.length ? <div className="cwrap fit"><table className="ctable">
+        <thead><tr><th>Harvested</th><th>Strain</th><th className="hide-s">Site · field</th><th className="num">Raw lbs</th><th /></tr></thead>
+        <tbody>{toPack.map(h => <tr key={h.id}><td className="nowrap">{fmtD(h.harvested_on ?? h.planned_on)}</td><td>{h.strain}</td><td className="hide-s">{h.site} {h.field ?? ''}</td>
           <td className="num">{h.raw_lbs != null ? n0(h.raw_lbs) : <span className="muted">not logged</span>}</td>
           <td className="num">{c.canEdit && <button className="primary small" onClick={() => setWet(h)}>Make wet package</button>}</td></tr>)}</tbody>
       </table></div> : <p className="muted">Every dry harvest from the last 3 weeks has its wet package.</p>}
@@ -261,14 +264,14 @@ function Drying({ c }: { c: Ctx }) {
   )
 }
 
-function PkgTable({ c, rows, sel, extra, showProduct }: { c: Ctx; rows: Pallet[]; sel?: ReturnType<typeof useSel>; extra?: (p: Pallet) => ReactNode; showProduct?: boolean }) {
-  return <div className="cwrap"><table className="ctable">
-    <thead><tr>{sel && <SelAll sel={sel} ids={rows.map(p => p.id)} />}<th>Package</th>{showProduct && <th>Product</th>}<th>Strain</th><th className="hide-s">Crop</th><th className="num">Lbs</th><th className="hide-s">Tag</th><th>Where</th>{extra && <th />}</tr></thead>
+function PkgTable({ c, rows, sel, extra, showProduct, extraOnPhone = true }: { c: Ctx; rows: Pallet[]; sel?: ReturnType<typeof useSel>; extra?: (p: Pallet) => ReactNode; showProduct?: boolean; extraOnPhone?: boolean }) {
+  return <div className="cwrap fit"><table className="ctable">
+    <thead><tr>{sel && <SelAll sel={sel} ids={rows.map(p => p.id)} />}<th>Package</th>{showProduct && <th className="hide-s">Product</th>}<th>Strain</th><th className="hide-s">Crop</th><th className="num">Lbs</th><th className="hide-s">Tag</th><th>Where</th>{extra && <th className={extraOnPhone ? '' : 'hide-s'} />}</tr></thead>
     <tbody>{rows.map(p => { const r = c.runOf(p.id), h = c.heldFor(p.id)
       return <tr key={p.id} className="tap" onClick={() => c.openPkg(p)}>
-        {sel && <SelBox sel={sel} id={p.id} />}<td><b>{p.code}</b></td>{showProduct && <td><Prod p={p.product} /></td>}<td>{p.strain}</td><td className="hide-s">{p.crop_year ?? ''}</td>
+        {sel && <SelBox sel={sel} id={p.id} />}<td><b>{p.code}</b>{showProduct && <span className="show-s"><Prod p={p.product} /></span>}</td>{showProduct && <td className="hide-s"><Prod p={p.product} /></td>}<td>{p.strain}</td><td className="hide-s">{p.crop_year ?? ''}</td>
         <td className="num">{n0(w(p))}</td><td className="hide-s"><Tag p={p} /></td>
-        <td className="small">{c.where(p)}{r ? <span className="pill warnp">in {r.code}</span> : null}{h ? <span className="pill okp">for {h}</span> : null}</td>{extra && <td className="num">{extra(p)}</td>}</tr> })}</tbody>
+        <td className="small">{c.where(p)}{r ? <span className="pill warnp">in {r.code}</span> : null}{h ? <span className="pill okp">for {h}</span> : null}</td>{extra && <td className={`num ${extraOnPhone ? '' : 'hide-s'}`}>{extra(p)}</td>}</tr> })}</tbody>
   </table></div>
 }
 
@@ -545,7 +548,7 @@ function Inventory({ c }: { c: Ctx }) {
         <input className="search" type="search" placeholder="Strain, package or tag" value={q} onChange={e => setQ(e.target.value)} />
       </div>
       <p className="muted">{rows.length} packages · {n0(sum(rows.map(w)))} lbs{prod === 'unbucked' || prod === 'wet' ? ' (wet weight on paper)' : ''}. Tap a package for its next step, or Select several to buck, trim or send them together.</p>
-      {rows.length ? <PkgTable c={c} rows={rows} sel={sel} showProduct={prod === 'all'} extra={p => { const f = forecast(d, p)
+      {rows.length ? <PkgTable c={c} rows={rows} sel={sel} showProduct={prod === 'all'} extraOnPhone={false} extra={p => { const f = forecast(d, p)
         return p.product === 'wet' || p.product === 'unbucked' ? <span className="muted small">~{n0(f.bucked)} bucked</span>
           : p.product === 'bucked' ? <span className="muted small">~{n0(f.std)} std</span> : null }} /> : <p className="muted">Nothing here.</p>}
       <SelBar sel={sel} noun="package" actions={[
@@ -575,10 +578,7 @@ function PackageSheet({ c, p, onClose }: { c: Ctx; p: Pallet; onClose: () => voi
   const made = p.run_id ? d.runs.find(x => x.id === p.run_id) : undefined
   const usedIn = d.inputs.filter(i => i.pallet_id === p.id).map(i => d.runs.find(x => x.id === i.run_id)).filter((x): x is Run => !!x && x.status !== 'cancelled')
   const here = live(p), free = here && !r && !h, can = c.canEdit
-  const proms = d.promises.filter(x => x.pallet_id === p.id)
-  const [mode, setMode] = useState<'none' | 'sell' | 'promise'>('none')
   const go = (f: () => void) => { onClose(); f() }
-  const unprom = async (id: number) => { try { await c.api.uncommit(id); c.flash('Promise taken off'); await c.reload() } catch (e) { c.flash(errText(e), true) } }
   return <Sheet title={p.code} sub={<>{p.strain} <Prod p={p.product} /></>} onClose={onClose}>
     {r && <div className="infobox">Being {r.kind === 'buck' ? 'bucked' : 'trimmed'} in <a onClick={() => c.openRun(r)}>{r.code}</a>. Open the run to finish it.</div>}
     {h && <div className="infobox held">Committed to {h}. Distribution ships it from Fulfillment.</div>}
@@ -590,15 +590,8 @@ function PackageSheet({ c, p, onClose }: { c: Ctx; p: Pallet; onClose: () => voi
       {p.status === 'at_processor' && <button className="primary" onClick={() => go(() => c.back([p.id]))}>Back unbucked</button>}
       {p.status === 'at_processor' && <button className="ghost" onClick={() => c.manifest([p.id])}>Manifest sheet</button>}
       {free && p.product === 'bucked' && <button className="primary" onClick={() => go(() => c.start('trim', [p.id]))}>Trim</button>}
-      {free && p.product === 'bucked' && <button className="ghost" onClick={() => setMode('promise')}>Promise forecast to an order</button>}
-      {free && p.product === 'bucked' && !proms.length && <button className="ghost" onClick={() => setMode('sell')}>Sell as bucked</button>}
-      {free && ['standards', 'smalls', 'trim', 'unbucked'].includes(p.product ?? '') && <button className="ghost" onClick={() => setMode('sell')}>{p.product === 'unbucked' ? 'Sell as unbucked' : 'Commit to an order'}</button>}
     </div>}
     <Forecast c={c} p={p} />
-    {proms.length > 0 && <div className="dlist">{proms.map(x => <div key={x.id} className="drow"><span className="grow">Promised: <b>{n0(x.lbs)} lbs {PL(x.product)}</b> to {x.so} · {x.customer}</span>
-      {can && <button className="ghost small" onClick={() => unprom(x.id)}>Take off</button>}</div>)}</div>}
-    {mode === 'sell' && <CommitForm c={c} p={p} onDone={onClose} />}
-    {mode === 'promise' && <PromiseForm c={c} p={p} onDone={onClose} />}
     <dl>
       <dt>Where</dt><dd>{c.where(p)}</dd>
       <dt>Weight</dt><dd>{n0(w(p))} lbs{p.og_weight && p.og_weight !== p.current_weight ? <span className="muted"> (started {n0(p.og_weight)})</span> : null}{p.product === 'wet' || p.product === 'unbucked' ? <span className="muted"> · wet, on paper</span> : null}</dd>
@@ -613,96 +606,27 @@ function PackageSheet({ c, p, onClose }: { c: Ctx; p: Pallet; onClose: () => voi
   </Sheet>
 }
 
-/** a real package (or part of it) onto a confirmed order line of the same product */
-function CommitForm({ c, p, onDone }: { c: Ctx; p: Pallet; onDone: () => void }) {
-  const lines = c.d.lines.filter(l => l.product === p.product && canon(l.strain) === canon(p.strain) && !l.on_load && l.picked < l.lbs)
-  const [line, setLine] = useState<number | null>(lines.length === 1 ? lines[0].id : null)
-  const L = lines.find(l => l.id === line)
-  const [lbs, setLbs] = useState<number | null>(null)
-  const [tag, setTag] = useState('')
-  const [busy, setBusy] = useState(false)
-  const want = L ? Math.min(L.lbs - L.picked, w(p)) : null
-  const part = lbs != null && lbs < w(p)
-  async function commit() {
-    setBusy(true)
-    try { await c.api.commit(line!, p.id, part ? lbs : null, part ? tag : null); c.flash(`${part ? n0(lbs) + ' lbs of ' : ''}${p.code} committed to ${L?.so}`); await c.reload(); onDone() }
-    catch (e) { c.flash(errText(e), true) } finally { setBusy(false) }
-  }
-  if (!lines.length) return <p className="muted">No confirmed order is waiting on {p.strain} {PL(p.product).toLowerCase()}. Sales adds the order first (Sales › Orders › New order, product {PL(p.product)}).</p>
-  return <>
-    <F label="Order line"><Pick value={line} blank="Pick an order…" options={lines.map(l => ({ v: l.id, l: `${l.so} · ${l.customer} · ${n0(l.lbs - l.picked)} of ${n0(l.lbs)} lbs still needed${l.wanted ? ` · wanted ${fmtD(l.wanted)}` : ''}` }))} onChange={v => { setLine(v); setLbs(null) }} /></F>
-    {L && <>
-      <F label="Lbs" hint={`(blank = the whole package, ${n0(w(p))} lbs)`}><NumIn value={lbs} placeholder={want != null && want < w(p) ? `${n0(want)} needed` : 'whole package'} onChange={setLbs} /></F>
-      {part && <F label="New METRC tag for the part" hint="(blank = pending)"><TagIn value={tag} onChange={setTag} /></F>}
-      <SaveBar busy={busy} onCancel={onDone} onSave={commit} saveLabel={part ? `Split off ${n0(lbs)} lbs and commit` : 'Commit whole package'} />
-    </>}
-  </>
-}
-
-/** forecast standards / smalls / trim from a bucked package onto an order line; filled automatically when it's trimmed */
-function PromiseForm({ c, p, onDone }: { c: Ctx; p: Pallet; onDone: () => void }) {
-  const f = forecast(c.d, p)
-  const left = (k: 'standards' | 'smalls' | 'trim') => Math.max(0, (k === 'standards' ? f.std : k === 'smalls' ? f.sml : f.trm) - promisedOn(c.d, p.id, k))
-  const lines = c.d.lines.filter(l => ['standards', 'smalls', 'trim'].includes(l.product) && canon(l.strain) === canon(p.strain) && !l.on_load && l.picked + l.promised < l.lbs)
-  const [line, setLine] = useState<number | null>(lines.length === 1 ? lines[0].id : null)
-  const L = lines.find(l => l.id === line)
-  const max = L ? Math.floor(Math.min(L.lbs - L.picked - L.promised, left(L.product as 'standards'))) : 0
-  const [lbs, setLbs] = useState<number | null>(null)
-  const [busy, setBusy] = useState(false)
-  async function save() {
-    setBusy(true)
-    try { await c.api.commitForecast(line!, p.id, lbs ?? max); c.flash(`${n0(lbs ?? max)} lbs ${PL(L!.product)} promised to ${L!.so}`); await c.reload(); onDone() }
-    catch (e) { c.flash(errText(e), true) } finally { setBusy(false) }
-  }
-  if (!lines.length) return <p className="muted">No confirmed order is waiting on {p.strain} standards, smalls or trim. Sales adds the order first.</p>
-  return <>
-    <p className="muted small-note">Still free to promise from {p.code}: ~{n0(left('standards'))} Standards, ~{n0(left('smalls'))} Smalls, ~{n0(left('trim'))} Trim. When it's trimmed, the real packages go on the order by themselves.</p>
-    <F label="Order line"><Pick value={line} blank="Pick an order…" options={lines.map(l => ({ v: l.id, l: `${l.so} · ${l.customer} · ${PL(l.product)} · ${n0(l.lbs - l.picked - l.promised)} of ${n0(l.lbs)} lbs still needed` }))} onChange={v => { setLine(v); setLbs(null) }} /></F>
-    {L && <>
-      <F label="Lbs" hint={`(up to ${n0(max)})`}><NumIn value={lbs} placeholder={n0(max)} onChange={setLbs} /></F>
-      <SaveBar busy={busy} onCancel={onDone} onSave={save} saveLabel="Promise" disabled={!max} />
-    </>}
-  </>
-}
-
-// ---------- Available to sell: on hand by stage, forecast, promised, free ----------
-function Available({ c }: { c: Ctx }) {
+// ---------- Orders: confirmed orders with dry product (Distribution fills them in Fulfillment) ----------
+function Orders({ c }: { c: Ctx }) {
   const { d } = c
-  const rows = new Map<string, { strain: string; wet: number; wetBk: number; bk: number; fc: { std: number; sml: number; trm: number }; laterFc: { std: number; sml: number; trm: number }; have: Record<string, number>; held: Record<string, number>; prom: Record<string, number> }>()
-  const row = (s: string | null) => { const k = canon(s); let r = rows.get(k); if (!r) { r = { strain: s ?? '?', wet: 0, wetBk: 0, bk: 0, fc: { std: 0, sml: 0, trm: 0 }, laterFc: { std: 0, sml: 0, trm: 0 }, have: {}, held: {}, prom: {} }; rows.set(k, r) } return r }
-  for (const p of d.pallets) {
-    if (!(live(p) || p.status === 'at_processor')) continue
-    const r = row(p.strain), f = forecast(d, p)
-    if (p.product === 'wet' || p.product === 'unbucked') { r.wet += w(p); r.wetBk += f.bucked; r.laterFc.std += f.std; r.laterFc.sml += f.sml; r.laterFc.trm += f.trm }
-    else if (p.product === 'bucked') { r.bk += w(p); if (!c.heldFor(p.id)) { r.fc.std += f.std; r.fc.sml += f.sml; r.fc.trm += f.trm } }
-    if (p.product) { r.have[p.product] = (r.have[p.product] ?? 0) + w(p); if (c.heldFor(p.id)) r.held[p.product] = (r.held[p.product] ?? 0) + w(p) }
-  }
-  for (const x of d.promises) { const p = d.pallets.find(y => y.id === x.pallet_id); if (p) { const r = row(p.strain); r.prom[x.product] = (r.prom[x.product] ?? 0) + x.lbs } }
-  const list = [...rows.values()].sort((a, b) => a.strain.localeCompare(b.strain))
-  const free = (r: (typeof list)[number], k: 'standards' | 'smalls' | 'trim') => (r.have[k] ?? 0) - (r.held[k] ?? 0) + (k === 'standards' ? r.fc.std : k === 'smalls' ? r.fc.sml : r.fc.trm) - (r.prom[k] ?? 0)
-  const waiting = d.lines.filter(l => l.picked + l.promised < l.lbs - 0.01)
+  const [all, setAll] = useState(false)
+  const byOrder = new Map<number, OLine[]>()
+  for (const l of d.lines) byOrder.set(l.order_id, [...(byOrder.get(l.order_id) ?? []), l])
+  const orders = [...byOrder.values()].filter(ls => all || ls.some(l => l.picked < l.lbs - 0.01))
+    .sort((a, b) => (a[0].wanted ?? '9999').localeCompare(b[0].wanted ?? '9999') || (a[0].so ?? '').localeCompare(b[0].so ?? ''))
   return (
-    <div className="list wide">
-      <h2>Available to sell</h2>
-      <p className="muted">Per strain: trimmed on hand plus the forecast from bucked packages, minus what's committed or promised. Sales can promise forecast standards, smalls and trim from bucked packages (tap one in Inventory). Wet and unbucked show what's coming later; they can't be promised yet.</p>
-      {!list.length ? <p className="muted">No dry product on hand.</p> : <div className="cwrap"><table className="ctable">
-        <thead>
-          <tr><th rowSpan={2}>Strain</th><th className="num" rowSpan={2}>Bucked</th><th className="num" colSpan={3}>Free to sell now (lbs)</th><th className="num" colSpan={2}>Coming later</th></tr>
-          <tr><th className="num">Standards</th><th className="num">Smalls</th><th className="num">Trim</th><th className="num">Wet / unbucked</th><th className="num">~Standards</th></tr>
-        </thead>
-        <tbody>{list.map(r => <tr key={r.strain}><td>{r.strain}</td>
-          <td className="num">{n0(r.bk - (r.held.bucked ?? 0)) || ''}</td>
-          {(['standards', 'smalls', 'trim'] as const).map(k => { const v = free(r, k), fc = k === 'standards' ? r.fc.std : k === 'smalls' ? r.fc.sml : r.fc.trm
-            return <td key={k} className="num"><b className={v < 0 ? 'bad-t' : ''}>{n0(v) || ''}</b>{fc > 0 && <div className="muted small">{n0(r.have[k] ?? 0)} on hand + ~{n0(fc)}</div>}{(r.prom[k] ?? 0) > 0 && <div className="muted small">{n0(r.prom[k])} promised</div>}</td> })}
-          <td className="num">{r.wet ? <>{n0(r.wet)}<div className="muted small">~{n0(r.wetBk)} bucked</div></> : ''}</td>
-          <td className="num muted">{r.laterFc.std ? `~${n0(r.laterFc.std)}` : ''}</td></tr>)}</tbody>
-      </table></div>}
-      <h3 className="csec">Orders waiting on dry product <span className="muted">{waiting.length || ''}</span></h3>
-      {waiting.length ? <div className="cwrap"><table className="ctable">
-        <thead><tr><th>Order</th><th>Customer</th><th>Strain</th><th>Product</th><th className="num">Lbs</th><th className="num">Committed</th><th className="num">Promised</th><th>Wanted</th></tr></thead>
-        <tbody>{waiting.map(l => <tr key={l.id}><td>{l.so}</td><td>{l.customer}</td><td>{l.strain}</td><td>{PL(l.product)}</td><td className="num">{n0(l.lbs)}</td>
-          <td className="num">{n0(l.picked)}</td><td className="num">{n0(l.promised)}</td><td className="nowrap">{fmtD(l.wanted)}</td></tr>)}</tbody>
-      </table></div> : <p className="muted">Every confirmed dry order line is covered.</p>}
+    <div className="list">
+      <div className="row between wrap toolbar"><h2>Orders</h2>
+        <label className="check"><input type="checkbox" checked={all} onChange={e => setAll(e.target.checked)} /> Show filled orders too</label></div>
+      <p className="muted">Confirmed orders with dry product (bucked, standards, smalls, trim). Distribution fills them from inventory in Fulfillment, the same as fresh frozen.</p>
+      {!orders.length ? <p className="muted">No confirmed orders waiting on dry product.</p> : <div className="dlist">{orders.map(ls => { const o = ls[0]
+        return <section key={o.order_id} className="dcard ordcard">
+          <div className="dcard-h"><h3>{o.so ?? 'Order'} <span className="muted">{o.customer}</span></h3><span className="muted">{o.wanted ? `wanted ${fmtD(o.wanted)}` : ''}{o.on_load ? ' · on a load' : ''}</span></div>
+          <div className="dlist">{ls.map(l => { const f = (() => { const have = sum(d.pallets.filter(p => p.product === l.product && live(p) && canon(p.strain) === canon(l.strain) && !c.heldFor(p.id)).map(w)); return have })()
+            return <div key={l.id} className="drow"><span className="grow"><b>{l.strain}</b> <Prod p={l.product} /> <span className="muted">{l.crop_year}</span></span>
+              <span className="muted small">{n0(f)} lbs free in inventory</span>
+              <b className={l.picked >= l.lbs - 0.01 ? 'ok-t' : ''}>{n0(l.picked)} / {n0(l.lbs)} lbs</b></div> })}</div>
+        </section> })}</div>}
     </div>
   )
 }
@@ -721,27 +645,30 @@ function Yields({ c }: { c: Ctx }) {
   for (const h of hist.filter(h => h.crop_year === yr)) {
     if (all.some(y => canon(y.strain) === canon(h.strain) && (y.bucked_in || y.trim_in))) continue
     const ti = h.standards + h.smalls + h.trim_lbs + h.trim_mold
-    all.push({ strain: h.strain, crop_year: h.crop_year, wet_lbs: 0, bucked_in: h.bucked + h.buck_trim + h.buck_mold, bucked: h.bucked, buck_trim: h.buck_trim, buck_mold: h.buck_mold, moisture: 0,
+    const wet = Number(h.wet_lbs ?? 0)
+    all.push({ strain: h.strain, crop_year: h.crop_year, wet_lbs: wet, bucked_in: wet || h.bucked + h.buck_trim + h.buck_mold, bucked: h.bucked, buck_trim: h.buck_trim, buck_mold: h.buck_mold,
+      moisture: wet ? wet - h.bucked - h.buck_trim - h.buck_mold : 0,
       trim_in: ti, standards: h.standards, smalls: h.smalls, trim_lbs: h.trim_lbs, trim_mold: h.trim_mold, trim_loss: 0, buck_runs: 0, trim_runs: 0, src: h.source })
   }
   all.sort((a, b) => a.strain.localeCompare(b.strain))
   const cost = (strain: string, task: 'buck' | 'trim') => { const x = labor.filter(l => canon(l.strain) === canon(strain) && l.task === task); const lbs = sum(x.map(l => l.lbs)), pay = sum(x.map(l => l.pay))
     return lbs ? { per: pay / lbs, pay } : null }
   const $ = (x: { per: number; pay: number } | null) => x ? <>${x.per.toFixed(2)}<div className="muted small">${n0(x.pay)}</div></> : ''
+  const z = (v: number | null | undefined) => (v ? n0(v) : '')
   const row = (y: Yield & { src?: string }) => { const wetKnown = y.wet_lbs > 0
     return <tr key={y.strain}>
-      <td>{y.strain}{y.src && <div className="muted small">{y.src}</div>}</td><td className="num">{wetKnown ? n0(y.wet_lbs) : ''}</td>
-      <td className="num">{n0(y.bucked)} <span className="muted">{wetKnown ? pct(y.bucked, y.bucked_in) : ''}</span></td><td className="num">{n0(y.buck_trim)}</td>
-      <td className="num hide-s">{n0(y.buck_mold)}</td><td className="num hide-s">{wetKnown ? pct(y.moisture, y.bucked_in) : ''}</td>
-      <td className="num">{n0(y.standards)} <span className="muted">{pct(y.standards, y.trim_in)}</span></td><td className="num">{n0(y.smalls)} <span className="muted">{pct(y.smalls, y.trim_in)}</span></td>
-      <td className="num">{n0(y.trim_lbs)} <span className="muted">{pct(y.trim_lbs, y.trim_in)}</span></td><td className="num hide-s">{n0(y.trim_mold)} <span className="muted">{pct(y.trim_mold, y.trim_in)}</span></td>
-      <td className="num"><b>{wetKnown ? pct(y.bucked + y.buck_trim, y.wet_lbs) : ''}</b></td>
+      <td>{y.strain}{y.src && <div className="muted small">{y.src}</div>}</td><td className="num">{wetKnown ? z(y.wet_lbs) : ''}</td>
+      <td className="num">{z(y.bucked)} <span className="muted">{wetKnown ? pct(y.bucked, y.bucked_in) : ''}</span></td><td className="num">{z(y.buck_trim)}</td>
+      <td className="num hide-s">{z(y.buck_mold)}</td><td className="num hide-s">{wetKnown ? pct(y.moisture, y.bucked_in) : ''}</td>
+      <td className="num">{z(y.standards)} <span className="muted">{pct(y.standards, y.trim_in)}</span></td><td className="num">{z(y.smalls)} <span className="muted">{pct(y.smalls, y.trim_in)}</span></td>
+      <td className="num">{z(y.trim_lbs)} <span className="muted">{pct(y.trim_lbs, y.trim_in)}</span></td><td className="num hide-s">{z(y.trim_mold)} <span className="muted">{pct(y.trim_mold, y.trim_in)}</span></td>
+      <td className="num"><b>{wetKnown && y.bucked_in ? pct(y.bucked + y.buck_trim, y.bucked_in) : ''}</b></td>
       <td className="num">{$(cost(y.strain, 'buck'))}</td><td className="num">{$(cost(y.strain, 'trim'))}</td></tr> }
   return (
     <div className="list wide">
       <div className="row between wrap toolbar"><h2>Yields</h2>
         <div className="seg">{(years.length ? years : [new Date().getFullYear()]).map(y => <button key={y} className={yr === y ? 'on' : ''} onClick={() => setYr(y)}>{y}</button>)}</div></div>
-      <p className="muted">Per strain and crop year, from finished runs (and the FL25 workbook). Bucking % are of the wet weight in; trimming % are of the bucked lbs in. Return from raw = bucked flower + buck trim as a share of wet. Labor $/lb = piece pay ÷ flower lbs from the crew logs. These numbers drive the forecasts.</p>
+      <p className="muted">Per strain and crop year, from finished runs (and the FL25 workbook). Bucking % are of the wet weight in; trimming % are of the bucked lbs in. Return from raw = bucked flower + buck trim as a share of the wet weight that was bucked. Labor $/lb = piece pay ÷ flower lbs from the crew logs. These numbers drive the forecasts.</p>
       {!rows ? <p className="muted">Loading…</p> : !all.length ? <p className="muted">Nothing finished for {yr} yet.</p> : <div className="cwrap"><table className="ctable">
         <thead><tr><th>Strain</th><th className="num">Wet</th><th className="num">Bucked</th><th className="num">Buck trim</th><th className="num hide-s">Buck mold</th><th className="num hide-s">Moisture</th>
           <th className="num">Standards</th><th className="num">Smalls</th><th className="num">Trim</th><th className="num hide-s">Trim mold</th><th className="num">Return from raw</th><th className="num">Bucking $/lb</th><th className="num">Trimming $/lb</th></tr></thead>

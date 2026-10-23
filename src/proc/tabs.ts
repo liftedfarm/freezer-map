@@ -1,7 +1,7 @@
 // Processing screens: shared by the app's navigation and the module itself
-export type PTab = 'dashboard' | 'incoming' | 'runs' | 'crew' | 'available' | 'inventory' | 'yields' | 'review' | 'activity' | 'settings'
+export type PTab = 'dashboard' | 'incoming' | 'runs' | 'crew' | 'orders' | 'inventory' | 'yields' | 'review' | 'activity' | 'settings'
 export const PROC_TABS: { t: PTab; l: string }[] = [
-  { t: 'dashboard', l: 'Dashboard' }, { t: 'inventory', l: 'Inventory' }, { t: 'crew', l: 'Crew' }, { t: 'available', l: 'Available' },
+  { t: 'dashboard', l: 'Dashboard' }, { t: 'inventory', l: 'Inventory' }, { t: 'crew', l: 'Crew' }, { t: 'orders', l: 'Orders' },
   { t: 'incoming', l: 'Drying' }, { t: 'runs', l: 'Runs' }, { t: 'yields', l: 'Yields' },
 ]
 /** bottom of the menu, same in every module ('settings' is Processing Admins only) */

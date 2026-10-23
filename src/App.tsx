@@ -145,7 +145,7 @@ function whereIs(ix: Index, slotId: number | null) {
 }
 
 function describe(ix: Index, e: InvEvent, names?: Map<number, string>) {
-  const code = e.pallet_id != null ? (ix.pallet.get(e.pallet_id)?.code ?? names?.get(e.pallet_id) ?? `#${e.pallet_id}`) : ''
+  const code = e.pallet_id != null ? (ix.pallet.get(e.pallet_id)?.code ?? names?.get(e.pallet_id) ?? (e.details as { code?: string } | null)?.code ?? `#${e.pallet_id}`) : ''
   switch (e.type) {
     case 'move': { const k = (e.details as { kind?: string } | null)?.kind
       return `${code} ${k === 'swap' ? 'swapped' : k === 'shuffle' ? 'shuffled' : k === 'undo' ? 'moved back' : 'moved'} ${whereIs(ix, e.from_slot_id)} to ${whereIs(ix, e.to_slot_id)}` }
@@ -253,6 +253,19 @@ function describe(ix: Index, e: InvEvent, names?: Map<number, string>) {
       return `Trim request ${d?.new ? 'added' : 'changed'}: ${lbs(e.lbs)} ${d?.strain} ${d?.product}${d?.customer ? ` for ${d.customer}` : ''}${d?.due ? `, due ${d.due}` : ''}` }
     case 'proc_request_status': { const d = e.details as { status?: string } | null; return `Trim request marked ${d?.status}` }
     case 'proc_settings': return `Processing settings: ${e.note}`
+    case 'proc_promised': { const d = e.details as { so?: string; product?: string } | null; return `${lbs(e.lbs)} ${d?.product} from ${code} promised to ${d?.so}` }
+    case 'proc_unpromised': return `Promise on ${code} taken off`
+    case 'proc_promise_filled': { const d = e.details as { so?: string; product?: string; strain?: string } | null; return `${lbs(e.lbs)} ${d?.strain} ${d?.product} put on ${d?.so}` }
+    case 'pay_day': { const d = e.details as { date?: string; task?: string; run?: string | null; strain?: string; rows?: number } | null
+      return `Crew day logged: ${d?.date} ${d?.task === 'buck' ? 'bucking' : 'trimming'} ${d?.run ?? d?.strain ?? ''} (${d?.rows} ${d?.rows === 1 ? 'person' : 'people'})` }
+    case 'pay_employee': return `Crew: ${e.note}`
+    case 'pay_rate': { const d = e.details as { task?: string; rate?: number; target?: number; effective_from?: string } | null; return `Piece rate: ${d?.task === 'buck' ? 'bucking' : 'trimming'} $${d?.rate}/lb at ${d?.target} lb/hr from ${d?.effective_from}` }
+    case 'pay_closed': { const d = e.details as { starts?: string; total?: number } | null; return `Pay period from ${d?.starts} closed${d?.total != null ? ` ($${Number(d.total).toFixed(2)})` : ''}` }
+    case 'pay_reopened': { const d = e.details as { starts?: string } | null; return `Pay period from ${d?.starts} reopened` }
+    case 'pay_exported': { const d = e.details as { starts?: string } | null; return `Pay period from ${d?.starts} sent to payroll` }
+    case 'pay_adjusted': { const d = e.details as { starts?: string; employee?: string; amount?: number; reason?: string; removed?: number } | null
+      return d?.removed ? `Pay adjustment removed (period from ${d?.starts})` : `Pay adjustment: ${d?.employee} $${d?.amount} (${d?.reason})` }
+    case 'order_created': { const d = e.details as { so?: string; customer?: string; lines?: number } | null; return `${d?.so ?? 'Order'} created for ${d?.customer ?? ''}${d?.lines ? ` (${d.lines} line${d.lines === 1 ? '' : 's'})` : ''}` }
     case 'acct_sent': { const d = e.details as { inv?: string; env?: string; total?: number } | null
       return `${d?.inv} sent to ${d?.env === 'production' ? 'QuickBooks' : 'the QuickBooks sandbox'}${d?.total != null ? ` (${money(Number(d.total))})` : ''}` }
     case 'acct_error': { const d = e.details as { inv?: string; env?: string } | null; return `${d?.inv} couldn't go to ${d?.env === 'production' ? 'QuickBooks' : 'the sandbox'}` }
@@ -1271,7 +1284,8 @@ function eventModule(e: InvEvent): 'distribution' | 'sales' | 'admin' | 'nursery
   const t = e.type, d = e.details as { list?: string; via?: string } | null
   if (/^acct_/.test(t) || (t === 'invoice_paid' && d?.via === 'QuickBooks')) return 'accounting'
   if (/^nursery/.test(t)) return 'nursery'
-  if (/^proc_/.test(t)) return 'processing'
+  if (/^proc_/.test(t) || t === 'pay_day' || t === 'pay_employee') return 'processing'
+  if (/^pay_/.test(t)) return 'accounting'
   if (/^cult_log/.test(t)) return 'cultivation'
   if (/^invoice/.test(t)) return 'sales'
   if (/^license/.test(t)) return 'admin'

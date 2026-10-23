@@ -117,7 +117,7 @@ export const MODULES: { key: ModKey; label: string; what: string; user: string; 
   { key: 'sales', label: 'Sales', what: 'Reserves, open menu, orders, prices', user: 'See prices, reserves and orders; confirm orders', admin: '+ approve reserve requests, deadlines, customers and terms' },
   { key: 'cultivation', label: 'Production', what: 'Harvest schedule, testing, fields, planning', user: 'Schedule and log harvests, fields, plan', admin: '+ Production settings (sites, fields, labs, equipment)' },
   { key: 'nursery', label: 'Nursery', what: 'Mother plants, cuttings, clone orders and deliveries', user: 'Mothers, batches, deliver clones, invoices', admin: '+ Nursery settings (rooms, prices, tag ranges); void invoices' },
-  { key: 'processing', label: 'Processing', what: 'Dry flower: drying, bucking, trimming, trim requests', user: 'Wet packages, send out / receive, bucking and trimming runs, commit to orders', admin: '+ Processing settings (processors)' },
+  { key: 'processing', label: 'Processing', what: 'Dry flower: drying, bucking, trimming, crew pay', user: 'Wet packages, send out / receive, bucking and trimming runs, commit to orders', admin: '+ Processing settings (processors)' },
   { key: 'accounting', label: 'Accounting', what: 'Invoices to QuickBooks, payments, classes', user: 'Check and send invoices to QuickBooks', admin: '+ connect QuickBooks, products, classes and class rules' },
   { key: 'admin', label: 'Admin', what: 'Company dashboard, users and access, app settings', user: 'Everything in Admin', admin: 'Everything in Admin' },
 ]

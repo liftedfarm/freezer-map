@@ -78,7 +78,7 @@ function Dashboard({ ov, rows, conn, env, go, open, banner }: { ov: Overview; ro
   const oldest = rows.filter(toSend).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 8)
   const od = rows.filter(i => unpaid(i) && i.due && i.due < today()).sort((a, b) => (a.due ?? '').localeCompare(b.due ?? '')).slice(0, 8)
   return (
-    <div className="list">
+    <div className="dash">
       <DashHead title="Accounting" sub={<>{ENV_LABEL[env]} <EnvPill env={env} />{conn?.company ? ` · ${conn.company}` : ''}</>} />
       {banner}
       <Tiles>

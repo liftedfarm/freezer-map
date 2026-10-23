@@ -25,7 +25,7 @@ export interface Yield {
 export interface Shares { dry?: number | null; bt?: number | null; std?: number | null; sml?: number | null; trm?: number | null; mold?: number | null; buck_runs?: number; trim_runs?: number; history?: boolean }
 export interface Rates { default_dry: number; all: Shares; strains: Record<string, Shares> }
 export interface Promise_ { id: number; pallet_id: number; line_id: number; product: 'standards' | 'smalls' | 'trim'; lbs: number; so: string | null; customer: string }
-export interface History { strain: string; crop_year: number; source: string; bucked: number; buck_mold: number; buck_trim: number; standards: number; trim_mold: number; smalls: number; trim_lbs: number; notes: string | null }
+export interface History { strain: string; crop_year: number; source: string; wet_lbs: number | null; bucked: number; buck_mold: number; buck_trim: number; standards: number; trim_mold: number; smalls: number; trim_lbs: number; notes: string | null }
 export interface Labor { strain: string; crop_year: number | null; task: 'buck' | 'trim'; lbs: number; hours: number; pay: number }
 export interface Spot { id: number; code: string; row: number; freezer_id: number }
 export interface Box { id: number; site: string; number: number; kind: string }

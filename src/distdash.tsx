@@ -102,7 +102,8 @@ export function Loads({ ctx, loads }: { ctx: SideCtx; loads: Load[] }) {
 
 export function Activity({ ctx }: { ctx: SideCtx }) {
   const [evs, setEvs] = useState<InvEvent[] | null>(null)
-  useEffect(() => { ctx.backend.recentEvents(10).then(setEvs).catch(() => setEvs([])) }, [ctx.snap])
+  // Distribution's own work only (Processing and payroll have their own Activity)
+  useEffect(() => { ctx.backend.recentEvents(40).then(es => setEvs(es.filter(e => !/^(proc_|pay_|acct_|cult_log|nursery)/.test(e.type)).slice(0, 10))).catch(() => setEvs([])) }, [ctx.snap])
   return (
     <div className="side-list">
       {evs === null && <div className="muted small-note">Loading…</div>}
