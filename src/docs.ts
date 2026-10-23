@@ -14,7 +14,7 @@ export interface SalesDoc {
   lines: DocLine[]
 }
 
-export const money = (x: number) => '$' + Number(x ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+export const money = (x: number) => (Number(x ?? 0) < 0 ? '-$' : '$') + Math.abs(Number(x ?? 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const qtyFmt = (x: number) => Number(x ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 export const dfmt = (s: string | null | undefined) => { if (!s) return ''; const [y, m, d] = s.slice(0, 10).split('-'); return `${m}/${d}/${y}` }
 export const docTitle = (d: SalesDoc) => d.kind === 'invoice' ? 'Sales Invoice' : 'Sales Order'

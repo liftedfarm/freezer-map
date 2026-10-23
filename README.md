@@ -44,7 +44,7 @@ This is for inventory tracking only. BC and METRC stay the systems of record.
    - `VITE_SUPABASE_ANON_KEY` = the anon / publishable key (safe for the browser; the database rules do the protecting)
 5. Deploy.
 
-Never put the service role key or the Azure client secret in Vercel or in the code.
+Never put the service role key or the Azure client secret in the code, or in any VITE_ variable (those go to the browser). The one exception: `SUPABASE_SERVICE_ROLE_KEY` (no VITE_ prefix) is set in Vercel for the QuickBooks server functions in `api/qbo/`, which never send it to the browser.
 
 ## Local preview with demo data
 
@@ -58,3 +58,15 @@ Open http://localhost:5173/?demo. Demo mode uses a snapshot of the workbook and 
 2. Split (new METRC tag required, "tag pending" allowed), combine, weight adjust
 3. Orders and Roshi pick list import, pick suggestions by front rank
 4. Harvest table upload, scheduled Excel report to SharePoint
+
+## Accounting: QuickBooks Online (046)
+
+Run `supabase/046_accounting.sql`. Then in Vercel > Settings > Environment Variables:
+
+- `QBO_CLIENT_ID`, `QBO_CLIENT_SECRET`: from the Intuit developer app (Development keys for the sandbox, Production keys for the real company)
+- `QBO_ENV`: `sandbox` or `production`
+- `SUPABASE_SERVICE_ROLE_KEY`: Supabase > Project Settings > API Keys (server only)
+- optional `CRON_SECRET` (the nightly payment check in `vercel.json` sends it), `QBO_REDIRECT_URI` (default `https://freezer-map-8i3h.vercel.app/api/qbo/callback`)
+
+The redirect URI must also be listed in the Intuit app (Settings > Redirect URIs). An Accounting Admin connects in Accounting > Settings.
+Server functions: `api/qbo/connect.js` (start sign-in), `callback.js` (Intuit sends the browser back), `run.js` (status, push, sync, check, setup, disconnect), `cron.js` (nightly balances).

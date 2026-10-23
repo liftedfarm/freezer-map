@@ -227,7 +227,7 @@ function LinkBox({ backend, email, claimed, flash, onLinked }: {
 
 /** a module's Settings > People: who has this module and at what level. Owners set any level; the module's Admins set Off / View / User
  *  for people who aren't Admins. The database checks all of it (set_module_level). */
-export function ModulePeople({ sb, module, flash }: { sb: SupabaseClient | null; module: 'distribution' | 'sales' | 'cultivation' | 'nursery'; flash: (t: string, bad?: boolean) => void }) {
+export function ModulePeople({ sb, module, flash }: { sb: SupabaseClient | null; module: 'distribution' | 'sales' | 'cultivation' | 'nursery' | 'accounting'; flash: (t: string, bad?: boolean) => void }) {
   const [rows, setRows] = useState<{ email: string; name: string | null; owner: boolean; last: string | null; lv: Level | null }[] | null>(null)
   const [q, setQ] = useState('')
   const [busy, setBusy] = useState(false)

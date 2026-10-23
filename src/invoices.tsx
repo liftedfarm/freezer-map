@@ -8,7 +8,7 @@ import { Tile, Tiles } from './dash'
 type Flash = (t: string, bad?: boolean) => void
 const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` }
 const STATUS: Record<string, string> = { open: 'Open', paid: 'Paid', void: 'Void' }
-const ACCT: Record<string, string> = { pending: 'Not in accounting yet', sent: 'In accounting', error: 'Accounting error', skip: 'Not sent to accounting' }
+const ACCT: Record<string, string> = { pending: 'Not in QuickBooks yet', sent: 'In QuickBooks', error: 'QuickBooks error', skip: 'Not sent to QuickBooks' }
 
 /** one SO or invoice: preview, download, email, text, link; invoices can be adjusted until they're in accounting */
 export function DocSheet({ backend, kind, id, flash, onClose, onChanged, canEdit, canVoid, sender }: {
@@ -57,7 +57,8 @@ export function DocSheet({ backend, kind, id, flash, onClose, onChanged, canEdit
           {edit && editable && <InvoiceEditor d={d} terms={terms} busy={busy} run={run} backend={backend} />}
           {d.kind === 'invoice' && canEdit && d.status !== 'void' && (
             <div className="row wrap docact">
-              {d.status === 'open' ? <button className="ghost small" disabled={busy} onClick={() => run(() => backend.setInvoiceStatus(d.id, 'paid'), 'Marked paid')}>Mark paid</button>
+              {d.acct_status === 'sent' ? <span className="muted small">Payments are recorded in QuickBooks; paid shows here after the nightly check.</span>
+                : d.status === 'open' ? <button className="ghost small" disabled={busy} onClick={() => run(() => backend.setInvoiceStatus(d.id, 'paid'), 'Marked paid')}>Mark paid</button>
                 : <button className="ghost small" disabled={busy} onClick={() => run(() => backend.setInvoiceStatus(d.id, 'open'), 'Marked open')}>Mark not paid</button>}
               {canVoid && d.acct_status !== 'sent' && <button className="ghost small" disabled={busy} onClick={() => { const why = prompt(`Void ${d.number}? Say why (optional):`); if (why !== null) run(() => backend.setInvoiceStatus(d.id, 'void', why), 'Voided') }}>Void</button>}
             </div>
@@ -73,7 +74,18 @@ function InvoiceEditor({ d, terms, busy, run, backend }: { d: SalesDoc; terms: P
   const [date, setDate] = useState(d.date ?? today())
   const [po, setPo] = useState(d.po ?? '')
   const [notes, setNotes] = useState(d.notes ?? '')
-  const [charge, setCharge] = useState({ desc: 'Customer Shipping', qty: '1', price: '' })
+  const [charge, setCharge] = useState({ product: 'SHIPPING', desc: '', qty: '1', price: '' })
+  // QuickBooks products for charges (046): shipping, discounts, returns, refunds
+  const [products, setProducts] = useState<{ code: string; name: string; grp: string }[]>([])
+  useEffect(() => { backend.client()?.from('acct_products').select('code,name,grp').eq('active', true).order('sort').then(({ data }) => setProducts(((data ?? []) as { code: string; name: string; grp: string }[]).filter(x => ['shipping', 'adjust', 'other'].includes(x.grp)))) }, [])
+  const chosen = products.find(x => x.code === charge.product)
+  const addCharge = async () => {
+    const sb = backend.client()
+    if (sb && chosen) {
+      const { error } = await sb.rpc('acct_add_line', { p_inv: d.id, p_product: chosen.code, p_description: charge.desc.trim() || chosen.name, p_qty: Number(charge.qty) || 1, p_price: Number(charge.price), p_applies_to: null })
+      if (error) throw new Error(error.message)
+    } else await backend.setInvoiceLine(d.id, null, charge.desc || 'Customer Shipping', Number(charge.qty) || 1, Number(charge.price))
+  }
   return (
     <div className="invedit">
       <div className="grid2">
@@ -90,12 +102,13 @@ function InvoiceEditor({ d, terms, busy, run, backend }: { d: SalesDoc; terms: P
         <tbody>{d.lines.map(l => <LineRow key={l.id} l={l} busy={busy} onPrice={p => run(() => backend.setInvoiceLine(d.id, l.id, l.description, null, p), 'Price changed')}
           onRemove={l.kind === 'charge' ? () => run(() => backend.removeInvoiceLine(d.id, l.id), 'Removed') : undefined} />)}</tbody></table>
       <div className="row wrap invcharge">
-        <input value={charge.desc} onChange={e => setCharge({ ...charge, desc: e.target.value })} placeholder="Charge (shipping, storage…)" />
+        {products.length > 0 && <select value={charge.product} onChange={e => setCharge({ ...charge, product: e.target.value })}>{products.map(x => <option key={x.code} value={x.code}>{x.name}</option>)}</select>}
+        <input value={charge.desc} onChange={e => setCharge({ ...charge, desc: e.target.value })} placeholder={chosen ? `Description (default: ${chosen.name})` : 'Charge (shipping, storage…)'} />
         <input type="number" value={charge.qty} onChange={e => setCharge({ ...charge, qty: e.target.value })} placeholder="Qty" />
-        <input type="number" value={charge.price} onChange={e => setCharge({ ...charge, price: e.target.value })} placeholder="Price" />
-        <button className="ghost small" disabled={busy || !charge.desc.trim() || charge.price === ''} onClick={() => run(() => backend.setInvoiceLine(d.id, null, charge.desc, Number(charge.qty) || 1, Number(charge.price)), 'Charge added').then(() => setCharge({ desc: '', qty: '1', price: '' }))}>+ Add charge</button>
+        <input type="number" value={charge.price} onChange={e => setCharge({ ...charge, price: e.target.value })} placeholder={chosen?.grp === 'adjust' ? 'Amount off' : 'Price'} />
+        <button className="ghost small" disabled={busy || (!chosen && !charge.desc.trim()) || charge.price === ''} onClick={() => run(addCharge, chosen?.grp === 'adjust' ? 'Discount added' : 'Charge added').then(() => setCharge({ product: charge.product, desc: '', qty: '1', price: '' }))}>+ Add</button>
       </div>
-      <p className="muted small">Quantities come from what actually shipped. Change prices here, or add charges like shipping. Locked once the invoice is in accounting.</p>
+      <p className="muted small">Quantities come from what actually shipped. Change prices here, or add shipping, discounts, returns or refunds (they go on as a minus amount). Contract customers get a $0 "Free shipping - contract" line automatically. Locked once the invoice is in QuickBooks.</p>
     </div>
   )
 }
@@ -134,7 +147,7 @@ export function InvoicesView({ backend, customers, flash, isAdmin, sender, scope
       <Tiles>
         <Tile label="Open" value={money(sum(openI))} sub={`${openI.length} invoices`} onClick={() => setF('open')} />
         <Tile label="Overdue" value={money(sum(od))} sub={`${od.length} invoices`} tone={od.length ? 'bad' : 'ok'} onClick={() => setF('overdue')} />
-        <Tile label="Not in accounting" value={notAcct.length} sub="QuickBooks sync comes next" tone={notAcct.length ? 'info' : undefined} />
+        <Tile label="Not in QuickBooks yet" value={notAcct.length} sub="Accounting sends them" tone={notAcct.length ? 'info' : undefined} />
       </Tiles>
       <div className="row toolbar">
         <div className="seg">{(['open', 'overdue', 'paid', 'void', 'all'] as const).map(k => <button key={k} className={f === k ? 'on' : ''} onClick={() => setF(k)}>{k[0].toUpperCase() + k.slice(1)}</button>)}</div>
@@ -162,6 +175,7 @@ export function NewOrderSheet({ backend, customers, strains, flash, onClose, onD
   const [wanted, setWanted] = useState('')
   const [notes, setNotes] = useState('')
   const [termsCode, setTermsCode] = useState<string>('')
+  const [shipping, setShipping] = useState('')
   const [terms, setTerms] = useState<PaymentTerm[]>([])
   const [lines, setLines] = useState<{ strain: string; lbs: string; price: string }[]>([{ strain: '', lbs: '', price: '' }])
   const [busy, setBusy] = useState(false)
@@ -174,6 +188,10 @@ export function NewOrderSheet({ backend, customers, strains, flash, onClose, onD
     try {
       const ls: NewOrderLine[] = lines.filter(l => l.strain.trim() && Number(l.lbs) > 0).map(l => ({ strain: l.strain.trim(), lbs: Number(l.lbs), price: l.price === '' ? null : Number(l.price) }))
       const o = await backend.createOrder(cust!, ls, po, wanted || null, notes, termsCode || null)
+      if (shipping !== '') {
+        const { error } = await backend.client()?.rpc('set_order_shipping', { p_order: o.id, p_amount: Number(shipping) }) ?? { error: null }
+        if (error) flash(`Order made, but shipping wasn't saved: ${error.message}`, true)
+      }
       flash(`${o.so_number} created`); onDone(o.id)
     } catch (e) { flash(String((e as Error).message ?? e), true) } finally { setBusy(false) }
   }
@@ -207,6 +225,8 @@ export function NewOrderSheet({ backend, customers, strains, flash, onClose, onD
             <option value="">{c ? `Customer default (${terms.find(t => t.code === c.payment_terms)?.label ?? 'Due on receipt'})` : 'Customer default'}</option>
             {terms.filter(t => t.active).map(t => <option key={t.code} value={t.code}>{t.label}</option>)}
           </select></div>
+        <div className="field"><label>Shipping <span className="muted">($, blank = none{c && ((c.contract_lbs ?? 0) > 0) ? '; contract customers get a $0 "Free shipping - contract" line' : ''})</span></label>
+          <input type="number" step="0.01" min="0" value={shipping} onChange={e => setShipping(e.target.value)} placeholder="0.00" /></div>
         <div className="field"><label>Notes</label><input value={notes} onChange={e => setNotes(e.target.value)} /></div>
         <p className="muted">The order is confirmed and gets its SO number right away, then shows in Distribution → Fulfillment.</p>
         <div className="row between"><span /><div className="row"><button className="ghost" onClick={onClose}>Cancel</button><button className="primary" disabled={busy || !ok} onClick={save}>Create order</button></div></div>

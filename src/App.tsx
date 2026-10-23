@@ -13,6 +13,7 @@ import { MySettings } from './mine'
 import { DocSheet, InvoicesView, NewOrderSheet, SharedDocPage, TermsPanel } from './invoices'
 import { FulfillView, STATE_LABEL } from './fulfill'
 import { applyTheme } from './theme'
+import { money } from './docs'
 import { EMPTY, active, addMoves, addToTray, backToTray, dropFromPlan, fillStaging, laneShuffle, occupants, place, slotView, suggestions, toSave } from './plan'
 import type { Layout, Plan, PlanMove, PlaceMode } from './plan'
 import { DragGhost, draggable, onDrop } from './drag'
@@ -25,6 +26,8 @@ import { CULT_TABS, CULT_TAIL } from './cult/tabs'
 import type { CultTab } from './cult/tabs'
 import { NURSERY_TABS, NURSERY_TAIL } from './nursery/tabs'
 import type { NTab } from './nursery/tabs'
+import { ACCT_TABS, ACCT_TAIL } from './acct/tabs'
+import type { ATab } from './acct/tabs'
 import { LicensesPanel } from './licenses'
 import { LoadForm, LoadView, PickLoad, TransitView, stopColor } from './loads'
 import type { LoadCtx } from './loads'
@@ -36,15 +39,16 @@ const backend: Backend = makeBackend()
 // Cultivation module: its own bundle, only loaded for users who have it switched on
 const CultView = lazy(() => import('./cult/CultView'))
 const NurseryView = lazy(() => import('./nursery/NurseryView'))
+const AccountingView = lazy(() => import('./acct/AccountingView'))
 
-type View = 'dash' | 'fulfill' | 'map' | 'freezer' | 'transit' | 'load' | 'review' | 'activity' | 'settings' | 'sales' | 'cult' | 'nursery' | 'admin' | 'mine'
+type View = 'dash' | 'fulfill' | 'map' | 'freezer' | 'transit' | 'load' | 'review' | 'activity' | 'settings' | 'sales' | 'cult' | 'nursery' | 'acct' | 'admin' | 'mine'
 // modules: each person has a level (User / Admin) per module; Owners have all of them (Admin > Settings > Users)
-type Mod = 'dist' | 'sales' | 'cult' | 'nurs' | 'admin'
-const MOD_KEY: Record<Mod, ModKey> = { dist: 'distribution', sales: 'sales', cult: 'cultivation', nurs: 'nursery', admin: 'admin' }
-const KEY_MOD: Record<ModKey, Mod> = { distribution: 'dist', sales: 'sales', cultivation: 'cult', nursery: 'nurs', admin: 'admin' }
-const MOD_LABEL: Record<Mod, string> = { dist: 'Distribution', sales: 'Sales', cult: 'Production', nurs: 'Nursery', admin: 'Admin' }
+type Mod = 'dist' | 'sales' | 'cult' | 'nurs' | 'acct' | 'admin'
+const MOD_KEY: Record<Mod, ModKey> = { dist: 'distribution', sales: 'sales', cult: 'cultivation', nurs: 'nursery', acct: 'accounting', admin: 'admin' }
+const KEY_MOD: Record<ModKey, Mod> = { distribution: 'dist', sales: 'sales', cultivation: 'cult', nursery: 'nurs', accounting: 'acct', admin: 'admin' }
+const MOD_LABEL: Record<Mod, string> = { dist: 'Distribution', sales: 'Sales', cult: 'Production', nurs: 'Nursery', acct: 'Accounting', admin: 'Admin' }
 const ML = (m: Mod) => t(MOD_LABEL[m])
-const MOD_WHAT: Record<Mod, string> = { dist: 'Freezer map · transit · review', sales: 'Reserves · menu · orders', cult: 'Harvests · fields · plan', nurs: 'Mothers · cuttings · deliveries', admin: 'Company · users · app settings' }
+const MOD_WHAT: Record<Mod, string> = { dist: 'Freezer map · transit · review', sales: 'Reserves · menu · orders', cult: 'Harvests · fields · plan', nurs: 'Mothers · cuttings · deliveries', acct: 'Invoices to QuickBooks · payments', admin: 'Company · users · app settings' }
 type SalesTab = 'dash' | SalesMode | 'invoices' | 'review' | 'activity' | 'settings'
 type AdminTab = 'dash' | 'review' | 'activity' | 'settings'
 interface NavItem { k: string; l: ReactNode; on: boolean; go: () => void }
@@ -53,6 +57,7 @@ const MOD_ICON: Record<Mod, ReactNode> = {
   sales: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z" /><circle cx="7.5" cy="7.5" r="1.5" /></svg>,
   cult: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M12 22V12M12 12C12 7 8 4 3 4c0 5 4 8 9 8zM12 12c0-4 3-7 8-7 0 4-3 7-8 7z" /></svg>,
   nurs: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M7 20h10l-1.5-6h-7z" /><path d="M12 14V9" /><path d="M12 9c0-3-2-5-5-5 0 3 2 5 5 5zM12 9c0-2.5 2-4.5 5-4.5 0 2.5-2 4.5-5 4.5z" /></svg>,
+  acct: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><rect x="4" y="2" width="16" height="20" rx="2" /><path d="M8 6h8M8 10h2M14 10h2M8 14h2M14 14h2M8 18h2M14 18h2" /></svg>,
   admin: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M12 2 4 5v6c0 5 3.4 9.3 8 11 4.6-1.7 8-6 8-11V5l-8-3z" /><path d="m9 12 2 2 4-4" /></svg>,
 }
 const stored = (k: string) => { try { return localStorage.getItem(k) } catch { return null } }
@@ -223,6 +228,13 @@ function describe(ix: Index, e: InvEvent, names?: Map<number, string>) {
       return `${d?.email} modules: ${(d?.modules ?? []).join(', ') || 'none'}` }
     case 'harvested': { const d = e.details as { strain?: string; site?: string; field?: string; tag?: string | null } | null
       return `${code} harvested: ${d?.strain} from ${d?.site} ${d?.field ?? ''} (${lbs(e.lbs)})${d?.tag ? '' : ', tag pending'}, needs a spot` }
+    case 'acct_sent': { const d = e.details as { inv?: string; env?: string; total?: number } | null
+      return `${d?.inv} sent to ${d?.env === 'production' ? 'QuickBooks' : 'the QuickBooks sandbox'}${d?.total != null ? ` (${money(Number(d.total))})` : ''}` }
+    case 'acct_error': { const d = e.details as { inv?: string; env?: string } | null; return `${d?.inv} couldn't go to ${d?.env === 'production' ? 'QuickBooks' : 'the sandbox'}` }
+    case 'acct_connected': { const d = e.details as { env?: string; company?: string } | null; return `QuickBooks ${d?.env} connected${d?.company ? `: ${d.company}` : ''}` }
+    case 'acct_disconnected': { const d = e.details as { env?: string } | null; return `QuickBooks ${d?.env} disconnected` }
+    case 'acct_settings': return `Accounting settings: ${e.note} changed`
+    case 'invoice_paid': { const d = e.details as { inv?: string; total?: number; via?: string } | null; return `${d?.inv} paid${d?.via ? ` (from ${d.via})` : ''}` }
     default: return `${e.type} ${code}`
   }
 }
@@ -239,6 +251,9 @@ interface Placing { title: string; sub: string; run: (slot: Slot) => Promise<voi
 // opened from a request email: go straight to Sales > Requests or Orders
 const GO = new URLSearchParams(location.search).get('go')
 const GO_TAB: 'requests' | 'orders' | null = GO === 'requests' || GO === 'orders' ? GO : null
+// back from connecting QuickBooks (api/qbo/callback): Accounting > Settings
+const GO_ACCT = GO === 'accounting'
+const QBO_BACK = (() => { const q = new URLSearchParams(location.search); return q.get('qbo') ? { qbo: q.get('qbo')!, msg: q.get('msg') } : null })()
 
 export default function App() {
   const [user, setUser] = useState<string | null | undefined>(undefined)
@@ -247,11 +262,12 @@ export default function App() {
   const [site, setSite] = useState<Site>('OHR')
   useEffect(() => { if (GO) history.replaceState(null, '', location.pathname) }, [])
   const storedMod = stored('fm.mod') as Mod | null
-  const [view, setView] = useState<View>(GO_TAB ? 'sales' : storedMod === 'cult' ? 'cult' : storedMod === 'nurs' ? 'nursery' : storedMod === 'sales' ? 'sales' : storedMod === 'admin' ? 'admin' : 'dash')
-  const [mod, setModS] = useState<Mod>(GO_TAB ? 'sales' : storedMod && storedMod in MOD_KEY ? storedMod : 'dist')
+  const [view, setView] = useState<View>(GO_ACCT ? 'acct' : GO_TAB ? 'sales' : storedMod === 'cult' ? 'cult' : storedMod === 'nurs' ? 'nursery' : storedMod === 'acct' ? 'acct' : storedMod === 'sales' ? 'sales' : storedMod === 'admin' ? 'admin' : 'dash')
+  const [mod, setModS] = useState<Mod>(GO_ACCT ? 'acct' : GO_TAB ? 'sales' : storedMod && storedMod in MOD_KEY ? storedMod : 'dist')
   const [cultTab, setCultTabS] = useState<CultTab>(() => ([...CULT_TABS, ...CULT_TAIL].find(t => t.t === stored('cult.tab'))?.t ?? 'dashboard'))
   const [salesTab, setSalesTabS] = useState<SalesTab>(GO_TAB ?? 'dash')
   const [adminTab, setAdminTabS] = useState<AdminTab>('dash')
+  const [acctTab, setAcctTabS] = useState<ATab>(GO_ACCT ? (QBO_BACK ? 'settings' : 'dashboard') : 'dashboard')
   const [nurTab, setNurTabS] = useState<NTab>(() => ([...NURSERY_TABS, ...NURSERY_TAIL].find(t => t.t === stored('nur.tab'))?.t ?? 'dashboard'))
   const [modMenu, setModMenu] = useState(false)
   const [more, setMore] = useState(false)
@@ -260,6 +276,7 @@ export default function App() {
   const setSalesTab = (t: SalesTab) => { setSalesTabS(t); setView('sales'); top() }
   const setAdminTab = (t: AdminTab) => { setAdminTabS(t); setView('admin'); top() }
   const setNurTab = (t: NTab) => { setNurTabS(t); store('nur.tab', t); setView('nursery'); top() }
+  const setAcctTab = (t: ATab) => { setAcctTabS(t); setView('acct'); top() }
   const lastView = useRef<View>('dash')
   const go = (v: View) => { if (view !== 'mine') lastView.current = view; setView(v); top() }
   const [freezerId, setFreezerId] = useState<number | null>(null)
@@ -313,7 +330,7 @@ export default function App() {
   const isAdminOf = (m: Mod) => lv[MOD_KEY[m]] === 'admin'
   const goMod = (m: Mod) => {
     setModS(m); store('fm.mod', m); setModMenu(false)
-    if (m === 'cult') setCultTab('dashboard'); else if (m === 'nurs') setNurTab('dashboard'); else if (m === 'sales') setSalesTab('dash'); else if (m === 'admin') setAdminTab('dash'); else go('dash')
+    if (m === 'cult') setCultTab('dashboard'); else if (m === 'nurs') setNurTab('dashboard'); else if (m === 'acct') setAcctTab('dashboard'); else if (m === 'sales') setSalesTab('dash'); else if (m === 'admin') setAdminTab('dash'); else go('dash')
   }
   // signed in: personal settings (theme, where to start, which site)
   useEffect(() => {
@@ -321,7 +338,7 @@ export default function App() {
     const p = me.access?.prefs ?? {}
     if (p.theme) applyTheme(p.theme)
     if (p.start_site) setSite(p.start_site)
-    if (!GO_TAB && p.start_module && lv[p.start_module]) goMod(KEY_MOD[p.start_module])
+    if (!GO_TAB && !GO_ACCT && p.start_module && lv[p.start_module]) goMod(KEY_MOD[p.start_module])
   }, [me?.email])
   // the module we're in isn't on for this person: go to one that is
   useEffect(() => { if (staff && cur !== mod && myMods.length) goMod(cur) }, [cur, mod, staff, myMods.length])
@@ -565,7 +582,11 @@ export default function App() {
   const nItem = (t: NTab, l: string): NavItem => ({ k: t, l, on: view === 'nursery' && nurTab === t, go: () => setNurTab(t) })
   const nurMain = NURSERY_TABS.map(x => nItem(x.t, t(x.l)))
   const nurTail = NURSERY_TAIL.filter(x => x.t !== 'settings' || isAdminOf('nurs')).map(x => nItem(x.t, t(x.l)))
+  const acItem = (t: ATab, l: string): NavItem => ({ k: t, l, on: view === 'acct' && acctTab === t, go: () => setAcctTab(t) })
+  const acctMain = ACCT_TABS.map(x => acItem(x.t, x.l))
+  const acctTail = ACCT_TAIL.filter(x => x.t !== 'settings' || isAdminOf('acct')).map(x => acItem(x.t, x.l))
   const NAV: Record<Mod, { main: NavItem[]; tail: NavItem[] }> = {
+    acct: { main: acctMain, tail: acctTail },
     dist: { main: distMain, tail: distTail }, sales: { main: salesMain, tail: salesTail }, cult: { main: cultMain, tail: cultTail }, nurs: { main: nurMain, tail: nurTail }, admin: { main: adminMain, tail: adminTail } }
   const nav = NAV[cur]
   const all = [...nav.main, ...nav.tail]
@@ -577,7 +598,7 @@ export default function App() {
     const [m, t] = j.split('.') as [Mod, string]
     if (!lv[MOD_KEY[m]]) { flash(`You don't have ${MOD_LABEL[m]}`, true); return }
     setModS(m); store('fm.mod', m)
-    if (m === 'dist') go(t as View); else if (m === 'sales') setSalesTab(t as SalesTab); else if (m === 'cult') setCultTab(t as CultTab); else if (m === 'nurs') setNurTab(t as NTab); else setAdminTab(t === 'users' ? 'settings' : t as AdminTab)
+    if (m === 'dist') go(t as View); else if (m === 'sales') setSalesTab(t as SalesTab); else if (m === 'cult') setCultTab(t as CultTab); else if (m === 'nurs') setNurTab(t as NTab); else if (m === 'acct') setAcctTab(t as ATab); else setAdminTab(t === 'users' ? 'settings' : t as AdminTab)
   }
   const appName = ML(cur)
   document.title = noMods ? 'Lifted Farms' : `${view === 'mine' ? t('My settings') : ML(cur)} · Lifted Farms`
@@ -742,6 +763,9 @@ export default function App() {
         {view === 'cult' && inCult && <Suspense fallback={<p className="muted">Loading…</p>}><CultView backend={backend} flash={flash} tab={cultTab} go={setCultTab} onPalletsChanged={() => { reload() }} /></Suspense>}
         {view === 'cult' && inCult && cultTab === 'setup' && <div className="modset"><SettingsView backend={backend} flash={flash} onChanged={() => { reload() }} inventoryStrains={invStrains} title="Strains" lists={['strains']} /></div>}
         {view === 'nursery' && cur === 'nurs' && <Suspense fallback={<p className="muted">Loading…</p>}><NurseryView backend={backend} flash={flash} tab={nurTab} go={setNurTab} customers={snap.customers ?? []} isAdmin={isAdminOf('nurs')} sender={me?.display_name} me={me?.email} /></Suspense>}
+        {view === 'acct' && cur === 'acct' && acctTab === 'activity' && <ActivityView ix={ix} module="accounting" />}
+        {view === 'acct' && cur === 'acct' && acctTab !== 'activity' && <Suspense fallback={<p className="muted">Loading…</p>}><AccountingView backend={backend} flash={flash} tab={acctTab} go={setAcctTab}
+          isAdmin={isAdminOf('acct')} canEdit={lv.accounting === 'user' || lv.accounting === 'admin'} notice={GO_ACCT ? QBO_BACK : null} /></Suspense>}
         {view === 'admin' && cur === 'admin' && adminTab === 'dash' && <AdminDashboard backend={backend} open={jump} />}
         {view === 'admin' && cur === 'admin' && adminTab === 'review' && <AdminReview backend={backend} open={jump} />}
         {view === 'admin' && cur === 'admin' && adminTab === 'activity' && <ActivityView ix={ix} module="all" />}
@@ -1204,8 +1228,9 @@ function ListView({ title, note, empty, items, ix, where, onPallet, showReason }
 }
 
 /** which module an activity line belongs to */
-function eventModule(e: InvEvent): 'distribution' | 'sales' | 'admin' | 'nursery' | 'cultivation' {
-  const t = e.type, d = e.details as { list?: string } | null
+function eventModule(e: InvEvent): 'distribution' | 'sales' | 'admin' | 'nursery' | 'cultivation' | 'accounting' {
+  const t = e.type, d = e.details as { list?: string; via?: string } | null
+  if (/^acct_/.test(t) || (t === 'invoice_paid' && d?.via === 'QuickBooks')) return 'accounting'
   if (/^nursery/.test(t)) return 'nursery'
   if (/^cult_log/.test(t)) return 'cultivation'
   if (/^invoice/.test(t)) return 'sales'
@@ -1216,7 +1241,7 @@ function eventModule(e: InvEvent): 'distribution' | 'sales' | 'admin' | 'nursery
 }
 const CULT_TBL: Record<string, string> = { cult_harvests: 'Harvest', cult_plantings: 'Planting', cult_tests: 'Test', cult_flower_picks: 'Dry flower pick', cult_demand: 'Plan strain',
   cult_plan: 'Plan row', cult_nursery_orders: 'Nursery delivery', cult_receipts: 'Plants received', app_settings: 'Production setting' }
-interface Line { id: string; at: string; who: string | null; text: ReactNode; note?: string | null; mod: 'distribution' | 'sales' | 'admin' | 'cultivation' | 'nursery' }
+interface Line { id: string; at: string; who: string | null; text: ReactNode; note?: string | null; mod: 'distribution' | 'sales' | 'admin' | 'cultivation' | 'nursery' | 'accounting' }
 
 /** Activity: each module shows its own; Admin shows everything with a filter */
 /** loading screen: the logo and a quiet spinner, same for every module */
@@ -1224,7 +1249,7 @@ function Splash() {
   return <div className="center splash"><img className="logo-login" src="/logo.png" alt="Lifted Farms" /><div className="spin" aria-label="Loading" /></div>
 }
 
-function ActivityView({ ix, module }: { ix: Index; module: 'distribution' | 'sales' | 'all' }) {
+function ActivityView({ ix, module }: { ix: Index; module: 'distribution' | 'sales' | 'accounting' | 'all' }) {
   const [events, setEvents] = useState<InvEvent[] | null>(null)
   const [cult, setCult] = useState<Line[]>([])
   const [names, setNames] = useState<Map<number, string>>(new Map())
@@ -1245,7 +1270,7 @@ function ActivityView({ ix, module }: { ix: Index; module: 'distribution' | 'sal
   const lines: Line[] = [...(events ?? []).map(e => ({ id: `e${e.id}`, at: e.at, who: e.user_email, text: describe(ix, e, names), note: e.note, mod: eventModule(e) } as Line)), ...cult]
     .filter(l => module === 'all' ? only === 'all' || l.mod === only : l.mod === module)
     .sort((a, b) => b.at.localeCompare(a.at))
-  const CH: [string, string][] = [['all', 'Everything'], ['distribution', 'Distribution'], ['sales', 'Sales'], ['cultivation', 'Production'], ['nursery', 'Nursery'], ['admin', 'Admin']]
+  const CH: [string, string][] = [['all', 'Everything'], ['distribution', 'Distribution'], ['sales', 'Sales'], ['cultivation', 'Production'], ['nursery', 'Nursery'], ['accounting', 'Accounting'], ['admin', 'Admin']]
   return (
     <div className="list">
       <h2>Activity</h2>
