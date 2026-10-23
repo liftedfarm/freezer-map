@@ -712,3 +712,6 @@ button.plain { background: none; border: 0; padding: 0; text-align: left; color:
 .map-sec .muted { font-weight: 400; font-size: 12px; margin-left: 6px; }
 .noline > select { flex: 0 0 auto; max-width: 130px; padding: 8px 6px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); }
 .noline select + input { flex: 3; }
+.update-bar { position: fixed; left: 50%; top: 12px; transform: translateX(-50%); z-index: 30; display: flex; align-items: center; gap: 12px;
+  background: var(--panel); border: 1px solid var(--brand); color: inherit; padding: 8px 10px 8px 16px; border-radius: 10px;
+  box-shadow: 0 6px 24px rgba(0,0,0,.35); width: max-content; max-width: calc(100% - 32px); font-size: 14px; }
