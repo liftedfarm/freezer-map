@@ -1,1 +1,7 @@
-{ "rewrites": [{ "source": "/((?!api/).*)", "destination": "/index.html" }] }
+{
+  "rewrites": [{ "source": "/((?!api/|assets/|strains/).*)", "destination": "/index.html" }],
+  "headers": [
+    { "source": "/assets/(.*)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }] },
+    { "source": "/((?!assets/|strains/).*)", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] }
+  ]
+}
