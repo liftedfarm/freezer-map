@@ -467,9 +467,24 @@ function RunSheet({ c, run, onClose }: { c: Ctx; run: Run; onClose: () => void }
   const [on, setOn] = useState<string | null>(today())
   const [busy, setBusy] = useState(false)
   const [sure, setSure] = useState(false)
-  const [crew, setCrew] = useState<{ people: number; days: number; lbs: number; other: number; hours: number; pay: number } | null>(null)
+  const [crew, setCrew] = useState<Awaited<ReturnType<ProcApi['crewOf']>> | null>(null)
+  const [filled, setFilled] = useState(false)
   useEffect(() => { c.api.crewOf(run.id).then(setCrew).catch(() => setCrew(null)) }, [run.id])
+  // fill what came out from the crew log, so nobody types the same numbers twice. Only while nothing has been typed yet.
+  useEffect(() => {
+    if (!crew || !crew.people || run.status !== 'open') return
+    if (rows.some(r => r.lbs != null) || mold != null) return
+    const r2 = (x: number) => Math.round(x * 100) / 100
+    const got: Partial<Record<Product, number>> = run.kind === 'buck'
+      ? { bucked: crew.lbs, trim: crew.trim + crew.smalls }
+      : { standards: crew.lbs, smalls: crew.smalls, trim: crew.trim }
+    setRows(rs => rs.map(r => ({ ...r, lbs: got[r.product] ? r2(got[r.product]!) : null })))
+    if (crew.mold) setMold(r2(crew.mold))
+    setFilled(true)
+  }, [crew])
   const out = sum(rows.map(r => r.lbs ?? 0)), inp = run.input_lbs ?? 0, loss = inp - out - (mold ?? 0)
+  const TRIM_TOL = 0.05   // trimming: in and out should match within 5% (water loss, sticky trays)
+  const off = run.kind === 'trim' && inp > 0 && Math.abs(loss) > inp * TRIM_TOL
   async function fill() {
     try {
       const n = rows.filter(r => r.lbs && !r.tag).length
@@ -503,6 +518,8 @@ function RunSheet({ c, run, onClose }: { c: Ctx; run: Run; onClose: () => void }
     </>}
     {open && <>
       <h3 className="csec">What came out</h3>
+      {filled ? <p className="muted small-note">Filled in from the crew log ({crew?.days} day{crew?.days === 1 ? '' : 's'}). If the scale says different on a package, change it here.</p>
+        : !crew?.people && <p className="muted small-note">Nothing logged by the crew on this run yet. Log each day in Crew against {run.code} and these fill in.</p>}
       {rows.map((r, i) => <div key={i} className="row noline">
         <select value={r.product} onChange={e => setRows(rs => rs.map((x, j) => j === i ? { ...x, product: e.target.value as Product } : x))}>{OUTS[run.kind].map(k => <option key={k} value={k}>{PL(k)}{run.kind === 'buck' && k === 'trim' ? ' (buck trim)' : ''}</option>)}</select>
         <NumIn value={r.lbs} placeholder="lbs" onChange={v => setRows(rs => rs.map((x, j) => j === i ? { ...x, lbs: v } : x))} />
@@ -515,7 +532,8 @@ function RunSheet({ c, run, onClose }: { c: Ctx; run: Run; onClose: () => void }
       <F label="Notes"><TextIn value={notes} onChange={v => setNotes(v ?? '')} /></F>
       <div className="ckpis"><div><b>{n0(out)}</b><span>out ({pct(out, inp)})</span></div><div><b>{n0(mold)}</b><span>mold</span></div>
         <div><b className={loss < 0 ? 'bad-t' : ''}>{n1(loss)}</b><span>{run.kind === 'buck' ? 'moisture' : 'difference'} ({pct(loss, inp)})</span></div></div>
-      {loss < 0 && <p className="bad-t small-note">More came out than went in. Check the weights.</p>}
+      {loss < 0 ? <p className="bad-t small-note">More came out than went in. Check the weights.</p>
+        : off && <p className="warn-t small-note">The difference is {pct(loss, inp)} of what went in, more than the usual {TRIM_TOL * 100}%. Check the scale or a missing day in the crew log.</p>}
       <div className="row between csave">
         {sure ? <span className="row"><button className="ghost danger" disabled={busy} onClick={cancel}>Yes, cancel run</button><button className="ghost small" onClick={() => setSure(false)}>Keep</button></span>
           : <button className="ghost" disabled={busy} onClick={() => setSure(true)}>Cancel run</button>}

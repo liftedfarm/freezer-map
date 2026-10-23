@@ -495,7 +495,16 @@ class SupaBackend implements Backend {
     }
     const shipped = await this.sb.rpc('shipped_in_freezer').then(r => (r.error ? [] : r.data) as ShippedCheck[], () => [] as ShippedCheck[])
     const unmatched = await this.sb.rpc('unmatched_shipped_tags').then(r => (r.error ? [] : r.data) as UnmatchedTag[], () => [] as UnmatchedTag[])
-    return { freezers, slots, pallets, strains, vehicles, customers, loads, stops, items, shipped, unmatched }
+    const inRun: Record<number, string> = {}
+    try {
+      const { data: runs } = await this.sb.from('proc_runs').select('id,code').eq('status', 'open')
+      const code = new Map(((runs ?? []) as { id: number; code: string }[]).map(r => [r.id, r.code]))
+      if (code.size) {
+        const { data: ins } = await this.sb.from('proc_run_inputs').select('run_id,pallet_id').in('run_id', [...code.keys()])
+        for (const i of (ins ?? []) as { run_id: number; pallet_id: number }[]) inRun[i.pallet_id] = code.get(i.run_id)!
+      }
+    } catch { /* no Processing yet */ }
+    return { freezers, slots, pallets, strains, vehicles, customers, loads, stops, items, shipped, unmatched, inRun }
   }
   async movePallet(palletId: number, toSlot: number | null, combine: boolean, note?: string) {
     const { error } = await this.sb.rpc('move_pallet', {

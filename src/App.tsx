@@ -799,7 +799,7 @@ export default function App() {
               ? m.set(p.strain.toLowerCase(), (m.get(p.strain.toLowerCase()) ?? 0) + Number(p.current_weight ?? 0)) : m, new Map<string, number>())} />
         })()}
         {view === 'fulfill' && cur === 'dist' && <FulfillView err={fErr} backend={backend} orders={forders} reload={async () => { await reload(); await refreshF() }} flash={flash}
-          pallets={snap.pallets} heldBy={heldBy} onLoad={id => ix.loadOf.has(id)} where={where} siteOf={siteOf} rank={p => (p.slot_id != null ? ix.slot.get(p.slot_id)?.front_rank : null) ?? 99}
+          pallets={snap.pallets} heldBy={heldBy} onLoad={id => ix.loadOf.has(id)} inRun={id => snap.inRun?.[id]} where={where} siteOf={siteOf} rank={p => (p.slot_id != null ? ix.slot.get(p.slot_id)?.front_rank : null) ?? 99}
           canon={canonOf} loads={snap.loads ?? []} vehicles={snap.vehicles ?? []} isSales={isSales}
           openLoad={id => { setLoadId(id); setView('load'); window.scrollTo(0, 0) }} openPallet={setPalletId} />}
         {view === 'transit' && <TransitView ctx={ctx} onOpen={id => { setLoadId(id); setView('load'); window.scrollTo(0, 0) }} onNew={() => setLoadForm({})} />}
@@ -887,6 +887,7 @@ export default function App() {
           loadInfo={ix.loadOf.get(selected.id)}
           held={heldBy.get(selected.id) ? `${heldBy.get(selected.id)!.customer} · ${heldBy.get(selected.id)!.so ?? 'order'} (${STATE_LABEL[heldBy.get(selected.id)!.state]})` : undefined}
           onHeld={() => { setPalletId(null); go('fulfill') }}
+          inRun={snap.inRun?.[selected.id]}
           originAdmin={isAdminOf('dist') && !backend.demo}
           onOrigin={site => act(() => backend.setPalletOrigin(selected.id, site), `${selected.code}: grown at ${site}`)}
           customerName={id => (snap.customers ?? []).find(c => c.id === id)?.name ?? ''}
@@ -1342,8 +1343,8 @@ function ActivityView({ ix, module }: { ix: Index; module: 'distribution' | 'sal
 
 type SheetAction = 'split' | 'merge' | 'tag' | 'weight' | 'addto' | 'addmixed'
 
-function PalletSheet({ ix, p, others, busy, where, onClose, onGo, onMove, onRemove, onClear, onPick, onForm, onTakeOff, onBreak, onLineage, loadInfo, customerName, onOpenLoad, onPutOnLoad, onPulled, held, onHeld, originAdmin, onOrigin }: {
-  held?: string; onHeld?: () => void; originAdmin?: boolean; onOrigin?: (site: string) => void
+function PalletSheet({ ix, p, others, busy, where, onClose, onGo, onMove, onRemove, onClear, onPick, onForm, onTakeOff, onBreak, onLineage, loadInfo, customerName, onOpenLoad, onPutOnLoad, onPulled, held, onHeld, originAdmin, onOrigin, inRun }: {
+  held?: string; onHeld?: () => void; originAdmin?: boolean; onOrigin?: (site: string) => void; inRun?: string
   ix: Index; p: Pallet; others: Pallet[]; busy: boolean; where: (p: Pallet) => string
   onClose: () => void; onGo: () => void; onMove: () => void; onRemove: () => void; onClear: () => void; onPick: (id: number) => void
   onForm: (kind: SheetAction) => void; onTakeOff: () => void; onBreak: () => void; onLineage: (ps: Pallet[]) => void
@@ -1384,6 +1385,7 @@ function PalletSheet({ ix, p, others, busy, where, onClose, onGo, onMove, onRemo
         {p.tag_pending && live && <div className="warnbox">METRC tag pending. <a onClick={() => onForm('tag')}>Enter tag</a></div>}
         {container && <div className="infobox">On mixed pallet {link(container)}. It moves with {container.code}.</div>}
         {held && <div className="infobox held">Held for <a onClick={onHeld}>{held}</a></div>}
+        {inRun && <div className="infobox held">In processing run {inRun}. It stays put until the run is finished. It can still be moved to another spot.</div>}
         {loadInfo && (
           <div className="infobox load" style={{ ['--sc' as string]: stopColor(loadInfo.stop.seq) }}>
             {loadInfo.item.loaded ? 'On the truck: ' : 'Planned on '}<a onClick={() => onOpenLoad(loadInfo.load.id)}>{loadInfo.load.code}</a>

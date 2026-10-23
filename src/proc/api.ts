@@ -109,7 +109,7 @@ export class ProcApi {
     fail(error)
     const r = (data ?? []) as { employee_id: number; work_date: string; lbs: number; mold: number; smalls: number; trim: number; hours: number; pay: number }[]
     const s = (f: (x: typeof r[number]) => number) => r.reduce((a, x) => a + Number(f(x)), 0)
-    return { people: new Set(r.map(x => x.employee_id)).size, days: new Set(r.map(x => x.work_date)).size, lbs: s(x => x.lbs), other: s(x => Number(x.mold) + Number(x.smalls) + Number(x.trim)), hours: s(x => x.hours), pay: s(x => x.pay) }
+    return { people: new Set(r.map(x => x.employee_id)).size, days: new Set(r.map(x => x.work_date)).size, lbs: s(x => x.lbs), mold: s(x => x.mold), smalls: s(x => x.smalls), trim: s(x => x.trim), other: s(x => Number(x.mold) + Number(x.smalls) + Number(x.trim)), hours: s(x => x.hours), pay: s(x => x.pay) }
   }
   commitForecast(line: number, pallet: number, lbs: number) { return this.rpc<unknown>('proc_commit_forecast', { p_line: line, p_pallet: pallet, p_lbs: lbs }) }
   setDryDefault(pct: number) { return this.rpc<void>('proc_set_dry_default', { p_pct: pct }) }

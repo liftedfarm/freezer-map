@@ -104,6 +104,8 @@ export interface Snapshot {
   items?: LoadItem[]
   shipped?: ShippedCheck[]
   unmatched?: UnmatchedTag[]
+  /** pallet id -> open processing run code (set aside until the run is finished) */
+  inRun?: Record<number, string>
 }
 
 export type Role = 'admin' | 'sales' | 'crew' | 'customer' | 'none'

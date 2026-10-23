@@ -16,7 +16,7 @@ export const orderGot = (o: FOrder) => o.lines.reduce((a, l) => a + got(l), 0)
 
 export interface FulfillProps {
   err?: string | null; backend: Backend; orders: FOrder[] | null; reload: () => Promise<void>; flash: (t: string, bad?: boolean) => void
-  pallets: Pallet[]; heldBy: Map<number, FOrder>; onLoad: (id: number) => boolean
+  pallets: Pallet[]; heldBy: Map<number, FOrder>; onLoad: (id: number) => boolean; inRun?: (id: number) => string | undefined
   where: (p: Pallet) => string; siteOf: (p: Pallet) => string | null; rank: (p: Pallet) => number; canon: (s: string | null | undefined) => string
   loads: Load[]; vehicles: Vehicle[]; isSales: boolean; openLoad: (id: number) => void; openPallet: (id: number) => void
 }
@@ -66,7 +66,7 @@ export function FulfillView(props: FulfillProps) {
   )
 }
 
-function OrderPage({ o, back, backend, reload, flash, pallets, heldBy, onLoad, where, siteOf, rank, canon, loads, vehicles, isSales, openLoad, openPallet }: FulfillProps & { o: FOrder; back: () => void }) {
+function OrderPage({ o, back, backend, reload, flash, pallets, heldBy, onLoad, inRun, where, siteOf, rank, canon, loads, vehicles, isSales, openLoad, openPallet }: FulfillProps & { o: FOrder; back: () => void }) {
   const [adding, setAdding] = useState<number | null>(null)
   const [busy, setBusy] = useState(false)
   const [loadPick, setLoadPick] = useState(false)
@@ -123,7 +123,7 @@ function OrderPage({ o, back, backend, reload, flash, pallets, heldBy, onLoad, w
                 {g === 0 && <button className="ghost small" disabled={busy} onClick={() => run(() => backend.cantFill(l.id, true), `${l.strain} marked can't fill`)}>Can't fill</button>}</div>}
               {editable && adding === l.id && <Pick line={l} need={Math.max(0, Number(l.lbs) - g)} busy={busy} close={() => setAdding(null)}
                 cands={pallets.filter(p => p.status === 'in_freezer' && !p.container_id && p.kind !== 'mixed' && (p.current_weight ?? 0) > 0
-                  && canon(p.strain) === canon(l.strain) && (p.product ?? 'fresh_frozen') === (l.product ?? 'fresh_frozen') && !heldBy.has(p.id) && !onLoad(p.id))}
+                  && canon(p.strain) === canon(l.strain) && (p.product ?? 'fresh_frozen') === (l.product ?? 'fresh_frozen') && !heldBy.has(p.id) && !onLoad(p.id) && !inRun?.(p.id))}
                 where={where} rank={rank}
                 onWhole={p => run(() => backend.pickPallet(l.id, p.id), `${p.code} assigned`).then(() => setAdding(null))}
                 onPart={(p, lbs, tag) => run(() => backend.pickPart(l.id, p.id, lbs, tag), `${n0(lbs)} lbs from ${p.code} assigned. Split it when you pull it.`).then(() => setAdding(null))} />}
@@ -177,7 +177,7 @@ function Pick({ line, need, cands, where, rank, busy, close, onWhole, onPart }: 
   return (
     <div className="fpick">
       <div className="row between"><b>Pick from {cands.length} {line.strain} pallet{cands.length === 1 ? '' : 's'} <span className="muted">({n0(total)} lbs free)</span></b><button className="ghost small" onClick={close}>Close</button></div>
-      {!cands.length && <p className="muted">Nothing free for this strain. Pallets already held for an order or on a load don't show.</p>}
+      {!cands.length && <p className="muted">Nothing free for this strain. Pallets already held for an order, on a load or in a processing run don't show.</p>}
       {sorted.slice(0, 12).map(p => (
         <div key={p.id} className="drow">
           <span className="grow"><b>{p.code}</b> <span className="muted">{where(p)}{p.package_tag ? ` · ${p.package_tag.slice(-6)}` : ''}</span></span>
