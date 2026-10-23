@@ -469,6 +469,11 @@ export default function App() {
     if (p.status === 'unslotted' && p.received_site) return `Received at ${p.received_site}, needs a spot`
     return whereIs(ix, p.slot_id)
   }
+  const siteOf = (p: Pallet): string | null => {
+    const top = p.container_id ? ix.pallet.get(p.container_id) ?? p : p
+    const fz = top.slot_id != null ? ix.freezer.get(ix.slot.get(top.slot_id)?.freezer_id ?? -1) : undefined
+    return fz?.site ?? top.received_site ?? null
+  }
   const looseList = snap.pallets.filter(loose).filter(p => !ix.loadOf.has(p.id))
   const openLoads = (snap.loads ?? []).filter(l => ['planning', 'loading', 'in_transit'].includes(l.status))
   const heldBy = new Map<number, FOrder>()
@@ -480,7 +485,9 @@ export default function App() {
     vehicles: snap.vehicles ?? [], customers: snap.customers ?? [],
     pallet: id => ix.pallet.get(id), contents: id => ix.contentsOf.get(id) ?? [], weight: p => weightOf(ix, p), where,
     freezerSpot: id => whereIs(ix, id),
-    available: snap.pallets.filter(p => !p.container_id && p.status === 'in_freezer' && !ix.loadOf.has(p.id)),
+    available: snap.pallets.filter(p => !p.container_id && (p.status === 'in_freezer' || (p.status === 'unslotted' && !!p.received_site)) && !ix.loadOf.has(p.id)),
+    siteOf,
+    held: id => { const o = heldBy.get(id); return o ? `${o.customer} · ${o.so ?? 'order'}` : undefined },
     busy,
     run: async (fn, ok) => { setBusy(true); try { await fn(); await reload(); flash(ok); return true } catch (e) { flash((e as Error).message, true); await reload().catch(() => {}); return false } finally { setBusy(false) } },
     confirm: (text, ok, fn) => setConfirm({ text, ok, run: fn }),
@@ -727,7 +734,7 @@ export default function App() {
               ? m.set(p.strain.toLowerCase(), (m.get(p.strain.toLowerCase()) ?? 0) + Number(p.current_weight ?? 0)) : m, new Map<string, number>())} />
         })()}
         {view === 'fulfill' && cur === 'dist' && <FulfillView err={fErr} backend={backend} orders={forders} reload={async () => { await reload(); await refreshF() }} flash={flash}
-          pallets={snap.pallets} heldBy={heldBy} onLoad={id => ix.loadOf.has(id)} where={where} rank={p => (p.slot_id != null ? ix.slot.get(p.slot_id)?.front_rank : null) ?? 99}
+          pallets={snap.pallets} heldBy={heldBy} onLoad={id => ix.loadOf.has(id)} where={where} siteOf={siteOf} rank={p => (p.slot_id != null ? ix.slot.get(p.slot_id)?.front_rank : null) ?? 99}
           canon={canonOf} loads={snap.loads ?? []} vehicles={snap.vehicles ?? []} isSales={isSales}
           openLoad={id => { setLoadId(id); setView('load'); window.scrollTo(0, 0) }} openPallet={setPalletId} />}
         {view === 'transit' && <TransitView ctx={ctx} onOpen={id => { setLoadId(id); setView('load'); window.scrollTo(0, 0) }} onNew={() => setLoadForm({})} />}
@@ -809,6 +816,8 @@ export default function App() {
           loadInfo={ix.loadOf.get(selected.id)}
           held={heldBy.get(selected.id) ? `${heldBy.get(selected.id)!.customer} · ${heldBy.get(selected.id)!.so ?? 'order'} (${STATE_LABEL[heldBy.get(selected.id)!.state]})` : undefined}
           onHeld={() => { setPalletId(null); go('fulfill') }}
+          originAdmin={isAdminOf('dist') && !backend.demo}
+          onOrigin={site => act(() => backend.setPalletOrigin(selected.id, site), `${selected.code}: grown at ${site}`)}
           customerName={id => (snap.customers ?? []).find(c => c.id === id)?.name ?? ''}
           onOpenLoad={id => { setPalletId(null); setLoadId(id); setView('load') }}
           onPutOnLoad={() => setPickLoad(selected)}
@@ -1254,8 +1263,8 @@ function ActivityView({ ix, module }: { ix: Index; module: 'distribution' | 'sal
 
 type SheetAction = 'split' | 'merge' | 'tag' | 'weight' | 'addto' | 'addmixed'
 
-function PalletSheet({ ix, p, others, busy, where, onClose, onGo, onMove, onRemove, onClear, onPick, onForm, onTakeOff, onBreak, onLineage, loadInfo, customerName, onOpenLoad, onPutOnLoad, onPulled, held, onHeld }: {
-  held?: string; onHeld?: () => void
+function PalletSheet({ ix, p, others, busy, where, onClose, onGo, onMove, onRemove, onClear, onPick, onForm, onTakeOff, onBreak, onLineage, loadInfo, customerName, onOpenLoad, onPutOnLoad, onPulled, held, onHeld, originAdmin, onOrigin }: {
+  held?: string; onHeld?: () => void; originAdmin?: boolean; onOrigin?: (site: string) => void
   ix: Index; p: Pallet; others: Pallet[]; busy: boolean; where: (p: Pallet) => string
   onClose: () => void; onGo: () => void; onMove: () => void; onRemove: () => void; onClear: () => void; onPick: (id: number) => void
   onForm: (kind: SheetAction) => void; onTakeOff: () => void; onBreak: () => void; onLineage: (ps: Pallet[]) => void
@@ -1311,7 +1320,12 @@ function PalletSheet({ ix, p, others, busy, where, onClose, onGo, onMove, onRemo
             <dt>METRC tag</dt><dd className="mono">{p.package_tag ?? (p.tag_pending ? 'pending' : 'none')}</dd>
             <dt>Harvested</dt><dd>{p.harvest_date ?? ''}</dd>
             <dt>Zone</dt><dd>{p.zone ?? ''}</dd>
+            <dt>Grown at</dt><dd>{originAdmin && onOrigin
+              ? <select className="inline" value={p.origin_site ?? ''} onChange={e => e.target.value && onOrigin(e.target.value)}>
+                  {!p.origin_site && <option value="">unknown</option>}{['OHR', 'GVR', 'GVR+OHR'].map(s => <option key={s} value={s}>{s === 'GVR+OHR' ? 'Both farms' : s}</option>)}</select>
+              : p.origin_site === 'GVR+OHR' ? 'Both farms (GVR and OHR)' : p.origin_site ?? 'unknown'}</dd>
           </>}
+          {isMixed && contents.length > 0 && <><dt>Grown at</dt><dd>{[...new Set(contents.map(c => c.origin_site ?? '?'))].sort().join(', ')}</dd></>}
           {parent && <><dt>Split from</dt><dd>{link(parent)}</dd></>}
           {children.length > 0 && <><dt>Split off</dt><dd>{join(children)}</dd></>}
           {sources.length > 0 && <><dt>Made from</dt><dd>{join(sources)}</dd></>}

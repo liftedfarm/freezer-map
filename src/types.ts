@@ -46,6 +46,7 @@ export interface Pallet {
   kind?: 'package' | 'mixed'
   container_id?: number | null
   received_site?: string | null
+  origin_site?: string | null        // farm it was grown at: OHR, GVR, or GVR+OHR
 }
 
 /** one line when building or adding to a mixed pallet: whole package (lbs null) or lbs split off with a new tag */
@@ -76,7 +77,7 @@ export interface Settings { vehicles: Vehicle[]; customers: Customer[]; strains:
 export type LoadStatus = 'planning' | 'loading' | 'in_transit' | 'delivered' | 'cancelled'
 export interface Load { id: number; code: string; load_date: string; vehicle_id: number; status: LoadStatus; driver: string | null; notes: string | null; created_by: string | null; created_at: string; departed_at: string | null; closed_at: string | null }
 export interface LoadStop { id: number; load_id: number; seq: number; customer_id: number; manifest: string | null; status: 'pending' | 'delivered'; delivered_at: string | null; delivered_by: string | null }
-export interface LoadItem { id: number; load_id: number; stop_id: number; pallet_id: number; position: number; loaded: boolean; from_slot: number | null }
+export interface LoadItem { id: number; load_id: number; stop_id: number; pallet_id: number; position: number; loaded: boolean; from_slot: number | null; from_site?: string | null }
 export interface StopInput { id?: number; customer_id: number; manifest: string }
 
 export interface Snapshot {
@@ -157,3 +158,11 @@ export interface Invoice {
   paid_at: string | null; created_at: string; seller_license?: string | null; nursery_order_id?: number | null
 }
 export interface NewOrderLine { strain: string; lbs: number; price?: number | null; crop_year?: number }
+
+// what someone needs to complete the METRC manifest for one stop (045 stop_manifest)
+export interface ManifestLicense { license: string; kind?: string; entity?: string; dba?: string | null; site?: string | null; premises?: string | null; address?: string | null; phone?: string | null; from_site?: string; name?: string; contact?: string | null }
+export interface ManifestPackage { pallet: string; code: string; tag: string | null; tag_pending: boolean; strain: string | null; origin: string | null; from: string | null; lbs: number | null; crop_year: number; harvested: string | null; batch: string }
+export interface StopManifest {
+  load: string; load_date: string; status: string; driver: string | null; vehicle: string | null; plate: string | null; stop: number; stop_status: string; manifest: string | null
+  transfer: boolean; from: ManifestLicense[]; to: ManifestLicense; transporter: ManifestLicense | null; orders: string[]; packages: ManifestPackage[]
+}

@@ -1,7 +1,8 @@
 import { ScanButton } from './scan'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { lbs } from './forms'
-import type { Customer, Load, LoadItem, LoadStop, Pallet, StopInput, Vehicle } from './types'
+import type { Customer, Load, LoadItem, LoadStop, Pallet, StopInput, StopManifest, Vehicle } from './types'
 
 // Everything the transit screens need from the app, passed in to avoid circular imports.
 export interface LoadCtx {
@@ -12,7 +13,9 @@ export interface LoadCtx {
   weight: (p: Pallet) => number
   where: (p: Pallet) => string
   freezerSpot: (slotId: number | null) => string
-  available: Pallet[]                          // top-level pallets in a freezer and not on an open load
+  available: Pallet[]                          // top-level pallets in a freezer (or received at a site) and not on an open load
+  siteOf: (p: Pallet) => string | null         // OHR / GVR: the freezer it's in, or where it was received
+  held: (id: number) => string | undefined     // "Customer · SO" when held for an order
   busy: boolean
   run: (fn: () => Promise<unknown>, ok: string) => Promise<boolean>
   confirm: (text: string, ok: string, fn: () => Promise<void>) => void
@@ -30,7 +33,17 @@ export interface LoadCtx {
     departLoad(l: number): Promise<void>
     deliverStop(s: number): Promise<void>
     cancelLoad(l: number): Promise<void>
+    stopManifest(s: number): Promise<StopManifest>
+    client(): SupabaseClient | null
   }
+}
+
+type Lic = { license_no: string; kind: string; site: string | null; hub: boolean; sort: number; active: boolean }
+/** the license a site's freezers sit under: the hub there (GVR processor), else the site's cultivation license (same rule as site_license() in 045) */
+export function siteLicense(lics: Lic[], site: string) {
+  const c = lics.filter(l => l.active && (l.site ?? '').toUpperCase() === site.toUpperCase() && ['processor', 'distributor', 'cultivation'].includes(l.kind))
+    .sort((a, b) => Number(b.hub) - Number(a.hub) || Number(b.kind === 'processor') - Number(a.kind === 'processor') || a.sort - b.sort || a.license_no.localeCompare(b.license_no))
+  return c[0]?.license_no ?? null
 }
 
 export const STOP_COLORS = ['#2563eb', '#d97706', '#16a34a', '#db2777', '#7c3aed', '#0891b2', '#dc2626', '#65a30d']
@@ -155,6 +168,12 @@ export function LoadView({ ctx, loadId, onBack, onEdit }: { ctx: LoadCtx; loadId
   const [placeItem, setPlaceItem] = useState<LoadItem | null>(null)
   const [picker, setPicker] = useState<{ stop: number | null; position: number | null } | null>(null)
   const [posOpen, setPosOpen] = useState<number | null>(null)
+  const [lics, setLics] = useState<Lic[]>([])
+  const [making, setMaking] = useState<number | null>(null)
+  useEffect(() => {
+    const sb = ctx.api.client(); if (!sb) return
+    sb.from('licenses').select('license_no, kind, site, hub, sort, active').then(({ data }) => setLics((data ?? []) as Lic[]))
+  }, [ctx.api])
   if (!l) return <div className="list"><button className="ghost" onClick={onBack}>‹ Transit</button><p className="muted">Load not found.</p></div>
   const v = ctx.vehicles.find(x => x.id === l.vehicle_id)
   const stops = ctx.stops.filter(s => s.load_id === l.id).sort((a, b) => a.seq - b.seq)
@@ -200,6 +219,10 @@ export function LoadView({ ctx, loadId, onBack, onEdit }: { ctx: LoadCtx; loadId
           const w = its.reduce((a, i) => { const p = ctx.pallet(i.pallet_id); return a + (p ? ctx.weight(p) : 0) }, 0)
           const c = cust(s)
           const site = c?.kind === 'internal' && ['OHR', 'GVR'].includes((c?.name ?? '').toUpperCase())
+          const dest = site ? (c?.name ?? '').toUpperCase() : null
+          const froms = [...new Set(its.map(i => { const p = ctx.pallet(i.pallet_id); return i.from_site ?? (p ? ctx.siteOf(p) : null) }).filter((x): x is string => !!x))].sort()
+          const L = (st: string) => { const n = siteLicense(lics, st); return n ? `${st} ${n}` : st }
+          const already = dest && froms.includes(dest)
           return (
             <div key={s.id} className={`stopcard ${s.status}`} style={{ ['--sc' as string]: stopColor(s.seq) }}>
               <div className="row between">
@@ -211,7 +234,23 @@ export function LoadView({ ctx, loadId, onBack, onEdit }: { ctx: LoadCtx; loadId
                       'Delivered', async () => { await ctx.run(() => ctx.api.deliverStop(s.id), `Stop ${s.seq} delivered`) })}>Mark delivered</button>}
               </div>
               <div className="muted">{its.length} pallet{its.length === 1 ? '' : 's'} · {lbs(w)}</div>
-              {canEdit && <button className="ghost small" onClick={() => setPicker({ stop: s.id, position: null })}>+ Add pallets</button>}
+              {its.length > 0 && <div className={`small-note lic ${froms.length > 1 || already ? 'warn-t' : 'muted'}`}>
+                {dest ? <>Transfer: {froms.map(L).join(' + ') || '?'} → <b>{L(dest)}</b>{already ? ` · some of these are already at ${dest}` : ''}</>
+                  : <>Ships from {froms.map(L).join(' and ') || '?'}{froms.length > 1 ? ' · two licenses means two METRC manifests' : ''}</>}
+              </div>}
+              <div className="row">
+                {canEdit && <button className="ghost small" onClick={() => setPicker({ stop: s.id, position: null })}>+ Add pallets</button>}
+                {its.length > 0 && <button className="ghost small" disabled={making === s.id} onClick={async () => {
+                  setMaking(s.id)
+                  try {
+                    const m = await ctx.api.stopManifest(s.id)
+                    const { manifestPdf, manifestFile } = await import('./manifest')
+                    const url = URL.createObjectURL(await manifestPdf(m))
+                    const a = document.createElement('a'); a.href = url; a.download = manifestFile(m); a.click()
+                    setTimeout(() => URL.revokeObjectURL(url), 30000)
+                  } catch (e) { await ctx.run(() => Promise.reject(e), '') } finally { setMaking(null) }
+                }}>{making === s.id ? 'Making…' : 'Manifest sheet'}</button>}
+              </div>
             </div>
           )
         })}
@@ -288,7 +327,7 @@ function PositionSheet({ ctx, load, pos, items, stops, onClose, onMove }: {
                 <div><a onClick={() => { onClose(); ctx.openPallet(p.id) }}><b>{p.code}</b></a> {label(ctx, p)} <span className="muted">· {lbs(ctx.weight(p))}</span></div>
                 <span className={`pill ${i.loaded ? 's-in_transit' : 's-planning'}`}>{i.loaded ? 'On truck' : 'Planned'}</span>
               </div>
-              {!i.loaded && <div className="muted">Pull from {ctx.freezerSpot(p.slot_id)}</div>}
+              {!i.loaded && <div className="muted">Pull from {p.slot_id != null ? ctx.freezerSpot(p.slot_id) : ctx.where(p)}</div>}
               {canEdit && (
                 <div className="field">
                   <label>Stop</label>
@@ -354,12 +393,14 @@ function PalletPicker({ ctx, load, stops, initialStop, position, free, onClose }
               {[...picked.map(id => ctx.pallet(id)!).filter(Boolean), ...results.filter(r => !picked.includes(r.id))].map(p => (
                 <label key={p.id} className={`pick ${picked.includes(p.id) ? 'on' : ''}`}>
                   <input type={single ? 'radio' : 'checkbox'} checked={picked.includes(p.id)} onChange={() => toggle(p.id)} />
-                  <b>{p.code}</b><span>{label(ctx, p)} · {lbs(ctx.weight(p))}</span><span className="muted">{ctx.where(p)}</span>
+                  <b>{p.code}</b><span>{label(ctx, p)} · {lbs(ctx.weight(p))}{p.origin_site ? <span className="muted"> · grown at {p.origin_site}</span> : null}</span>
+                  <span className="muted">{ctx.where(p)}{ctx.held(p.id) ? <span className="warn-t"> · held for {ctx.held(p.id)}</span> : null}</span>
                 </label>
               ))}
             </div>
           )}
           {q.trim() && results.length === 0 && <div className="muted small-note">Nothing available matches. Pallets already on a load, or packages on a mixed pallet, don't show here.</div>}
+          <div className="muted small-note">A pallet held for an order can go to that customer, or to OHR/GVR on a transfer (it stays held).</div>
         </div>
         {picked.length > 0 && <div className="muted">{picked.length} selected · {lbs(pickedW)}{!single && picked.length > free ? ` · only ${free} open positions, extra pallets need a shared position` : ''}</div>}
         <p className="muted small-note">Need part of a pallet? Split it first (or build a mixed pallet), then add the new piece here.</p>

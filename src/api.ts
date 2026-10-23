@@ -1,7 +1,7 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { accessFromRole } from './types'
 import type { SalesDoc } from './docs'
-import type { Invoice, NewOrderLine, PaymentTerm, FOrder, Prefs, ModKey, Level, ReserveYears, CustomerTerms, UnmatchedTag, ShippedCheck, OrderInput, Terms, MenuNumbers, MenuRow, ReserveRequest, Balance, ImportResult, Order, RoshiRow, Reserve, LinkInfo, AppUser, Customer, Me, Role, Freezer, FreezerStatus, InvEvent, ListName, ListRow, Load, LoadItem, LoadStop, MixLine, Pallet, Settings, SingleInput, Slot, Snapshot, StopInput, Strain, Vehicle } from './types'
+import type { Invoice, NewOrderLine, PaymentTerm, FOrder, Prefs, ModKey, Level, ReserveYears, CustomerTerms, UnmatchedTag, ShippedCheck, StopManifest, OrderInput, Terms, MenuNumbers, MenuRow, ReserveRequest, Balance, ImportResult, Order, RoshiRow, Reserve, LinkInfo, AppUser, Customer, Me, Role, Freezer, FreezerStatus, InvEvent, ListName, ListRow, Load, LoadItem, LoadStop, MixLine, Pallet, Settings, SingleInput, Slot, Snapshot, StopInput, Strain, Vehicle } from './types'
 
 export interface SaveUser { email: string; name: string; kind: 'staff' | 'customer' | 'none'; customerId: number | null; access: Partial<Record<ModKey, Level>>; owner?: boolean }
 export interface Overview {
@@ -120,6 +120,10 @@ export interface Backend {
   approveFill(orderId: number, note?: string): Promise<number>
   orderToLoad(orderId: number, loadId: number): Promise<void>
   orderOffLoad(orderId: number): Promise<void>
+  orderTransfer(orderId: number, loadId: number, site: string): Promise<number>
+  orderTransferNew(orderId: number, vehicleId: number, date: string, site: string): Promise<number>
+  stopManifest(stopId: number): Promise<StopManifest>
+  setPalletOrigin(palletId: number, site: string): Promise<void>
   /** Sales orders and invoices (027) */
   getDoc(kind: 'invoice' | 'so' | 'nso', id: number): Promise<SalesDoc>
   sharedDoc(token: string): Promise<SalesDoc | null>
@@ -172,7 +176,8 @@ async function pageAll<T>(fetchPage: (from: number, to: number) => PromiseLike<{
   }
 }
 
-function fail(error: { message: string } | null) {
+function fail(error: { message: string } | null, sql?: string) {
+  if (error && sql && /Could not find the function|does not exist|schema cache/i.test(error.message)) throw new Error(`Run ${sql}.sql in Supabase first`)
   if (error) throw new Error(error.message)
 }
 
@@ -246,6 +251,10 @@ class SupaBackend implements Backend {
   async approveFill(orderId: number, note?: string) { const { data, error } = await this.sb.rpc('approve_fill', { p_order: orderId, p_note: note ?? null }); fail(error); return Number(data ?? 0) }
   async orderToLoad(orderId: number, loadId: number) { const { error } = await this.sb.rpc('order_to_load', { p_order: orderId, p_load: loadId }); fail(error) }
   async orderOffLoad(orderId: number) { const { error } = await this.sb.rpc('order_off_load', { p_order: orderId }); fail(error) }
+  async orderTransfer(orderId: number, loadId: number, site: string) { const { data, error } = await this.sb.rpc('order_transfer', { p_order: orderId, p_load: loadId, p_site: site }); fail(error, '045_transfers'); return data as number }
+  async orderTransferNew(orderId: number, vehicleId: number, date: string, site: string) { const { data, error } = await this.sb.rpc('order_transfer_new', { p_order: orderId, p_vehicle: vehicleId, p_date: date, p_site: site }); fail(error, '045_transfers'); return data as number }
+  async stopManifest(stopId: number) { const { data, error } = await this.sb.rpc('stop_manifest', { p_stop: stopId }); fail(error, '045_transfers'); return data as StopManifest }
+  async setPalletOrigin(palletId: number, site: string) { const { error } = await this.sb.rpc('set_pallet_origin', { p_pallet: palletId, p_site: site }); fail(error, '045_transfers') }
   async getDoc(kind: 'invoice' | 'so' | 'nso', id: number) {
     const { data, error } = await this.sb.rpc('get_doc', { p_kind: kind, p_id: id })
     if (error && /get_doc/.test(error.message)) throw new Error('Run 027_sales_docs.sql in Supabase first')
@@ -970,6 +979,10 @@ class DemoBackend implements Backend {
   async approveFill() { return 0 }
   async orderToLoad() { throw new Error('Not in demo') }
   async orderOffLoad() {}
+  async orderTransfer(): Promise<number> { throw new Error('Not in demo') }
+  async orderTransferNew(): Promise<number> { throw new Error('Not in demo') }
+  async stopManifest(): Promise<StopManifest> { throw new Error('Not in demo') }
+  async setPalletOrigin() { throw new Error('Not in demo') }
   async adminOverview(): Promise<Overview> { throw new Error('Not in demo') }
   async appSettings() { return {} as Record<string, string> }
   async setAppSetting() {}

@@ -16,7 +16,7 @@ export const orderGot = (o: FOrder) => o.lines.reduce((a, l) => a + got(l), 0)
 export interface FulfillProps {
   err?: string | null; backend: Backend; orders: FOrder[] | null; reload: () => Promise<void>; flash: (t: string, bad?: boolean) => void
   pallets: Pallet[]; heldBy: Map<number, FOrder>; onLoad: (id: number) => boolean
-  where: (p: Pallet) => string; rank: (p: Pallet) => number; canon: (s: string | null | undefined) => string
+  where: (p: Pallet) => string; siteOf: (p: Pallet) => string | null; rank: (p: Pallet) => number; canon: (s: string | null | undefined) => string
   loads: Load[]; vehicles: Vehicle[]; isSales: boolean; openLoad: (id: number) => void; openPallet: (id: number) => void
 }
 
@@ -65,16 +65,22 @@ export function FulfillView(props: FulfillProps) {
   )
 }
 
-function OrderPage({ o, back, backend, reload, flash, pallets, heldBy, onLoad, where, rank, canon, loads, vehicles, isSales, openLoad, openPallet }: FulfillProps & { o: FOrder; back: () => void }) {
+function OrderPage({ o, back, backend, reload, flash, pallets, heldBy, onLoad, where, siteOf, rank, canon, loads, vehicles, isSales, openLoad, openPallet }: FulfillProps & { o: FOrder; back: () => void }) {
   const [adding, setAdding] = useState<number | null>(null)
   const [busy, setBusy] = useState(false)
   const [loadPick, setLoadPick] = useState(false)
+  const [sendTo, setSendTo] = useState<string | null>(null)
   const editable = o.state === 'open' || o.state === 'needs_ok' || o.state === 'ready'
   const run = async (f: () => Promise<unknown>, ok: string) => {
     setBusy(true)
     try { await f(); await reload(); flash(ok) } catch (e) { flash(String((e as Error).message ?? e), true) } finally { setBusy(false) }
   }
   const pal = useMemo(() => new Map(pallets.map(p => [p.id, p])), [pallets])
+  // where this order's pallets are right now (OHR / GVR / on a truck)
+  const at = new Map<string, number>()
+  for (const l of o.lines) for (const pk of l.picks) { const p = pal.get(pk.pallet_id); const s = p ? (p.status === 'in_transit' ? 'truck' : siteOf(p) ?? '?') : '?'; at.set(s, (at.get(s) ?? 0) + 1) }
+  const sites = [...at.keys()].filter(s => s === 'OHR' || s === 'GVR').sort()
+  const moving = o.state !== 'shipped' && o.state !== 'loaded'
   return (
     <div className="list fulfill">
       <button className="ghost small" onClick={back}>‹ Fulfillment</button>
@@ -103,7 +109,7 @@ function OrderPage({ o, back, backend, reload, flash, pallets, heldBy, onLoad, w
                 return (
                   <div key={pk.id} className="drow">
                     <button className="linkbtn" onClick={() => openPallet(pk.pallet_id)}><b>{pk.code}</b></button>
-                    <span className="grow muted">{p ? where(p) : ''}{pk.tag ? ` · ${pk.tag.slice(-6)}` : pk.tag_pending ? ' · tag pending' : ''}</span>
+                    <span className="grow muted">{p ? where(p) : ''}{pk.tag ? ` · ${pk.tag.slice(-6)}` : pk.tag_pending ? ' · tag pending' : ''}{p?.origin_site ? ` · grown at ${p.origin_site}` : ''}</span>
                     <b>{n0(Number(pk.lbs))} lbs</b>
                     {editable && <button className="ghost small" disabled={busy} title="Unassign" onClick={() => run(() => backend.unpick(pk.id), `${pk.code} unassigned`)}>✕</button>}
                   </div>
@@ -124,6 +130,19 @@ function OrderPage({ o, back, backend, reload, flash, pallets, heldBy, onLoad, w
           </section>
         )
       })}
+
+      {moving && at.size > 0 && <section className="dcard">
+        <div className="row between wrap">
+          <span><b>Where it is:</b> <span className="muted">{[...at.entries()].map(([s, n]) => `${n} at ${s === 'truck' ? 'on a truck' : s}`).join(' · ')}</span></span>
+          {!sendTo && <div className="row">{['GVR', 'OHR'].filter(s => [...at.keys()].some(k => k !== s && k !== 'truck' && k !== '?')).map(s =>
+            <button key={s} className="ghost small" disabled={busy} onClick={() => setSendTo(s)}>Send to {s}</button>)}</div>}
+        </div>
+        {sites.length > 1 && <p className="warn-t small-note">This order is at OHR and GVR. Send one side over first, or it ships on two METRC manifests (one per license).</p>}
+        {sendTo && <LoadChooser o={o} loads={loads} vehicles={vehicles} busy={busy} close={() => setSendTo(null)} title={`Send the pallets that aren't at ${sendTo} to ${sendTo}`}
+          onPick={id => run(() => backend.orderTransfer(o.id, id, sendTo), `On the load to ${sendTo}`).then(() => setSendTo(null))}
+          onNew={(v, d) => run(() => backend.orderTransferNew(o.id, v, d, sendTo), `New load to ${sendTo} made`).then(() => setSendTo(null))} />}
+        {sendTo && <p className="muted small-note">They stay held for {o.customer}. When the load is delivered they're received at {sendTo}, and can go straight onto the customer's load from there.</p>}
+      </section>}
 
       <section className="dcard">
         {o.state === 'ready' && !loadPick && <div className="row between"><span><b>Ready.</b> <span className="muted">Every line has its pallets.</span></span>
@@ -185,8 +204,8 @@ function Pick({ line, need, cands, where, rank, busy, close, onWhole, onPart }: 
   )
 }
 
-function LoadChooser({ o, loads, vehicles, busy, close, onPick, onNew }: {
-  o: FOrder; loads: Load[]; vehicles: Vehicle[]; busy: boolean; close: () => void; onPick: (id: number) => void; onNew: (vehicle: number, date: string) => void
+function LoadChooser({ o, loads, vehicles, busy, close, onPick, onNew, title }: {
+  o: FOrder; loads: Load[]; vehicles: Vehicle[]; busy: boolean; close: () => void; onPick: (id: number) => void; onNew: (vehicle: number, date: string) => void; title?: string
 }) {
   const open = loads.filter(l => l.status === 'planning' || l.status === 'loading').sort((a, b) => a.load_date.localeCompare(b.load_date))
   const vs = vehicles.filter(v => v.active)
@@ -194,7 +213,7 @@ function LoadChooser({ o, loads, vehicles, busy, close, onPick, onNew }: {
   const [d, setD] = useState(o.wanted_date && o.wanted_date >= today() ? o.wanted_date : today())
   return (
     <div className="dlist">
-      <div className="row between"><b>Put {o.customer} on a load</b><button className="ghost small" onClick={close}>Cancel</button></div>
+      <div className="row between"><b>{title ?? `Put ${o.customer} on a load`}</b><button className="ghost small" onClick={close}>Cancel</button></div>
       {open.map(l => <button key={l.id} className="drow click" disabled={busy} onClick={() => onPick(l.id)}><span><b>{l.code}</b><span className="muted"> · {fmt(l.load_date)} · {vehicles.find(x => x.id === l.vehicle_id)?.name ?? ''} · {l.status}</span></span><span>Add ›</span></button>)}
       {!open.length && <p className="muted">No loads being planned. Make a new one:</p>}
       <div className="drow"><span className="grow"><b>New load</b></span>
