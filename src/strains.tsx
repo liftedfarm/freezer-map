@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { Fold, isAdminOf } from './fold'
+import { STRAIN_PHOTOS } from './strainPhotos'
 
 // Strain profile: what the app's own data says (auto) and what an Admin set by hand (overrides).
 export interface StrainAuto {
@@ -59,7 +60,7 @@ const GROUPS: { m: 'nursery' | 'cultivation' | 'sales'; l: string; fields: Field
     { k: 'solventless_pct', l: 'Yield to solventless', unit: '%', hint: 'shows on menus' },
     { k: 'hydrocarbon_pct', l: 'Yield to hydrocarbon', unit: '%', hint: 'shows on the catalog' },
     { k: 'spot_price', l: 'Spot price', unit: '$/lb', hint: 'blank = the catalog\'s price' },
-    { k: 'photo_url', l: 'Photo', text: true, hint: 'link to the catalog photo' },
+    { k: 'photo_url', l: 'Photo', text: true, hint: 'pick one of ours, or paste a link' },
     { k: 'menu_note', l: 'Menu note', text: true, hint: 'a line for the menu and catalog' },
   ] },
 ]
@@ -93,11 +94,12 @@ export function StrainProfileEdit({ sb, p, flash, onSaved }: { sb: SupabaseClien
           return <div key={f.k} className="field sfield">
             <label>{f.l}{f.unit ? ` (${f.unit})` : ''}{f.hint && <span className="muted"> · {f.hint}</span>}</label>
             <div className="row">
-              <input value={v[f.k] ?? ''} disabled={!can} inputMode={f.text ? undefined : 'decimal'} placeholder={f.auto ? (a ? 'auto' : 'no data yet') : ''}
+              <input value={v[f.k] ?? ''} disabled={!can} list={f.k === 'photo_url' ? 'strain-photos' : undefined} inputMode={f.text ? undefined : 'decimal'} placeholder={f.auto ? (a ? 'auto' : 'no data yet') : ''}
                 onChange={e => setV(s => ({ ...s, [f.k]: e.target.value }))} />
               {can && over && f.auto && <button className="ghost small" onClick={() => setV(s => ({ ...s, [f.k]: '' }))}>Use auto</button>}
             </div>
             {f.auto && <div className="muted small">{a ? `Auto: ${a}` : 'Auto: not enough data yet'}{over ? ' · overridden' : ''}</div>}
+            {f.k === 'photo_url' && <datalist id="strain-photos">{STRAIN_PHOTOS.map(u => <option key={u} value={u} />)}</datalist>}
             {f.k === 'photo_url' && v.photo_url && /^(https?:|\/)/.test(v.photo_url) && <img className="sphoto" src={v.photo_url} alt={p.name} />}
           </div>
         })}

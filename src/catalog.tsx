@@ -70,9 +70,11 @@ async function imageData(src: string, w: number, h: number, png = false): Promis
     const img = await new Promise<HTMLImageElement>((ok, bad) => { const i = new Image(); i.crossOrigin = 'anonymous'; i.onload = () => ok(i); i.onerror = bad; i.src = src })
     const c = document.createElement('canvas'), s = 2
     c.width = w * s; c.height = h * s
-    const r = png ? Math.min(c.width / img.naturalWidth, c.height / img.naturalHeight) : Math.max(c.width / img.naturalWidth, c.height / img.naturalHeight)   // photos cover-crop, logo fits
-    const dw = img.naturalWidth * r, dh = img.naturalHeight * r
-    c.getContext('2d')!.drawImage(img, (c.width - dw) / 2, (c.height - dh) / 2, dw, dh)
+    // fit the whole picture (the strain photos are tall colas on white: cropping would cut the top off); white behind photos
+    const r = Math.min(c.width / img.naturalWidth, c.height / img.naturalHeight)
+    const dw = img.naturalWidth * r, dh = img.naturalHeight * r, g = c.getContext('2d')!
+    if (!png) { g.fillStyle = '#ffffff'; g.fillRect(0, 0, c.width, c.height) }
+    g.drawImage(img, (c.width - dw) / 2, (c.height - dh) / 2, dw, dh)
     return png ? c.toDataURL('image/png') : c.toDataURL('image/jpeg', 0.85)
   } catch { return null }
 }
@@ -110,7 +112,7 @@ export async function catalogPdf(rows: MenuRow[], info: Map<string, MenuInfo>, o
     if (y + ch > H - M - 14) { pdf.addPage(); page++; y = header(false); col = 0 }
     const x = M + col * (cw + G), m = info.get(r.strain.toLowerCase())
     const img = m?.photo_url ? await imageData(m.photo_url, cw, ph) : null
-    if (img) pdf.addImage(img, 'JPEG', x, y, cw, ph)
+    if (img) { pdf.addImage(img, 'JPEG', x, y, cw, ph); pdf.setDrawColor(...pale); pdf.rect(x, y, cw, ph) }
     else {
       pdf.setFillColor(...pale); pdf.rect(x, y, cw, ph, 'F')
       pdf.setFont('helvetica', 'bold'); pdf.setFontSize(28); pdf.setTextColor(...green)
