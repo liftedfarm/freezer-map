@@ -85,5 +85,13 @@ export class ProcApi {
   saveRequest(r: Partial<Req>) { return this.rpc<Req>('proc_save_request', { p: r }) }
   requestStatus(id: number, status: Req['status']) { return this.rpc<void>('proc_request_status', { p_id: id, p_status: status }) }
   commit(line: number, pallet: number, lbs: number | null, tag: string | null) { return this.rpc<unknown>('proc_commit', { p_line: line, p_pallet: pallet, p_lbs: lbs, p_tag: tag }) }
+  /** what the crew logged on a run (048) */
+  async crewOf(run: number) {
+    const { data, error } = await this.sb.from('piece_pay').select('employee_id,work_date,lbs,mold,smalls,trim,hours,pay').eq('run_id', run)
+    fail(error)
+    const r = (data ?? []) as { employee_id: number; work_date: string; lbs: number; mold: number; smalls: number; trim: number; hours: number; pay: number }[]
+    const s = (f: (x: typeof r[number]) => number) => r.reduce((a, x) => a + Number(f(x)), 0)
+    return { people: new Set(r.map(x => x.employee_id)).size, days: new Set(r.map(x => x.work_date)).size, lbs: s(x => x.lbs), other: s(x => Number(x.mold) + Number(x.smalls) + Number(x.trim)), hours: s(x => x.hours), pay: s(x => x.pay) }
+  }
   saveProcessor(p: Partial<Processor>) { return this.rpc<Processor>('proc_save_processor', { p }) }
 }

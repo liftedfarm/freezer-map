@@ -1,0 +1,19 @@
+/* Crew day sheet (048) */
+.crew .crew-top { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+.crew .crew-top .field { flex: 1 1 160px; margin: 0; }
+.crew .crew-rows { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; margin: 10px 0; }
+.crew .crew-row { min-width: 0; border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px; background: var(--panel); }
+.crew .crew-row.crew-ok { border-left: 4px solid var(--brand); }
+.crew .crew-row.crew-under { border-left: 4px solid var(--warn); }
+.crew .crew-row > .row { flex-wrap: nowrap; gap: 6px; align-items: center; }
+.crew .crew-row select { font-weight: 600; flex: 1 1 auto; min-width: 0; }
+.crew .crew-pay { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.crew .crew-nums { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 6px; }
+.crew .crew-nums.trim { grid-template-columns: repeat(5, 1fr); }
+.crew .crew-nums label { display: flex; flex-direction: column; font-size: 11px; color: var(--muted); gap: 2px; }
+.crew .crew-nums input { width: 100%; min-width: 0; padding: 8px 6px; text-align: right; font-size: 16px; }
+@media (max-width: 520px) { .crew .crew-nums.trim { grid-template-columns: repeat(3, 1fr); } }
+.crew .crew-add { gap: 6px; margin-bottom: 8px; }
+.crew .crew-add input { flex: 1 1 160px; }
+.payroll .pay-status { gap: 8px; align-items: center; margin: 6px 0 10px; }
+.payroll .paytable th { white-space: nowrap; }

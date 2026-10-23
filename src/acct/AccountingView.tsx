@@ -7,6 +7,7 @@ import { Card, Cards, DashHead, Empty, Tile, Tiles } from '../dash'
 import { DocSheet } from '../invoices'
 import { ModulePeople } from '../users'
 import { dfmt, money as money2 } from '../docs'
+import { PayrollTab, PaySettings } from '../pay/PayrollView'
 
 type Flash = (t: string, bad?: boolean) => void
 const money = money2
@@ -62,8 +63,9 @@ export default function AccountingView({ backend, flash, tab, go, isAdmin, canEd
       {tab === 'dashboard' && <Dashboard ov={ov} rows={rows} conn={conn} env={env} go={go} open={setOpen} banner={banner} />}
       {tab === 'send' && <SendList api={api} rows={rows} env={env} canEdit={canEdit && !!conn?.connected} flash={flash} open={setOpen} reload={load} banner={banner} />}
       {tab === 'sent' && <SentList api={api} rows={rows} env={env} flash={flash} open={setOpen} reload={load} lastSync={ov.last_sync} connected={!!conn?.connected} banner={banner} />}
+      {tab === 'payroll' && sb && <PayrollTab sb={sb} flash={flash} canEdit={canEdit} isAdmin={isAdmin} />}
       {tab === 'review' && <ReviewTab api={api} rows={rows} open={setOpen} />}
-      {tab === 'settings' && isAdmin && <SettingsTab api={api} flash={flash} conn={conn} env={env} refresh={() => { status(); load() }} sb={sb} />}
+      {tab === 'settings' && isAdmin && <SettingsTab api={api} flash={flash} conn={conn} env={env} refresh={() => { status(); load() }} sb={sb} canEdit={canEdit} />}
       {tab === 'settings' && !isAdmin && <div className="list"><h2>Settings</h2><p className="muted">Only Accounting Admins can change Accounting settings.</p></div>}
       {sheet}{pdfSheet}
     </div>
@@ -312,16 +314,17 @@ function SendSheet({ api, id, flash, canEdit, env, onClose, onChanged, onPdf }: 
 }
 
 // ---------- Settings ----------
-function SettingsTab({ api, flash, conn, env, refresh, sb }: { api: AcctApi; flash: Flash; conn: { env: Env; connected: boolean; company?: string; error?: string } | null; env: Env; refresh: () => void; sb: ReturnType<Backend['client']> }) {
-  const [sec, setSec] = useState<'conn' | 'products' | 'classes' | 'rules' | 'people'>('conn')
+function SettingsTab({ api, flash, conn, env, refresh, sb, canEdit }: { api: AcctApi; flash: Flash; conn: { env: Env; connected: boolean; company?: string; error?: string } | null; env: Env; refresh: () => void; sb: ReturnType<Backend['client']>; canEdit: boolean }) {
+  const [sec, setSec] = useState<'conn' | 'products' | 'classes' | 'rules' | 'pay' | 'people'>('conn')
   return (
     <div className="list">
       <h2>Accounting settings</h2>
-      <div className="seg tabs">{([['conn', 'QuickBooks'], ['products', 'Products'], ['classes', 'Classes'], ['rules', 'Class rules'], ['people', 'People']] as const).map(([k, l]) => <button key={k} className={sec === k ? 'on' : ''} onClick={() => setSec(k)}>{l}</button>)}</div>
+      <div className="seg tabs">{([['conn', 'QuickBooks'], ['products', 'Products'], ['classes', 'Classes'], ['rules', 'Class rules'], ['pay', 'Crew and piece rates'], ['people', 'People']] as const).map(([k, l]) => <button key={k} className={sec === k ? 'on' : ''} onClick={() => setSec(k)}>{l}</button>)}</div>
       {sec === 'conn' && <ConnPanel api={api} flash={flash} conn={conn} env={env} refresh={refresh} />}
       {sec === 'products' && <ProductsPanel api={api} flash={flash} />}
       {sec === 'classes' && <ClassesPanel api={api} flash={flash} />}
       {sec === 'rules' && <RulesPanel api={api} flash={flash} />}
+      {sec === 'pay' && sb && <PaySettings sb={sb} flash={flash} canEdit={canEdit} isAdmin />}
       {sec === 'people' && <ModulePeople sb={sb} module="accounting" flash={flash} />}
     </div>
   )

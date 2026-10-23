@@ -83,3 +83,14 @@ processors (CCP, STACS, Strong Ag, our trailers), bucking and trimming runs, tri
 - Requests: what to trim and by when (customer or stock). Packages get committed to confirmed order lines from Inventory (whole, or split).
 - "Fill next tags" uses tag ranges with purpose "Processing packages" (Admin > Settings > Licenses).
 - The open menu, reserves and fresh frozen numbers only count fresh frozen.
+
+## Piece rate pay (048)
+
+Run `supabase/048_piece_rate.sql`, then `supabase/import_piece_fl25.sql` (FL25 history from the workbook; built by `tools/import_piece_fl25.py`).
+
+- Processing > Crew: the crew lead logs each person's day (hours, flower lbs, mold, smalls, trim) against a run or a strain, in English or Spanish.
+  Productivity by person and by strain (lbs/hr, days at target, labor cost per lb).
+- Rule from the FL25 workbook: if flower lbs / hours reaches the target, pay every flower lb x the rate; otherwise no piece pay that day.
+  Bucking $3/lb at 2 lb/hr, trimming $10/lb at 0.75 lb/hr (rates with start dates in Accounting > Settings > Crew and piece rates).
+- Accounting > Payroll: bi-weekly periods (from 12/22/2025), per person by task and farm, adjustments with a reason, close (locks the lines),
+  CSV for payroll, mark sent to payroll. Accounting Admins can reopen.

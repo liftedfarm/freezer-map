@@ -14,6 +14,7 @@ import type { Flash } from '../cult/ui'
 import { ScanButton } from '../scan'
 import { ModulePeople } from '../users'
 import { Fold } from '../fold'
+import { CrewTab } from '../pay/CrewView'
 
 // ---------- small helpers ----------
 const n0 = (x: number | null | undefined) => (x == null || !isFinite(x) ? '' : Math.round(x).toLocaleString())
@@ -83,6 +84,7 @@ export default function ProcessingView({ backend, flash, tab, go, isAdmin, canEd
       {tab === 'dashboard' && <Dashboard c={c} go={go} />}
       {tab === 'incoming' && <Drying c={c} />}
       {tab === 'runs' && <Runs c={c} onStart={k => setStartKind({ kind: k })} />}
+      {tab === 'crew' && sb && <CrewTab sb={sb} runs={d.runs} flash={flash} canEdit={canEdit} strainNames={strainNames} />}
       {tab === 'requests' && <Requests c={c} strainNames={strainNames} onTrim={q => setStartKind({ kind: 'trim', req: q })} />}
       {tab === 'inventory' && <Inventory c={c} />}
       {tab === 'yields' && <Yields c={c} />}
@@ -385,6 +387,8 @@ function RunSheet({ c, run, onClose }: { c: Ctx; run: Run; onClose: () => void }
   const [on, setOn] = useState<string | null>(today())
   const [busy, setBusy] = useState(false)
   const [sure, setSure] = useState(false)
+  const [crew, setCrew] = useState<{ people: number; days: number; lbs: number; other: number; hours: number; pay: number } | null>(null)
+  useEffect(() => { c.api.crewOf(run.id).then(setCrew).catch(() => setCrew(null)) }, [run.id])
   const out = sum(rows.map(r => r.lbs ?? 0)), inp = run.input_lbs ?? 0, loss = inp - out - (mold ?? 0)
   async function fill() {
     try {
@@ -408,6 +412,7 @@ function RunSheet({ c, run, onClose }: { c: Ctx; run: Run; onClose: () => void }
     <h3 className="csec">In <span className="muted">{n0(inp)} lbs{run.kind === 'buck' ? ' wet, on paper' : ''}</span></h3>
     <div className="dlist">{ins.map(({ i, p }) => <button key={i.id} className="drow linkrow" onClick={() => p && c.openPkg(p)}>
       <span className="grow"><b>{p?.code ?? `#${i.pallet_id}`}</b> <span className="muted">{p ? PL(p.product) : ''} · {p ? c.where(p) : ''}</span></span><b>{n0(i.lbs)} lbs</b>{!i.whole && <span className="muted">part</span>}</button>)}</div>
+    {crew && crew.people > 0 && <div className="infobox">Crew logged {crew.people} people over {crew.days} day{crew.days === 1 ? '' : 's'}: {n1(crew.lbs)} lbs {run.kind === 'buck' ? 'bucked' : 'flower'}, {n1(crew.other)} lbs mold / smalls / trim, {n1(crew.hours)} hours, ${n0(crew.pay)} piece pay{run.status === 'done' && run.output_lbs ? ` (${pct(crew.lbs + crew.other, (run.output_lbs ?? 0) + (run.mold_lbs ?? 0))} of what came out)` : ''}.</div>}
     {run.status === 'done' && <>
       <h3 className="csec">Out <span className="muted">{n0(run.output_lbs)} lbs</span></h3>
       <div className="dlist">{outs.map(p => <button key={p.id} className="drow linkrow" onClick={() => c.openPkg(p)}>
