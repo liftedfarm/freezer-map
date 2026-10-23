@@ -5,7 +5,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 function fail(error: { message: string } | null) {
   if (!error) return
   if (/comp_|pallet_trace|test_files|customer_license_status|does not exist|schema cache/i.test(error.message) && /function|relation|column/i.test(error.message))
-    throw new Error(`${error.message} (run 055_compliance.sql in Supabase)`)
+    throw new Error(`${error.message} (run 055_compliance.sql and 056_ccof_list.sql in Supabase)`)
   throw new Error(error.message)
 }
 
@@ -39,8 +39,11 @@ export interface Material {
   id: number; module: string; name: string; manufacturer: string | null; kind: string | null; npk: string | null; pesticide: boolean; active: boolean
   epa_reg: string | null; active_ingredient: string | null; rei_hours: number | null; phi_days: number | null; label_url: string | null
   ccof_status: 'approved' | 'pending' | 'not_allowed' | 'unknown'; listing: string | null; listing_no: string | null; listing_expires: string | null
-  restrictions: string | null; ccof_notes: string | null; ccof_by: string | null; ccof_at: string | null
+  restrictions: string | null; ccof_notes: string | null; ccof_by: string | null; ccof_at: string | null; ccof_code?: string | null
 }
+export interface CcofEntry { id: number; code: string; name: string; manufacturer: string | null; category: string | null; approved_on: string | null; status: string | null; listing: string | null
+  restriction: string | null; comment: string | null; action_required: boolean; active: boolean; list_date: string | null }
+export interface Cert { site: string; label: string | null; ccof: boolean; notes: string | null; updated_by: string | null; updated_at: string }
 export interface Issue { log_id: number; module: string; log_on: string; site: string | null; area: string | null; product: string; issue: string; product_id: number | null }
 export interface ProductLine { product: string; manufacturer?: string | null; rate?: number | null; unit?: string | null; basis?: string | null; total?: number | null; total_unit?: string | null }
 export interface AppLog {
@@ -73,6 +76,7 @@ export interface Overview {
   metrc_todo: number; metrc_error: number; errors_open: number; playbook: number
   materials: number; materials_approved: number; materials_unreviewed: number; materials_no_docs: number; material_issues: number
   last_recon: Record<string, string>; licenses: string[]; customers_missing: number; tests_no_file: number
+  not_on_list?: number; ccof_list?: { entries: number; date: string | null; action: number }; certs?: Record<string, boolean>
   backup: BackupRun | null; backup_waiting: number; sp_site: string | null; sp_root: string | null; weight_tol: string | null; stale_days: string | null
 }
 export interface Trace {
@@ -159,6 +163,12 @@ export class CompApi {
   appLog(from: string, to: string, site: string | null, module: string | null) {
     return this.rpc<AppLog[]>('comp_app_log', { p_from: from, p_to: to, p_site: site, p_module: module }).then(r => (r ?? []).map(x => ({ ...x, products: x.products ?? [] })))
   }
+
+  async ccofList() { const { data, error } = await this.sb.from('comp_ccof_list').select('*').eq('active', true).order('category').order('name'); fail(error); return (data ?? []) as CcofEntry[] }
+  importCcof(date: string | null, rows: object[], file: string) { return this.rpc<{ new: number; updated: number; off_list: number; linked: number; active: number }>('comp_import_ccof', { p_date: date, p_rows: rows, p_file: file }) }
+  linkCcof(product: number, code: string | null) { return this.rpc<void>('comp_link_ccof', { p_product: product, p_code: code ?? '' }) }
+  async certs() { const { data, error } = await this.sb.from('comp_certs').select('*').order('site'); fail(error); return (data ?? []) as Cert[] }
+  setCert(site: string, on: boolean, notes?: string) { return this.rpc<void>('comp_set_cert', { p_site: site, p_ccof: on, p_notes: notes ?? null }) }
 
   // ----- METRC -----
   async actions(status: string | null, limit = 2000) {

@@ -217,6 +217,11 @@ function LogSheet({ sb, x0, field, sites, areas, strains, products, recipes, bat
   const tag = /^\[import [^\]]+\]/.exec(x0.notes ?? '')?.[0] ?? ''
   const [x, setX] = useState<Partial<OpsLog>>({ ...x0, notes: tag ? (x0.notes ?? '').slice(tag.length).trim() : x0.notes, products: x0.products?.length ? x0.products : x0.kind === 'labor' ? [] : [blank()] })
   const [busy, setBusy] = useState(false)
+  // CCOF checks only where the site is certified (Compliance > Settings > Sites; 056). Unknown: Production yes, Nursery no.
+  const [certs, setCerts] = useState<Record<string, boolean> | null>(null)
+  useEffect(() => { sb.from('comp_certs').select('site,ccof').then(r => { if (!r.error) setCerts(Object.fromEntries(((r.data ?? []) as { site: string; ccof: boolean }[]).map(c => [c.site.toUpperCase(), c.ccof]))) }, () => {}) }, [])
+  const certSite = (x.site ?? (x.module === 'nursery' ? '1PN' : '')).toUpperCase()
+  const certified = certs?.[certSite] ?? x.module !== 'nursery'
   const [sure, setSure] = useState(false)
   const pmap = useMemo(() => new Map(products.map(p => [p.name.toLowerCase(), p])), [products])
   const retotal = (s: Partial<OpsLog>): Partial<OpsLog> => ({ ...s, products: (s.products ?? []).map(l => ({ ...l, total: lineTotal(l, s, basis), total_unit: l.unit })) })
@@ -296,7 +301,7 @@ function LogSheet({ sb, x0, field, sites, areas, strains, products, recipes, bat
             <input value={l.unit ?? ''} placeholder={field ? 'gal, lb, fl oz' : 'mL'} onChange={e => setLine(i, { unit: e.target.value })} />
             <span className="muted small">{l.total != null ? `= ${num(l.total, 1)} ${l.total_unit ?? ''}` : ''}{(() => { const c = lineCost(l, pmap.get(l.product.toLowerCase())); return c ? ` · ${money(c)}` : '' })()}</span>
             <button className="ghost small" onClick={() => setX(s => ({ ...s, products: (s.products ?? []).filter((_, j) => j !== i) }))}>✕</button>
-            {(() => { const w = ccofWarn(l.product, pmap, x.log_on); return w ? <div className="warn-t small prodwarn">{w}</div> : null })()}
+            {(() => { const w = certified ? ccofWarn(l.product, pmap, x.log_on) : null; return w ? <div className="warn-t small prodwarn">{w}</div> : null })()}
           </div>)}
           <div className="row"><button className="ghost small" onClick={() => setX(s => ({ ...s, products: [...(s.products ?? []), blank()] }))}>{t('+ Product')}</button>
             {cost > 0 && <span className="muted small">{t('Cost')} {money(cost)}{x.acres ? ` · ${money(cost / x.acres)}/${t('acre')}` : ''}</span>}</div>

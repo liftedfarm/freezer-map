@@ -3,7 +3,7 @@ import './comp.css'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Backend } from '../api'
 import { CompApi } from './api'
-import type { BackupRun, Deadline, DocType, Issue, MError, Material, Overview, TestNoFile } from './api'
+import type { BackupRun, Cert, Deadline, DocType, Issue, MError, Material, Overview, TestNoFile } from './api'
 import type { CTab } from './tabs'
 import type { Ctx } from './ctx'
 import { Card, Cards, DashHead, Empty, Tile, Tiles } from '../dash'
@@ -73,8 +73,8 @@ function Dashboard({ c }: { c: Ctx }) {
       <Tile value={ov.due_soon} label="Due soon" sub={`${ov.due_30} in the next 30 days`} tone={ov.due_soon ? 'warn' : undefined} onClick={() => c.go('deadlines')} />
       <Tile value={ov.metrc_todo} label="METRC to do" sub={ov.metrc_error ? `${ov.metrc_error} with a problem` : 'app actions to enter in METRC'} tone={ov.metrc_error ? 'bad' : ov.metrc_todo ? 'warn' : 'ok'} onClick={() => c.go('metrc', 'todo')} />
       <Tile value={ov.errors_open} label="METRC errors" sub={`${ov.playbook} fixes in the playbook`} tone={ov.errors_open ? 'bad' : undefined} onClick={() => c.go('metrc', 'errors')} />
-      <Tile value={`${ov.materials_approved}/${ov.materials}`} label="Materials approved" sub={ov.materials_unreviewed ? `${ov.materials_unreviewed} not reviewed yet` : 'all reviewed'} tone={ov.materials_unreviewed ? 'warn' : 'ok'} onClick={() => c.go('ccof', 'materials')} />
-      <Tile value={ov.material_issues} label="Log lines not approved" sub="this year, Feed and Spray" tone={ov.material_issues ? 'warn' : 'ok'} onClick={() => c.go('review')} />
+      <Tile value={`${ov.materials_approved}/${ov.materials}`} label="Materials approved" sub={ov.not_on_list ? `${ov.not_on_list} not on the CCOF list` : ov.materials_unreviewed ? `${ov.materials_unreviewed} not reviewed yet` : 'all on the CCOF list'} tone={ov.materials_unreviewed ? 'warn' : 'ok'} onClick={() => c.go('ccof', 'materials')} />
+      <Tile value={ov.material_issues} label="Log lines not approved" sub="this year, certified sites" tone={ov.material_issues ? 'warn' : 'ok'} onClick={() => c.go('review')} />
       <Tile value={ov.tests_no_file} label="Test results, no file" sub="Production › Testing" tone={ov.tests_no_file ? 'warn' : 'ok'} onClick={() => c.go('review')} />
       <Tile value={ov.customers_missing} label="Customer licenses" sub="missing or expired" tone={ov.customers_missing ? 'warn' : 'ok'} onClick={() => c.go('library', 'customers')} />
       <Tile value={ov.docs} label="Documents" sub={ov.backup_waiting ? `${ov.backup_waiting} waiting for SharePoint` : 'all copied to SharePoint'} onClick={() => c.go('library')} />
@@ -193,6 +193,7 @@ function SettingsTab({ c }: { c: Ctx }) {
         <li>Vercel › Settings › Environment Variables: <span className="mono">MS_TENANT_ID</span>, <span className="mono">MS_CLIENT_ID</span>, <span className="mono">MS_CLIENT_SECRET</span> (and <span className="mono">SUPABASE_SERVICE_ROLE_KEY</span>, already there for QuickBooks). Redeploy.</li>
         <li>Fill in the site above, then Run now.</li></ol></div>
     </Fold>
+    <Sites c={c} />
     <Fold id="comp.set.types" title="Document types" count={c.types.length} right={<button className="ghost small" onClick={() => setEd({ active: true, expires: false, sort: 50 })}>+ Add</button>}>
       <p className="muted">Each type is a folder in SharePoint. Types that expire ask for an expiry date when you add a document.</p>
       <div className="dlist">{c.types.map(t => <button key={t.key} className="drow linkrow" onClick={() => setEd(t)}><span className="grow"><b>{t.label}</b> <span className="muted">{t.folder !== t.label ? `folder "${t.folder}"` : ''}{t.expires ? ' · expires' : ''}</span>
@@ -213,4 +214,28 @@ function SettingsTab({ c }: { c: Ctx }) {
       <SaveBar busy={busy} onSave={() => saveType()} onCancel={() => setEd(null)} disabled={!ed.label?.trim()} />
     </Sheet>}
   </div>
+}
+
+function Sites({ c }: { c: Ctx }) {
+  const [rows, setRows] = useState<Cert[]>([])
+  const [busy, setBusy] = useState(false)
+  const load = () => c.api.certs().then(setRows).catch(e => c.flash(errText(e), true))
+  useEffect(() => { load() }, [])
+  async function flip(x: Cert) {
+    const on = !x.ccof
+    const msg = on
+      ? `Mark ${x.site} (${x.label ?? x.site}) as CCOF certified?\n\nIts Feed and Spray logs and products will be checked against the CCOF list, and its crew will see warnings for products that aren't approved.`
+      : `Mark ${x.site} (${x.label ?? x.site}) as NOT CCOF certified?\n\nIts logs and products will be left out of the CCOF checks, warnings and the application log. Only do this if the site really isn't certified.`
+    if (!confirm(msg)) return
+    setBusy(true)
+    try { await c.api.setCert(x.site, on); c.flash(`${x.site} ${on ? 'is CCOF certified' : 'is not CCOF certified'}`); await load(); await c.reload() } catch (e) { c.flash(errText(e), true) } finally { setBusy(false) }
+  }
+  return <Fold id="comp.set.sites" open title="Sites and certifications" count={rows.length}>
+    <p className="muted">Which sites are CCOF (OCal) certified. Sites that aren't are left out of the CCOF checks.</p>
+    <div className="dlist">{rows.map(x => <label key={x.site} className="drow check" style={{ cursor: 'pointer' }}>
+      <input type="checkbox" checked={x.ccof} disabled={busy} onChange={() => flip(x)} />
+      <span className="grow"><b>{x.site}</b> <span className="muted">{x.label ?? ''}</span>{x.notes && <div className="muted small">{x.notes}</div>}</span>
+      <span className={`pill ${x.ccof ? 'cp-ok' : 'cp-mute'}`}>{x.ccof ? 'CCOF certified' : 'Not certified'}</span>
+      <span className="muted small">{x.updated_by && x.updated_by !== 'setup' ? `${x.updated_by.split('@')[0]} ${fmtD(x.updated_at)}` : ''}</span></label>)}</div>
+  </Fold>
 }

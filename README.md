@@ -113,3 +113,9 @@ entries (shown on every package from that harvest), and customer license expiry.
 SharePoint backup (`api/compliance/backup.js`, nightly at 3:17am Pacific, or Run now in Compliance > Settings):
 an Entra app with the Microsoft Graph application permission `Sites.Selected` and write access to the one site, then in Vercel
 `MS_TENANT_ID`, `MS_CLIENT_ID`, `MS_CLIENT_SECRET` (plus `SUPABASE_SERVICE_ROLE_KEY`). Set the site and top folder in the app.
+
+## CCOF list and certified sites (056)
+
+Run `supabase/056_ccof_list.sql` after 055. It loads the CCOF OSP Materials List (10/23/2026), links the Production and Nursery
+products to it, and adds Sites and certifications (OHR and GVR certified, 1PN not). A newer list can be loaded in the app:
+Compliance > CCOF > CCOF list > drop the PDF from MyCCOF (read in the browser with pdf.js).
