@@ -59,6 +59,9 @@ export interface Pallet {
   processor_id?: number | null
   sent_on?: string | null
   run_id?: number | null
+  item_id?: number | null            // item (SKU) it belongs to (054)
+  lot_id?: number | null             // harvest lot (054)
+  grade?: Grade | null               // set on this pallet only; null = follow the lot / strain
 }
 
 /** one line when building or adding to a mixed pallet: whole package (lbs null) or lbs split off with a new tag */
@@ -81,7 +84,15 @@ export interface InvEvent {
 
 export interface Vehicle { id: number; name: string; plate: string | null; kind: string | null; notes: string | null; active: boolean; spaces: number; across: number; owner: string | null }
 export interface Customer { id: number; name: string; kind: 'internal' | 'external'; license: string | null; address: string | null; contact: string | null; notes: string | null; active: boolean; price_per_lb?: number | null; contract_lbs?: number | null; monthly_min_lbs?: number | null; deposit_usd?: number | null; storage_fee?: number | null; reserves_enabled?: boolean; legal_name?: string | null; payment_terms?: string | null; billing_address?: string | null; billing_contact?: string | null; billing_email?: string | null; billing_phone?: string | null; ship_to_name?: string | null; ship_to_address?: string | null; receiving_contact?: string | null }
-export interface Strain { id: number; name: string; aliases: string[]; color: string | null; notes: string | null; active: boolean; show_on_menu?: boolean }
+export interface Strain { id: number; name: string; aliases: string[]; color: string | null; notes: string | null; active: boolean; show_on_menu?: boolean; strain_no?: number | null; default_grade?: Grade }
+export type Grade = 'SHO' | 'BHO'
+/** what a lot grade change touched: still on hand, held for orders, already shipped (by invoice) */
+export interface LotImpact { on_hand: { pallets: number; lbs: number }; held: { pallet: string; order: string; customer: string; line_grade: Grade | null; lbs: number }[]; shipped: { invoice: string; customer: string; date: string; lbs: number; grade: Grade | null }[] }
+/** an item (SKU): crop year + farm + cert + finish + strain. People see the simple name; the SKU and METRC name sit behind it. */
+export interface Item { id: number; sku: string; crop_year: number; site: string; cert: string; finish: string; strain_id: number; metrc_name: string; license: string | null; metrc_status: 'to_create' | 'in_metrc' | 'retired' }
+/** a harvest lot = one METRC harvest batch (code FL26-OH-047-01) */
+export interface HarvestLot { id: number; code: string; crop_year: number; site: string; strain_id: number; kind: string; metrc_name: string | null; grade: Grade | null; grade_reason: string | null; first_harvest: string | null; last_harvest: string | null }
+export const FINISH_LABEL: Record<string, string> = { FF: 'Fresh Frozen', DH: 'Wet', UF: 'Unbucked', BF: 'Bucked', ST: 'Standards', SM: 'Smalls', TR: 'Trim', BT: 'Bucking trim', DB: 'Dry biomass', DS: 'Dry sift biomass', CL: 'Clone', UR: 'Unrooted cutting', IP: 'Immature plant', MS: 'Mother stock', SD: 'Seed' }
 export type ListName = 'vehicles' | 'customers' | 'strains'
 export type ListRow = Vehicle | Customer | Strain
 export interface Settings { vehicles: Vehicle[]; customers: Customer[]; strains: Strain[] }
@@ -106,6 +117,9 @@ export interface Snapshot {
   unmatched?: UnmatchedTag[]
   /** pallet id -> open processing run code (set aside until the run is finished) */
   inRun?: Record<number, string>
+  /** items (SKUs) and harvest lots (054) */
+  skus?: Item[]
+  lots?: HarvestLot[]
 }
 
 export type Role = 'admin' | 'sales' | 'crew' | 'customer' | 'none'

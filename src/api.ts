@@ -1,7 +1,7 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { accessFromRole } from './types'
 import type { SalesDoc } from './docs'
-import type { Invoice, NewOrderLine, PaymentTerm, FOrder, Prefs, ModKey, Level, ReserveYears, CustomerTerms, UnmatchedTag, ShippedCheck, StopManifest, OrderInput, Terms, MenuNumbers, MenuRow, ReserveRequest, Balance, ImportResult, Order, RoshiRow, Reserve, LinkInfo, AppUser, Customer, Me, Role, Freezer, FreezerStatus, InvEvent, ListName, ListRow, Load, LoadItem, LoadStop, MixLine, Pallet, Settings, SingleInput, Slot, Snapshot, StopInput, Strain, Vehicle } from './types'
+import type { Item, HarvestLot, LotImpact, Invoice, NewOrderLine, PaymentTerm, FOrder, Prefs, ModKey, Level, ReserveYears, CustomerTerms, UnmatchedTag, ShippedCheck, StopManifest, OrderInput, Terms, MenuNumbers, MenuRow, ReserveRequest, Balance, ImportResult, Order, RoshiRow, Reserve, LinkInfo, AppUser, Customer, Me, Role, Freezer, FreezerStatus, InvEvent, ListName, ListRow, Load, LoadItem, LoadStop, MixLine, Pallet, Settings, SingleInput, Slot, Snapshot, StopInput, Strain, Vehicle } from './types'
 
 export interface SaveUser { email: string; name: string; kind: 'staff' | 'customer' | 'none'; customerId: number | null; access: Partial<Record<ModKey, Level>>; owner?: boolean }
 export interface Overview {
@@ -124,6 +124,9 @@ export interface Backend {
   orderTransferNew(orderId: number, vehicleId: number, date: string, site: string): Promise<number>
   stopManifest(stopId: number): Promise<StopManifest>
   setPalletOrigin(palletId: number, site: string): Promise<void>
+  /** SHO / BHO: a whole harvest lot (null = strain default) or one pallet (null = follow the lot). Lot change returns what it touched. */
+  setLotGrade(lotId: number, grade: string | null, reason?: string): Promise<LotImpact>
+  setPalletGrade(palletId: number, grade: string | null, reason?: string): Promise<void>
   /** Sales orders and invoices (027) */
   getDoc(kind: 'invoice' | 'so' | 'nso', id: number): Promise<SalesDoc>
   sharedDoc(token: string): Promise<SalesDoc | null>
@@ -255,6 +258,13 @@ class SupaBackend implements Backend {
   async orderTransferNew(orderId: number, vehicleId: number, date: string, site: string) { const { data, error } = await this.sb.rpc('order_transfer_new', { p_order: orderId, p_vehicle: vehicleId, p_date: date, p_site: site }); fail(error, '045_transfers'); return data as number }
   async stopManifest(stopId: number) { const { data, error } = await this.sb.rpc('stop_manifest', { p_stop: stopId }); fail(error, '045_transfers'); return data as StopManifest }
   async setPalletOrigin(palletId: number, site: string) { const { error } = await this.sb.rpc('set_pallet_origin', { p_pallet: palletId, p_site: site }); fail(error, '045_transfers') }
+  async setLotGrade(lotId: number, grade: string | null, reason?: string) {
+    const { data, error } = await this.sb.rpc('set_lot_grade', { p_lot: lotId, p_grade: grade ?? '', p_reason: reason || null }); fail(error, '054_item_model')
+    return data as LotImpact
+  }
+  async setPalletGrade(palletId: number, grade: string | null, reason?: string) {
+    const { error } = await this.sb.rpc('set_pallet_grade', { p_pallet: palletId, p_grade: grade ?? '', p_reason: reason || null }); fail(error, '054_item_model')
+  }
   async getDoc(kind: 'invoice' | 'so' | 'nso', id: number) {
     const { data, error } = await this.sb.rpc('get_doc', { p_kind: kind, p_id: id })
     if (error && /get_doc/.test(error.message)) throw new Error('Run 027_sales_docs.sql in Supabase first')
@@ -504,7 +514,19 @@ class SupaBackend implements Backend {
         for (const i of (ins ?? []) as { run_id: number; pallet_id: number }[]) inRun[i.pallet_id] = code.get(i.run_id)!
       }
     } catch { /* no Processing yet */ }
-    return { freezers, slots, pallets, strains, vehicles, customers, loads, stops, items, shipped, unmatched, inRun }
+    // items (SKUs) and harvest lots, only the ones these pallets use (054; tolerate it missing)
+    const ids = (k: 'item_id' | 'lot_id') => [...new Set(pallets.map(p => p[k]).filter((x): x is number => x != null))]
+    const byIds = async <T,>(table: string, list: number[]) => {
+      const out: T[] = []
+      for (let i = 0; i < list.length; i += 300) {
+        const { data, error } = await this.sb.from(table).select('*').in('id', list.slice(i, i + 300))
+        if (error) return [] as T[]
+        out.push(...((data ?? []) as T[]))
+      }
+      return out
+    }
+    const [skus, lots] = await Promise.all([byIds<Item>('items', ids('item_id')), byIds<HarvestLot>('harvest_lots', ids('lot_id'))]).catch(() => [[], []] as [Item[], HarvestLot[]])
+    return { freezers, slots, pallets, strains, vehicles, customers, loads, stops, items, shipped, unmatched, inRun, skus, lots }
   }
   async movePallet(palletId: number, toSlot: number | null, combine: boolean, note?: string) {
     const { error } = await this.sb.rpc('move_pallet', {
@@ -992,6 +1014,8 @@ class DemoBackend implements Backend {
   async orderTransferNew(): Promise<number> { throw new Error('Not in demo') }
   async stopManifest(): Promise<StopManifest> { throw new Error('Not in demo') }
   async setPalletOrigin() { throw new Error('Not in demo') }
+  async setLotGrade(): Promise<LotImpact> { throw new Error('Not in demo') }
+  async setPalletGrade() { throw new Error('Not in demo') }
   async adminOverview(): Promise<Overview> { throw new Error('Not in demo') }
   async appSettings() { return {} as Record<string, string> }
   async setAppSetting() {}

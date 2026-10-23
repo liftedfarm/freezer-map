@@ -2,7 +2,7 @@ import { ScanButton } from './scan'
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Backend, CONFIG_MISSING, IS_PORTAL, makeBackend, portalUrl } from './api'
-import { FREEZER_STATUSES, PRODUCT_LABEL, PRODUCT_SHORT } from './types'
+import { FREEZER_STATUSES, PRODUCT_LABEL, PRODUCT_SHORT, FINISH_LABEL } from './types'
 import { MergeForm, MergeHere, MixedBuilder, NewPalletChooser, PickMixed, SingleForm, SplitForm, TagForm, WeightForm, lbs } from './forms'
 import { SettingsView } from './settings'
 import { ModulePeople, UsersTab } from './users'
@@ -35,7 +35,7 @@ import { LoadForm, LoadView, PickLoad, TransitView, stopColor } from './loads'
 import type { LoadCtx } from './loads'
 import { lang, setLang, t } from './i18n'
 import { setMyAccess } from './fold'
-import type { FOrder, ModKey, UnmatchedTag, ShippedCheck, Freezer, Me, FreezerStatus, InvEvent, Load, LoadItem, LoadStop, Pallet, Site, Slot, Snapshot } from './types'
+import type { Grade, Item, HarvestLot, FOrder, ModKey, UnmatchedTag, ShippedCheck, Freezer, Me, FreezerStatus, InvEvent, Load, LoadItem, LoadStop, Pallet, Site, Slot, Snapshot } from './types'
 
 const backend: Backend = makeBackend()
 // Cultivation module: its own bundle, only loaded for users who have it switched on
@@ -104,6 +104,9 @@ interface Index {
   contentsOf: Map<number, Pallet[]>  // packages on each mixed pallet
   pallet: Map<number, Pallet>
   loadOf: Map<number, { item: LoadItem; load: Load; stop: LoadStop }>  // pallets on an open load
+  sku: Map<number, Item>             // items (SKUs) by id
+  lot: Map<number, HarvestLot>       // harvest lots by id
+  strainGrade: Map<string, Grade>    // strain default grade by lower-case name or alias
 }
 
 function buildIndex(s: Snapshot): Index {
@@ -122,7 +125,18 @@ function buildIndex(s: Snapshot): Index {
     const load = s.loads?.find(l => l.id === it.load_id), stop = s.stops?.find(x => x.id === it.stop_id)
     if (load && stop && ['planning', 'loading', 'in_transit'].includes(load.status)) loadOf.set(it.pallet_id, { item: it, load, stop })
   }
-  return { freezer, slot, slotsOf, inSlot, contentsOf, loadOf, pallet: new Map(s.pallets.map(p => [p.id, p])) }
+  const strainGrade = new Map<string, Grade>()
+  for (const st of s.strains ?? []) if (st.default_grade) for (const n of [st.name, ...(st.aliases ?? [])]) strainGrade.set(n.toLowerCase().trim(), st.default_grade)
+  return { freezer, slot, slotsOf, inSlot, contentsOf, loadOf, pallet: new Map(s.pallets.map(p => [p.id, p])),
+    sku: new Map((s.skus ?? []).map(i => [i.id, i])), lot: new Map((s.lots ?? []).map(l => [l.id, l])), strainGrade }
+}
+
+/** SHO / BHO that applies to a pallet: this pallet > its harvest lot > the strain default */
+function gradeOf(ix: Index, p: Pallet): { grade: Grade; from: 'pallet' | 'lot' | 'strain' } {
+  if (p.grade) return { grade: p.grade, from: 'pallet' }
+  const l = p.lot_id != null ? ix.lot.get(p.lot_id) : undefined
+  if (l?.grade) return { grade: l.grade, from: 'lot' }
+  return { grade: ix.strainGrade.get((p.strain ?? '').toLowerCase().trim()) ?? 'SHO', from: 'strain' }
 }
 
 /** weight of a pallet; a mixed pallet weighs what's on it */
@@ -890,6 +904,22 @@ export default function App() {
           inRun={snap.inRun?.[selected.id]}
           originAdmin={isAdminOf('dist') && !backend.demo}
           onOrigin={site => act(() => backend.setPalletOrigin(selected.id, site), `${selected.code}: grown at ${site}`)}
+          canGrade={(isAdminOf('cult') || isAdminOf('sales')) && !backend.demo}
+          onLotGrade={(lot, grade) => setConfirm({
+            text: `Make all of lot ${lot.code} ${grade ?? `the strain default (${ix.strainGrade.get((selected.strain ?? '').toLowerCase().trim()) ?? 'SHO'})`}? Every pallet from it still in inventory follows, except pallets graded on their own.`,
+            ok: grade ? `Make it ${grade}` : 'Use strain default',
+            run: async () => {
+              setBusy(true)
+              try {
+                const r = await backend.setLotGrade(lot.id, grade)
+                await reload()
+                const held = r.held.length ? `, ${r.held.length} held for orders (check Fulfillment)` : ''
+                const shipped = r.shipped.length ? `. Already shipped: ${r.shipped.map(x => `${x.invoice} ${x.customer}`).join(', ')}` : ''
+                flash(`Lot ${lot.code}: ${grade ?? 'strain default'} · ${r.on_hand.pallets} pallets on hand${held}${shipped}`)
+              } catch (e) { flash((e as Error).message, true) } finally { setBusy(false) }
+            },
+          })}
+          onPalletGrade={grade => act(() => backend.setPalletGrade(selected.id, grade), `${selected.code}: ${grade ?? 'same as lot'}`)}
           customerName={id => (snap.customers ?? []).find(c => c.id === id)?.name ?? ''}
           onOpenLoad={id => { setPalletId(null); setLoadId(id); setView('load') }}
           onPutOnLoad={() => setPickLoad(selected)}
@@ -1137,7 +1167,7 @@ function FreezerView({ ix, L, plan, freezer, query, placing, selecting, sel, sib
         {...(role !== 'leaving' && !placing ? draggable({ id: p.id, label: `${p.code} · ${p.kind === 'mixed' ? 'Mixed' : p.strain ?? ''}` }) : {})}
         onClick={e => { e.stopPropagation(); onPalletTap(p, role, s) }}>
         <b>{selecting && <span className={`tick ${picked ? 'on' : ''}`}>{picked ? '✓' : ''}</span>}{p.code}{p.needs_review && <span className="flag" title={p.needs_review}>!</span>}{(p.tag_pending || on.some(c => c.tag_pending)) && <span className="flag tag" title="METRC tag pending">T</span>}{ix.loadOf.has(p.id) && <span className="flag load" title={`Planned on ${ix.loadOf.get(p.id)!.load.code}`}>L</span>}</b>
-        <span className="strain">{note ? <i className="pnote">{note}</i> : p.kind === 'mixed' ? `Mixed · ${on.length} pkg${on.length === 1 ? '' : 's'}: ${[...new Set(on.map(c => c.strain))].join(', ')}` : <>{p.product && p.product !== 'fresh_frozen' && <em className="prodtag">{PRODUCT_SHORT[p.product]}</em>}{p.strain ?? p.label ?? 'No strain'}</>}</span>
+        <span className="strain">{note ? <i className="pnote">{note}</i> : p.kind === 'mixed' ? `Mixed · ${on.length} pkg${on.length === 1 ? '' : 's'}: ${[...new Set(on.map(c => c.strain))].join(', ')}` : <>{p.product && p.product !== 'fresh_frozen' && <em className="prodtag">{PRODUCT_SHORT[p.product]}</em>}{(p.product ?? 'fresh_frozen') === 'fresh_frozen' && gradeOf(ix, p).grade === 'BHO' && <em className="prodtag bho">BHO</em>}{p.strain ?? p.label ?? 'No strain'}</>}</span>
         <span className="w">{p.kind !== 'mixed' && p.current_weight == null ? 'no weight' : lbs(weightOf(ix, p))}</span>
       </span>
     )
@@ -1343,8 +1373,9 @@ function ActivityView({ ix, module }: { ix: Index; module: 'distribution' | 'sal
 
 type SheetAction = 'split' | 'merge' | 'tag' | 'weight' | 'addto' | 'addmixed'
 
-function PalletSheet({ ix, p, others, busy, where, onClose, onGo, onMove, onRemove, onClear, onPick, onForm, onTakeOff, onBreak, onLineage, loadInfo, customerName, onOpenLoad, onPutOnLoad, onPulled, held, onHeld, originAdmin, onOrigin, inRun }: {
+function PalletSheet({ ix, p, others, busy, where, onClose, onGo, onMove, onRemove, onClear, onPick, onForm, onTakeOff, onBreak, onLineage, loadInfo, customerName, onOpenLoad, onPutOnLoad, onPulled, held, onHeld, originAdmin, onOrigin, inRun, canGrade, onLotGrade, onPalletGrade }: {
   held?: string; onHeld?: () => void; originAdmin?: boolean; onOrigin?: (site: string) => void; inRun?: string
+  canGrade?: boolean; onLotGrade?: (lot: HarvestLot, grade: Grade | null) => void; onPalletGrade?: (grade: Grade | null) => void
   ix: Index; p: Pallet; others: Pallet[]; busy: boolean; where: (p: Pallet) => string
   onClose: () => void; onGo: () => void; onMove: () => void; onRemove: () => void; onClear: () => void; onPick: (id: number) => void
   onForm: (kind: SheetAction) => void; onTakeOff: () => void; onBreak: () => void; onLineage: (ps: Pallet[]) => void
@@ -1368,6 +1399,11 @@ function PalletSheet({ ix, p, others, busy, where, onClose, onGo, onMove, onRemo
   const children = kin.filter(k => k.parent_id === p.id)
   const into = kin.find(k => k.id === p.merged_into)
   const sources = kin.filter(k => k.merged_into === p.id)
+  const item = p.item_id != null ? ix.sku.get(p.item_id) : undefined
+  const lot = p.lot_id != null ? ix.lot.get(p.lot_id) : undefined
+  const g = gradeOf(ix, p)
+  const strainDefault = ix.strainGrade.get((p.strain ?? '').toLowerCase().trim()) ?? 'SHO'
+  const [showSku, setShowSku] = useState(false)
   const link = (k: Pallet) => <a key={k.id} onClick={() => onPick(k.id)}>{k.code}</a>
   const join = (ks: Pallet[]) => ks.map((k, i) => <span key={k.id}>{i > 0 && ', '}{link(k)}</span>)
   const statusText: Record<string, string> = { merged: 'Merged (closed out)', shipped: 'Delivered (left inventory)', depleted: isMixed ? 'Broken apart' : 'Depleted', archived: 'Not in a freezer (old record)', in_transit: where(p) }
@@ -1405,6 +1441,21 @@ function PalletSheet({ ix, p, others, busy, where, onClose, onGo, onMove, onRemo
               ? <select className="inline" value={p.origin_site ?? ''} onChange={e => e.target.value && onOrigin(e.target.value)}>
                   {!p.origin_site && <option value="">unknown</option>}{['OHR', 'GVR', 'GVR+OHR'].map(s => <option key={s} value={s}>{s === 'GVR+OHR' ? 'Both farms' : s}</option>)}</select>
               : p.origin_site === 'GVR+OHR' ? 'Both farms (GVR and OHR)' : p.origin_site ?? 'unknown'}</dd>
+            <dt>Item</dt><dd>{item
+              ? <><a onClick={() => setShowSku(v => !v)}>{FINISH_LABEL[item.finish] ?? item.finish} · {item.crop_year} · {item.site}</a>
+                  {item.metrc_status === 'to_create' && <span className="pill warn">not in METRC yet</span>}
+                  {showSku && <div className="muted small"><div className="mono">{item.sku}</div><div>{item.metrc_name}</div></div>}</>
+              : <span className="muted">none (needs strain, farm and year)</span>}</dd>
+            <dt>Harvest lot</dt><dd>{lot ? <><span className="mono">{lot.code}</span>{lot.metrc_name && lot.metrc_name !== lot.code && <div className="muted small">METRC: {lot.metrc_name}</div>}</> : <span className="muted">none</span>}</dd>
+            <dt>Grade</dt><dd>
+              <span className={`pill grade ${g.grade.toLowerCase()}`}>{g.grade}</span>
+              <span className="muted"> {g.from === 'pallet' ? 'set on this pallet' : g.from === 'lot' ? `whole lot${lot?.grade_reason ? ` (${lot.grade_reason})` : ''}` : 'strain default'}</span>
+              {canGrade && <div className="row gradeset">
+                {lot && onLotGrade && <label>Lot <select className="inline" disabled={busy} value={lot.grade ?? ''} onChange={e => onLotGrade(lot, (e.target.value || null) as Grade | null)}>
+                  <option value="">Strain default ({strainDefault})</option><option value="SHO">SHO</option><option value="BHO">BHO</option></select></label>}
+                {onPalletGrade && <label>This pallet <select className="inline" disabled={busy} value={p.grade ?? ''} onChange={e => onPalletGrade((e.target.value || null) as Grade | null)}>
+                  <option value="">{lot ? 'Same as lot' : 'Strain default'}</option><option value="SHO">SHO</option><option value="BHO">BHO</option></select></label>}
+              </div>}</dd>
           </>}
           {isMixed && contents.length > 0 && <><dt>Grown at</dt><dd>{[...new Set(contents.map(c => c.origin_site ?? '?'))].sort().join(', ')}</dd></>}
           {parent && <><dt>Split from</dt><dd>{link(parent)}</dd></>}
