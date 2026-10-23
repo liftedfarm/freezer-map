@@ -888,7 +888,11 @@ export const ES: Record<string, string> = {
  "4 months": "4 meses",
  "+ Same crew as {d} ({n})": "+ Mismo equipo que {d} ({n})",
  "Days on this run": "Días en esta corrida",
- "No days logged on this run yet.": "Todavía no hay días registrados en esta corrida."
+ "No days logged on this run yet.": "Todavía no hay días registrados en esta corrida.",
+ "$ per lb this day": "$ por libra este día",
+ "standard": "estándar",
+ "Special rate for this day.": "Pago especial para este día.",
+ "Back to the standard rate": "Volver al pago estándar"
 }
 export const EN: Record<string, string> = {
  "PLAN_HOWTO_1": "Works back from the clone orders for {year} (Production's nursery deliveries and outside orders): G4 cuttings = order + {buffer}% in trays of {tray}. G3 field moms = G4 cuttings ÷ {g3} cuts per mom. Each generation above is cut with +{buffer}% and G2 at {g2} cuts per mom.",

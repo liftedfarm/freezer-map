@@ -11,6 +11,8 @@ export interface Entry {
   id: number; work_date: string; employee_id: number; employee: string; payroll_id: string | null; task: Task; run_id: number | null; strain: string | null
   crop_year: number | null; farm: 'OHR' | 'GVR' | null; lbs: number; mold: number; smalls: number; trim: number; hours: number; note: string | null; source: string
   rate: number | null; target: number | null; lbs_hr: number | null; hit: boolean; pay: number; period_start: string
+  /** the day's own rate (053); null = the standing rate */
+  day_rate: number | null; day_target: number | null
 }
 export interface Period { id: number; starts: string; ends: string; status: 'open' | 'closed'; closed_by: string | null; closed_at: string | null; exported_by: string | null; exported_at: string | null; notes: string | null }
 export interface PayLine { employee_id: number; name: string; payroll_id: string | null; task: Task; farm: string | null; entries: number; hours: number; lbs: number; paid_lbs: number; amount: number }
@@ -50,15 +52,16 @@ export class PayApi {
       const { data, error } = await f(this.sb.from('piece_pay').select('*')).order('work_date').order('id').range(a, a + 999)
       fail(error)
       const rows = (data ?? []) as Record<string, unknown>[]
-      out.push(...rows.map(r => ({ ...r, lbs: Number(r.lbs), mold: Number(r.mold), smalls: Number(r.smalls), trim: Number(r.trim), hours: Number(r.hours), rate: num(r.rate), target: num(r.target), lbs_hr: num(r.lbs_hr), pay: Number(r.pay) }) as unknown as Entry))
+      out.push(...rows.map(r => ({ ...r, lbs: Number(r.lbs), mold: Number(r.mold), smalls: Number(r.smalls), trim: Number(r.trim), hours: Number(r.hours), rate: num(r.rate), target: num(r.target), lbs_hr: num(r.lbs_hr), pay: Number(r.pay), day_rate: num(r.day_rate), day_target: num(r.day_target) }) as unknown as Entry))
       if (rows.length < 1000) break
     }
     return out
   }
   saveEmployee(e: Partial<Employee>) { return this.rpc<Employee>('employee_save', { p: e }) }
   saveRate(task: Task, rate: number, target: number, from: string, notes: string) { return this.rpc<Rate>('piece_rate_save', { p_task: task, p_rate: rate, p_target: target, p_from: from, p_notes: notes }) }
-  saveDay(date: string, task: Task, run: number | null, strain: string | null, farm: string | null, rows: DayRow[]) {
-    return this.rpc<number>('piece_save_day', { p_date: date, p_task: task, p_run: run, p_strain: strain, p_farm: farm, p_rows: rows })
+  /** rate / target: this day's own piece rate, or null for the standing rate */
+  saveDay(date: string, task: Task, run: number | null, strain: string | null, farm: string | null, rows: DayRow[], rate: number | null = null, target: number | null = null) {
+    return this.rpc<number>('piece_save_day', { p_date: date, p_task: task, p_run: run, p_strain: strain, p_farm: farm, p_rows: rows, p_rate: rate, p_target: target })
   }
   summary(start: string) {
     return this.rpc<Summary>('pay_summary', { p_start: start }).then(s => ({

@@ -103,13 +103,19 @@ export class ProcApi {
   saveRequest(r: Partial<Req>) { return this.rpc<Req>('proc_save_request', { p: r }) }
   requestStatus(id: number, status: Req['status']) { return this.rpc<void>('proc_request_status', { p_id: id, p_status: status }) }
   commit(line: number, pallet: number, lbs: number | null, tag: string | null) { return this.rpc<unknown>('proc_commit', { p_line: line, p_pallet: pallet, p_lbs: lbs, p_tag: tag }) }
-  /** what the crew logged on a run (048) */
+  /** what the crew logged on a run (048), in total and per day */
   async crewOf(run: number) {
-    const { data, error } = await this.sb.from('piece_pay').select('employee_id,work_date,lbs,mold,smalls,trim,hours,pay').eq('run_id', run)
+    const { data, error } = await this.sb.from('piece_pay').select('*').eq('run_id', run)
     fail(error)
-    const r = (data ?? []) as { employee_id: number; work_date: string; lbs: number; mold: number; smalls: number; trim: number; hours: number; pay: number }[]
-    const s = (f: (x: typeof r[number]) => number) => r.reduce((a, x) => a + Number(f(x)), 0)
-    return { people: new Set(r.map(x => x.employee_id)).size, days: new Set(r.map(x => x.work_date)).size, lbs: s(x => x.lbs), mold: s(x => x.mold), smalls: s(x => x.smalls), trim: s(x => x.trim), other: s(x => Number(x.mold) + Number(x.smalls) + Number(x.trim)), hours: s(x => x.hours), pay: s(x => x.pay) }
+    const r = ((data ?? []) as Record<string, unknown>[]).map(x => ({ employee_id: Number(x.employee_id), work_date: String(x.work_date), lbs: Number(x.lbs), mold: Number(x.mold),
+      smalls: Number(x.smalls), trim: Number(x.trim), hours: Number(x.hours), pay: Number(x.pay), hit: !!x.hit, rate: num(x.rate), target: num(x.target), custom: x.day_rate != null || x.day_target != null }))
+    type R = typeof r[number]
+    const tot = (xs: R[]) => { const s = (f: (x: R) => number) => xs.reduce((a, x) => a + f(x), 0)
+      return { people: new Set(xs.map(x => x.employee_id)).size, lbs: s(x => x.lbs), mold: s(x => x.mold), smalls: s(x => x.smalls), trim: s(x => x.trim),
+        other: s(x => x.mold + x.smalls + x.trim), hours: s(x => x.hours), pay: s(x => x.pay), hit: xs.filter(x => x.hit).length, n: xs.length } }
+    const dates = [...new Set(r.map(x => x.work_date))].sort()
+    const byDay = dates.map(date => { const xs = r.filter(x => x.work_date === date); return { date, ...tot(xs), rate: xs[0]?.rate ?? null, target: xs[0]?.target ?? null, custom: xs.some(x => x.custom) } })
+    return { ...tot(r), days: dates.length, byDay }
   }
   commitForecast(line: number, pallet: number, lbs: number) { return this.rpc<unknown>('proc_commit_forecast', { p_line: line, p_pallet: pallet, p_lbs: lbs }) }
   setDryDefault(pct: number) { return this.rpc<void>('proc_set_dry_default', { p_pct: pct }) }

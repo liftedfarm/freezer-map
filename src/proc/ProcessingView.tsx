@@ -518,7 +518,20 @@ function RunSheet({ c, run, logDate, setLogDate, onClose }: { c: Ctx; run: Run; 
       <span className="grow"><b>{p?.code ?? `#${i.pallet_id}`}</b> <span className="muted">{p ? PL(p.product) : ''} · {p ? c.where(p) : ''}</span></span><b>{n0(i.lbs)} lbs</b>{!i.whole && <span className="muted">part</span>}</button>)}</div>
     <h3 className="csec">Crew {run.status !== 'cancelled' && <button className="ghost small" onClick={() => setLogDate(today())}>{c.canEdit ? 'Log a day' : 'See the days'}</button>}</h3>
     {crew && !crew.people && <p className="muted small-note">No crew days logged on this run yet.</p>}
-    {crew && crew.people > 0 && <div className="infobox">Crew logged {crew.people} people over {crew.days} day{crew.days === 1 ? '' : 's'}: {n1(crew.lbs)} lbs {run.kind === 'buck' ? 'bucked' : 'flower'}, {n1(crew.other)} lbs mold / smalls / trim, {n1(crew.hours)} hours, ${n0(crew.pay)} piece pay{run.status === 'done' && run.output_lbs ? ` (${pct(crew.lbs + crew.other, (run.output_lbs ?? 0) + (run.mold_lbs ?? 0))} of what came out)` : ''}.</div>}
+    {crew && crew.people > 0 && <>
+      <div className="cwrap tight"><table className="ctable crewdays">
+        <thead><tr><th>Day</th><th className="num">People</th><th className="num">Hours</th><th className="num">{run.kind === 'buck' ? 'Bucked' : 'Flower'}</th><th className="num">lbs/hr</th>
+<th className="num hide-s">At target</th><th className="num">Pay</th><th className="num hide-s">Rate</th></tr></thead>
+        <tbody>{crew.byDay.map(x => <tr key={x.date} className="tap" onClick={() => setLogDate(x.date)}>
+          <td className="nowrap">{fmtD(x.date)}</td><td className="num">{x.people}</td><td className="num">{n1(x.hours)}</td><td className="num">{n1(x.lbs)}</td>
+          <td className="num"><b>{x.hours ? (x.lbs / x.hours).toFixed(2) : ''}</b></td>
+          <td className="num hide-s">{x.hit}/{x.n}</td><td className="num">${n0(x.pay)}</td>
+          <td className={`num hide-s${x.custom ? ' warn-t' : ''}`}>{x.rate != null ? `$${x.rate} @ ${x.target}` : ''}</td></tr>)}</tbody>
+        {crew.byDay.length > 1 && <tfoot><tr><td>{crew.days} days</td><td className="num">{crew.people}</td><td className="num">{n1(crew.hours)}</td><td className="num">{n1(crew.lbs)}</td>
+          <td className="num"><b>{crew.hours ? (crew.lbs / crew.hours).toFixed(2) : ''}</b></td><td className="num hide-s">{crew.hit}/{crew.n}</td><td className="num">${n0(crew.pay)}</td><td className="hide-s"></td></tr></tfoot>}
+      </table></div>
+      <p className="muted small-note">{n1(crew.other)} lbs mold / smalls / trim logged too.{run.status === 'done' && run.output_lbs ? ` The crew logged ${pct(crew.lbs + crew.other, (run.output_lbs ?? 0) + (run.mold_lbs ?? 0))} of what came out.` : ''} Tap a day to open it.</p>
+    </>}
     {run.status === 'done' && <>
       <h3 className="csec">Out <span className="muted">{n0(run.output_lbs)} lbs</span></h3>
       <div className="dlist">{outs.map(p => <button key={p.id} className="drow linkrow" onClick={() => c.openPkg(p)}>

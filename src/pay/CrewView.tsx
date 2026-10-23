@@ -91,7 +91,15 @@ export function RunDayLog({ sb, run, date0, flash, canEdit, onSaved }: {
     if (!all) return
     setRows(all.filter(e => e.work_date === date).map(e => ({ key: K++, id: e.id, employee_id: e.employee_id, lbs: e.lbs, mold: e.mold, smalls: e.smalls, trim: e.trim, hours: e.hours, note: e.note })))
   }, [all, date])
-  const rate = rateOn(rates, task, date)
+  const std = rateOn(rates, task, date)
+  // this day's piece rate: what was saved for the day, else the standing rate (FL25 workbook defaults)
+  const [own, setOwn] = useState<{ rate: number | null; target: number | null }>({ rate: null, target: null })
+  useEffect(() => {
+    const e = all?.find(x => x.work_date === date)
+    setOwn({ rate: e?.day_rate ?? null, target: e?.day_target ?? null })
+  }, [all, date])
+  const rate: Rate | undefined = std || own.rate != null ? { id: 0, task, effective_from: date, notes: null, rate: own.rate ?? std?.rate ?? 0, target: own.target ?? std?.target ?? 0 } : undefined
+  const custom = (own.rate != null && own.rate !== std?.rate) || (own.target != null && own.target !== std?.target)
   const set = (k: number, p: Partial<Row>) => setRows(rs => rs.map(r => (r.key === k ? { ...r, ...p } : r)))
   const used = new Set(rows.filter(r => !r.delete).map(r => r.employee_id))
   const addWorker = (id: number | null) => { if (id) setRows(rs => [...rs, { key: K++, employee_id: id, lbs: null, mold: null, smalls: null, trim: null, hours: rs.find(r => !r.delete && r.hours)?.hours ?? null, fresh: true }]) }
@@ -110,7 +118,9 @@ export function RunDayLog({ sb, run, date0, flash, canEdit, onSaved }: {
     if (shown.some(r => !(r.hours! > 0))) { flash(t('Everyone needs hours'), true); return }
     setBusy(true)
     try {
-      const n = await api.saveDay(date, task, run.id, null, null, rows.map(r => ({ id: r.id ?? null, employee_id: r.employee_id, lbs: r.lbs, mold: r.mold, smalls: r.smalls, trim: r.trim, hours: r.hours, note: r.note ?? null, delete: r.delete })))
+      const keep = (v: number | null, d: number | undefined) => (v == null || v === d ? null : v)
+      const n = await api.saveDay(date, task, run.id, null, null, rows.map(r => ({ id: r.id ?? null, employee_id: r.employee_id, lbs: r.lbs, mold: r.mold, smalls: r.smalls, trim: r.trim, hours: r.hours, note: r.note ?? null, delete: r.delete })),
+        keep(own.rate, std?.rate), keep(own.target, std?.target))
       flash(t('{n} saved', { n })); await loadAll(); onSaved()
     } catch (e) { flash(errText(e), true) } finally { setBusy(false) }
   }
@@ -121,7 +131,12 @@ export function RunDayLog({ sb, run, date0, flash, canEdit, onSaved }: {
     <div className="crew-top">
       <F label={t('Day')}><DateIn value={date} onChange={v => v && setDate(v)} /></F>
     </div>
-    {rate ? <p className="muted small-note">{t('{task}: ${rate}/lb when someone does {target} lbs/hr or more that day. Under that, no piece pay.', { task: t(TASK_LABEL[task]), rate: rate.rate.toFixed(2), target: rate.target })}</p>
+    <div className="grid2 crew-rate">
+      <F label={t('$ per lb this day')} hint={std ? `(${t('standard')} $${std.rate.toFixed(2)})` : ''}><NumIn value={own.rate ?? std?.rate ?? null} onChange={v => editable && setOwn(o => ({ ...o, rate: v }))} /></F>
+      <F label={t('Target lbs/hr')} hint={std ? `(${t('standard')} ${std.target})` : ''}><NumIn value={own.target ?? std?.target ?? null} onChange={v => editable && setOwn(o => ({ ...o, target: v }))} /></F>
+    </div>
+    {rate ? <p className={`small-note ${custom ? 'warn-t' : 'muted'}`}>{custom ? t('Special rate for this day.') + ' ' : ''}{t('{task}: ${rate}/lb when someone does {target} lbs/hr or more that day. Under that, no piece pay.', { task: t(TASK_LABEL[task]), rate: rate.rate.toFixed(2), target: rate.target })}
+      {custom && editable && <> <button className="linkbtn" onClick={() => setOwn({ rate: null, target: null })}>{t('Back to the standard rate')}</button></>}</p>
       : <p className="warn-t small-note">{t('No piece rate set for this day.')}</p>}
 
     <div className="crew-rows">
