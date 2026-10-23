@@ -33,10 +33,12 @@ const store = (k: string) => { try { return JSON.parse(localStorage.getItem(k) ?
 const save = (k: string, v: unknown) => { try { localStorage.setItem(k, JSON.stringify(v)) } catch { /* private window */ } }
 const n0 = (x: number) => Math.round(x).toLocaleString()
 
-export function InvTable<R>({ id, title, note, rows, rowId, cols, groups, defaultGroup, chips, text, lbs, onOpen, expand, totals, actions, noun = 'package', toolbar, rowClass }: {
+export function InvTable<R>({ id, title, note, rows, rowId, cols, groups, defaultGroup, defaultSort, chips, text, lbs, onOpen, expand, totals, actions, noun = 'package', toolbar, rowClass }: {
   id: string; title: ReactNode; note?: ReactNode
   rows: R[]; rowId: (r: R) => number
   cols: Col<R>[]; groups: GroupBy<R>[]; defaultGroup: string
+  /** column to sort by until someone picks one */
+  defaultSort?: string
   chips?: Chip<R>[]
   text: (r: R) => string
   lbs: (r: R) => number
@@ -54,7 +56,7 @@ export function InvTable<R>({ id, title, note, rows, rowId, cols, groups, defaul
   const [g, setG] = useState<string>(saved?.g && (saved.g === 'none' || groups.some(x => x.k === saved.g)) ? saved.g : defaultGroup)
   const [hide, setHide] = useState<Set<string>>(new Set(saved?.hide ?? []))
   const [show, setShow] = useState<Set<string>>(new Set(saved?.show ?? []))
-  const [sort, setSort] = useState<[string, 1 | -1] | null>(saved?.sort ?? null)
+  const [sort, setSort] = useState<[string, 1 | -1] | null>(saved?.sort ?? (defaultSort ? [defaultSort, 1] : null))
   const [pick, setPick] = useState<Record<string, Set<string>>>({})
   const [q, setQ] = useState('')
   const [closed, setClosed] = useState<Set<string>>(new Set())

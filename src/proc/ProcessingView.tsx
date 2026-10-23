@@ -582,7 +582,7 @@ function Inventory({ c }: { c: Ctx }) {
     { k: 'strain', l: 'Strain', phone: true, get: p => p.strain ?? '', val: p => p.strain ?? '' },
     { k: 'stage', l: 'Stage', phone: true, get: p => <Prod p={p.product} />, val: stage },
     { k: 'lbs', l: 'Lbs', num: true, phone: true, get: p => <>{n0(w(p))}{p.product === 'wet' || p.product === 'unbucked' ? <span className="muted small"> wet</span> : null}</>, val: w },
-    { k: 'proc', l: 'Processor', get: p => p.processor_id ? c.procName(p.processor_id) : '', val: p => c.procName(p.processor_id) },
+    { k: 'proc', l: 'Dried by', get: p => p.processor_id ? c.procName(p.processor_id) : '', val: p => c.procName(p.processor_id) },
     { k: 'sent', l: 'Sent on', get: p => fmtD(p.sent_on), val: p => p.sent_on ?? '' },
     { k: 'out', l: 'Days out', num: true, get: p => { const n = daysOut(p); return n == null ? '' : <span className={n > 21 ? 'warn-t' : ''}>{n}</span> }, val: p => daysOut(p) ?? -1 },
     { k: 'fc', l: 'Forecast', num: true, get: p => { const n = fc(p); return n ? <span className="muted small">~{n0(n)} {p.product === 'bucked' ? 'std' : 'bucked'}</span> : '' }, val: fc },
@@ -606,7 +606,7 @@ function Inventory({ c }: { c: Ctx }) {
   ]
   const picked = (ids: number[]) => d.pallets.filter(p => ids.includes(p.id))
   const all = (ids: number[], ok: (p: Pallet) => boolean, what: string) => { if (picked(ids).every(ok)) return true; c.flash(`Pick only ${what}`, true); return false }
-  return <InvTable id="proc" title="Inventory" rows={rows} rowId={p => p.id} cols={cols} groups={groups} defaultGroup="stage" chips={chips}
+  return <InvTable id="proc" title="Inventory" rows={rows} rowId={p => p.id} cols={cols} groups={groups} defaultGroup="stage" defaultSort="strain" chips={chips}
     text={p => `${p.code} ${p.strain ?? ''} ${p.package_tag ?? ''} ${stage(p)} ${c.procName(p.processor_id)}`}
     lbs={w} onOpen={p => c.openPkg(p)}
     note={<>Every dry package from wet to finished, grouped like a pipeline. Wet and unbucked weights are wet weight on paper. Tap a package for its next step, or Select several to buck, trim or send them together.</>}

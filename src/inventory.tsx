@@ -25,6 +25,7 @@ export interface InvCtx {
   onLoad: (id: number) => string | undefined
   inRun: (id: number) => string | undefined
   open: (id: number) => void                // pallet card
+  site: (p: Pallet) => string | null        // site it's at now (freezer site, or where it was received)
 }
 
 const live = (p: Pallet) => p.status === 'in_freezer' || p.status === 'unslotted' || p.status === 'in_transit'
@@ -51,7 +52,7 @@ export function DistInventory({ c, onMove, flash }: { c: InvCtx; onMove: (ids: n
     { k: 'where', l: 'Location', phone: true, get: p => <span className="small">{c.where(p)}</span>, val: p => c.where(p) },
     { k: 'item', l: 'Item', get: p => <span className="small">{itemName(c.item(p.item_id))}</span>, val: p => c.item(p.item_id)?.sku ?? '' },
     { k: 'lot', l: 'Harvest lot', get: p => <span className="mono small">{c.lot(p.lot_id)?.code ?? ''}</span>, val: p => c.lot(p.lot_id)?.code ?? '' },
-    { k: 'tag', l: 'METRC tag', get: p => <span className="mono small">{p.package_tag ?? (p.tag_pending ? 'pending' : '')}</span>, val: p => p.package_tag ?? '' },
+    { k: 'tag', l: 'METRC tag', get: p => <span className="mono small" title={p.package_tag ?? ''}>{p.package_tag ? `…${p.package_tag.slice(-8)}` : p.tag_pending ? 'pending' : ''}</span>, val: p => p.package_tag ?? '' },
     { k: 'age', l: 'Days', num: true, get: p => n0(daysSince(p.harvest_date)), val: p => daysSince(p.harvest_date) ?? -1 },
     { k: 'flags', l: 'Flags', get: p => <span className="flags">{flags(p).map(f => <span key={f} className="pill warnp">{f}</span>)}</span>, val: p => flags(p).join('; ') },
     { k: 'harvested', l: 'Harvested', on: false, get: p => p.harvest_date ?? '', val: p => p.harvest_date ?? '' },
@@ -72,7 +73,7 @@ export function DistInventory({ c, onMove, flash }: { c: InvCtx; onMove: (ids: n
     { k: 'grade', l: 'Grade', key: p => c.grade(p).grade },
   ]
   const chips: Chip<Pallet>[] = [
-    { k: 'site', l: 'Site', get: p => freezerOf(p).split(' ')[0] },
+    { k: 'site', l: 'Site', get: p => c.site(p) ?? 'No site' },
     { k: 'year', l: 'Crop year', get: p => String(yearOf(c, p) ?? '') },
     { k: 'form', l: 'Form', get: p => PRODUCT_LABEL[prodOf(p)] },
     { k: 'grade', l: 'Grade', get: p => c.grade(p).grade },
@@ -83,7 +84,7 @@ export function DistInventory({ c, onMove, flash }: { c: InvCtx; onMove: (ids: n
     if (on.length) { const codes = on.map(id => c.pallet(id)!.code); flash(`${codes.join(', ')} ${codes.length === 1 ? 'is' : 'are'} on a mixed pallet. Open the package and use Take off, or move the mixed pallet itself.`, true); return }
     onMove(ids)
   } }]
-  return <InvTable id="dist" title="Inventory" rows={rows} rowId={p => p.id} cols={cols} groups={groups} defaultGroup="freezer" chips={chips}
+  return <InvTable id="dist" title="Inventory" rows={rows} rowId={p => p.id} cols={cols} groups={groups} defaultGroup="freezer" defaultSort="where" chips={chips}
     text={p => `${p.code} ${p.strain ?? ''} ${p.package_tag ?? ''} ${c.lot(p.lot_id)?.code ?? ''} ${c.where(p)}`}
     lbs={p => Number(p.current_weight ?? 0)} onOpen={p => c.open(p.id)} actions={actions}
     note={<>Every package in inventory. Packages on a mixed pallet are listed one by one; group by Spot to see the mixed pallet. Sort by Days for the oldest product.</>}
@@ -156,7 +157,7 @@ export function SalesInventory({ c, strains, sb, onNewOrder }: { c: InvCtx; stra
       <div className="drill-p">{ps.map(p => <a key={p.id} onClick={() => c.open(p.id)} className="chip">{p.code} {n0(p.current_weight)}{c.held(p.id) ? ' · held' : ''}{p.grade ? ` · ${p.grade}` : ''}</a>)}</div>
     </div>)}</div>
   }
-  return <InvTable id="sales" title="Inventory" rows={rows} rowId={r => r.id} cols={cols} groups={groups} defaultGroup="form" chips={chips} noun="product"
+  return <InvTable id="sales" title="Inventory" rows={rows} rowId={r => r.id} cols={cols} groups={groups} defaultGroup="form" defaultSort="strain" chips={chips} noun="product"
     text={r => `${r.strain} ${PRODUCT_LABEL[r.form]} ${r.grade} ${r.year ?? ''} ${r.packages.map(p => `${p.code} ${c.lot(p.lot_id)?.code ?? ''}`).join(' ')}`}
     lbs={r => r.onHand} expand={expand}
     toolbar={onNewOrder ? <button className="primary small" onClick={onNewOrder}>New order</button> : undefined}

@@ -746,5 +746,9 @@ dd .small { font-size: 12px; margin-top: 2px; word-break: break-all; }
 .inv .drill-p { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
 .inv .flags { display: inline-flex; flex-wrap: wrap; gap: 3px; }
 .pill.mixedp { background: color-mix(in srgb, #7c3aed 18%, var(--panel)); color: #a78bfa; margin-left: 6px; }
-.allset .modpick { margin: 4px 0 12px; }
+.allset .setpick { margin: 4px 0 12px; flex-wrap: wrap; width: fit-content; max-width: 100%; }
 @media (max-width: 700px) { .inv .cwrap .ctable { min-width: 0; } }
+.list.inv { max-width: none; }
+.inv td .mono.small { white-space: nowrap; }
+.inv td { white-space: nowrap; }
+.inv td .flags, .inv td.wrap { white-space: normal; }
