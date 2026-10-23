@@ -168,6 +168,15 @@ export function InvoicesView({ backend, customers, flash, isAdmin, sender, scope
 }
 
 /** Sales > Orders > New order */
+/** customer license check (Compliance, 055): warn, don't block (we're mostly wholesale) */
+export function licenseWarning(c: Customer): string | null {
+  if (c.kind !== 'external') return null
+  if (!c.license?.trim()) return `No state license on file for ${c.name}.`
+  const exp = c.license_expires
+  if (exp && exp < new Date().toISOString().slice(0, 10)) return `${c.name}'s license (${c.license}) expired ${exp}.`
+  return null
+}
+
 export function NewOrderSheet({ backend, customers, strains, flash, onClose, onDone }: {
   backend: Backend; customers: Customer[]; strains: Strain[]; flash: Flash; onClose: () => void; onDone: (id: number) => void
 }) {
@@ -205,7 +214,8 @@ export function NewOrderSheet({ backend, customers, strains, flash, onClose, onD
             <option value="">Pick a customer…</option>
             {customers.filter(x => x.active && x.kind === 'external').sort((a, b) => a.name.localeCompare(b.name)).map(x => <option key={x.id} value={x.id}>{x.name}</option>)}
           </select>
-          {c && <span className="muted">{c.price_per_lb != null ? `Contract price ${money(Number(c.price_per_lb))}/lb` : 'No contract price set'} · {terms.find(t => t.code === c.payment_terms)?.label ?? 'Due on receipt'}</span>}</div>
+          {c && <span className="muted">{c.price_per_lb != null ? `Contract price ${money(Number(c.price_per_lb))}/lb` : 'No contract price set'} · {terms.find(t => t.code === c.payment_terms)?.label ?? 'Due on receipt'}</span>}
+          {c && licenseWarning(c) && <div className="warnbox">{licenseWarning(c)} Compliance keeps customer licenses in Compliance › Library › Customer licenses.</div>}</div>
         <div className="field"><label>Lines <span className="muted">(price blank = their contract price for fresh frozen; dry products get priced on the invoice)</span></label>
           <datalist id="no-strains">{strains.filter(s => s.active).map(s => <option key={s.id} value={s.name} />)}</datalist>
           {lines.map((l, i) => (

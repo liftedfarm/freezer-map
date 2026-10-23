@@ -892,7 +892,11 @@ export const ES: Record<string, string> = {
  "$ per lb this day": "$ por libra este día",
  "standard": "estándar",
  "Special rate for this day.": "Pago especial para este día.",
- "Back to the standard rate": "Volver al pago estándar"
+ "Back to the standard rate": "Volver al pago estándar",
+ "Not on the product list, so not CCOF approved yet. Check with Compliance before using it.": "No está en la lista de productos, así que todavía no está aprobado por CCOF. Consulte con Cumplimiento antes de usarlo.",
+ "Not allowed by CCOF. Check with Compliance before using it.": "No está permitido por CCOF. Consulte con Cumplimiento antes de usarlo.",
+ "Not CCOF approved yet. Check with Compliance before using it.": "Todavía no está aprobado por CCOF. Consulte con Cumplimiento antes de usarlo.",
+ "Its CCOF listing had expired on this date. Tell Compliance.": "Su registro de CCOF ya había vencido en esta fecha. Avise a Cumplimiento."
 }
 export const EN: Record<string, string> = {
  "PLAN_HOWTO_1": "Works back from the clone orders for {year} (Production's nursery deliveries and outside orders): G4 cuttings = order + {buffer}% in trays of {tray}. G3 field moms = G4 cuttings ÷ {g3} cuts per mom. Each generation above is cut with +{buffer}% and G2 at {g2} cuts per mom.",

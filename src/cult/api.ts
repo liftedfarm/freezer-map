@@ -19,7 +19,7 @@ const num = (v: unknown) => (v == null || v === '' ? null : Number(v))
 const KEY: Partial<Record<CultTable, string>> = { sites: 'code', cult_test_protocols: 'kind' }
 
 export class CultApi {
-  constructor(private sb: SupabaseClient) {}
+  constructor(public sb: SupabaseClient) {}
 
   async load(year: number | null): Promise<CultData> {
     const settingsRows = await all<{ key: string; value: string }>((a, b) => this.sb.from('app_settings').select('key,value').range(a, b))

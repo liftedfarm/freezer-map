@@ -32,7 +32,7 @@ export interface Harvest {
 export interface CTest {
   id: number; crop_year: number; site: SiteCode; kind: 'area' | 'strain'; field_id: number | null; harvest_id: number | null
   lab: string | null; test_ref: string | null; sampled_on: string | null; submitted_on: string | null; results_on: string | null
-  result: string | null; notes: string | null
+  result: string | null; notes: string | null; total_thc?: number | null; total_cannabinoids?: number | null; moisture?: number | null
 }
 export interface Protocol { kind: 'ff' | 'biomass' | 'dry'; label: string; per: string; sample: string; opens_days: number; closes_days: number; tests: string }
 export interface Pick { id: number; crop_year: number; strain: string; dry_lbs: number; notes: string | null }

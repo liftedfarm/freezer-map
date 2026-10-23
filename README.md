@@ -101,3 +101,15 @@ Run `supabase/049_processing_flow.sql`. Each package's sheet (Processing › Inv
 Send to processor (prints a manifest sheet), Back unbucked, Trim, Sell as bucked, Commit to an order. Forecasts per strain (this strain's runs + FL25 Totals,
 then all strains, then a default wet-to-bucked % in Settings). Forecast standards / smalls / trim can be promised from bucked packages only; when the package
 is trimmed, the real packages go on the order automatically. Available shows what's free to sell per strain. Yields show labor $/lb per strain.
+
+## Compliance (055)
+
+Run `supabase/055_compliance.sql`. It adds the Compliance module (Off / View / User / Admin; Beth = Admin), a private storage
+bucket `compliance` for documents, the document library (types = SharePoint folders), deadlines, CCOF approval on the
+Production and Nursery product lists, the application log (from the Feed and Spray logs), a METRC to-do queue fed by the
+activity log, METRC Active Packages reconciliation, a METRC error log and playbook, results files on Production > Testing
+entries (shown on every package from that harvest), and customer license expiry.
+
+SharePoint backup (`api/compliance/backup.js`, nightly at 3:17am Pacific, or Run now in Compliance > Settings):
+an Entra app with the Microsoft Graph application permission `Sites.Selected` and write access to the one site, then in Vercel
+`MS_TENANT_ID`, `MS_CLIENT_ID`, `MS_CLIENT_SECRET` (plus `SUPABASE_SERVICE_ROLE_KEY`). Set the site and top folder in the app.

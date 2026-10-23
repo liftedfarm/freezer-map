@@ -10,6 +10,17 @@ import { MONTHS_ES, MONTHS_LONG_ES, lang, t, tn } from './i18n'
 type Flash = (t: string, bad?: boolean) => void
 export type LogKind = 'spray' | 'feed' | 'labor'
 type Basis = 'acre' | 'gal'
+/** CCOF (Compliance, 055): warn when a product isn't approved, or its listing had expired on the log date */
+function ccofWarn(name: string, pmap: Map<string, Product>, on: string | null | undefined): string | null {
+  const k = name.trim().toLowerCase(); if (!k) return null
+  const p = pmap.get(k) as (Product & { ccof_status?: string; listing_expires?: string | null }) | undefined
+  if (!p) return [...pmap.values()].some(x => 'ccof_status' in x) ? t('Not on the product list, so not CCOF approved yet. Check with Compliance before using it.') : null
+  if (!('ccof_status' in p)) return null
+  if (p.ccof_status === 'not_allowed') return t('Not allowed by CCOF. Check with Compliance before using it.')
+  if (p.ccof_status !== 'approved') return t('Not CCOF approved yet. Check with Compliance before using it.')
+  if (p.listing_expires && on && p.listing_expires < on) return t('Its CCOF listing had expired on this date. Tell Compliance.')
+  return null
+}
 interface ProductLine { product: string; manufacturer?: string | null; rate: number | null; unit: string | null; basis?: Basis; total: number | null; total_unit: string | null }
 export interface OpsLog {
   id: number; module: string; kind: LogKind; site: string; area: string | null; log_on: string; start_at: string | null; end_at: string | null
@@ -285,6 +296,7 @@ function LogSheet({ sb, x0, field, sites, areas, strains, products, recipes, bat
             <input value={l.unit ?? ''} placeholder={field ? 'gal, lb, fl oz' : 'mL'} onChange={e => setLine(i, { unit: e.target.value })} />
             <span className="muted small">{l.total != null ? `= ${num(l.total, 1)} ${l.total_unit ?? ''}` : ''}{(() => { const c = lineCost(l, pmap.get(l.product.toLowerCase())); return c ? ` · ${money(c)}` : '' })()}</span>
             <button className="ghost small" onClick={() => setX(s => ({ ...s, products: (s.products ?? []).filter((_, j) => j !== i) }))}>✕</button>
+            {(() => { const w = ccofWarn(l.product, pmap, x.log_on); return w ? <div className="warn-t small prodwarn">{w}</div> : null })()}
           </div>)}
           <div className="row"><button className="ghost small" onClick={() => setX(s => ({ ...s, products: [...(s.products ?? []), blank()] }))}>{t('+ Product')}</button>
             {cost > 0 && <span className="muted small">{t('Cost')} {money(cost)}{x.acres ? ` · ${money(cost / x.acres)}/${t('acre')}` : ''}</span>}</div>

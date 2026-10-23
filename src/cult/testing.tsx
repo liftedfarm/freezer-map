@@ -1,4 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { CompApi } from '../comp/api'
+import { DocList, DropZone } from '../comp/files'
 import type { CultApi } from './api'
 import { DAY_LONG, fieldName, fmtD, testRows, today } from './calc'
 import type { Ctx, TestRow } from './calc'
@@ -11,6 +13,12 @@ const stCls = (s: string) => `tstat t-${s.split(/[\s-]/)[0]}`
 export function TestingTab({ d, c, site, api, flash, onSaved }: { d: CultData; c: Ctx; site: string | null; api: CultApi; flash: Flash; onSaved: (m: string) => Promise<void> }) {
   const [edit, setEdit] = useState<TestRow | null>(null)
   const [proto, setProto] = useState<Protocol | null>(null)
+  // results files (Compliance, 055): count per test entry
+  const comp = useMemo(() => new CompApi(api.sb), [api])
+  const [files, setFiles] = useState<Map<number, number>>(new Map())
+  const loadFiles = () => comp.sb.rpc('test_files', { p_year: d.year }).then(r => {
+    const m = new Map<number, number>(); for (const x of (r.data ?? []) as { test_id: number }[]) m.set(x.test_id, (m.get(x.test_id) ?? 0) + 1); setFiles(m) }, () => {})
+  useEffect(() => { loadFiles() }, [d.year])
   const { area, strain } = testRows(d, c)
   const A = area.filter(r => !site || r.site === site), S = strain.filter(r => !site || r.site === site)
   const now = today()
@@ -38,7 +46,9 @@ export function TestingTab({ d, c, site, api, flash, onSaved }: { d: CultData; c
       <td><span className={stCls(r.status)}>{r.status}</span></td>
       <td className="small hide-s">{r.test?.lab ?? ''}{r.test?.test_ref ? <div className="muted">{r.test.test_ref}</div> : null}</td>
       <td className="nowrap small">{r.test?.submitted_on ? `sent ${fmtD(r.test.submitted_on)}` : ''}{r.test?.results_on ? <div>back {fmtD(r.test.results_on)}</div> : null}</td>
-      <td><b className={/fail/i.test(r.test?.result ?? '') ? 'neg' : /pass/i.test(r.test?.result ?? '') ? 'pos' : ''}>{r.test?.result ?? ''}</b></td>
+      <td><b className={/fail/i.test(r.test?.result ?? '') ? 'neg' : /pass/i.test(r.test?.result ?? '') ? 'pos' : ''}>{r.test?.result ?? ''}</b>
+        {r.test?.id && files.get(r.test.id) ? <span className="pill cp-ok" title="Results file attached" style={{ marginLeft: 4 }}>PDF{files.get(r.test.id)! > 1 ? ` ×${files.get(r.test.id)}` : ''}</span>
+          : r.test?.results_on ? <span className="pill cp-warn" title="No results file yet" style={{ marginLeft: 4 }}>no file</span> : null}</td>
     </tr>
   )
 
@@ -80,19 +90,32 @@ export function TestingTab({ d, c, site, api, flash, onSaved }: { d: CultData; c
       </table></div>
       <p className="cnote">Test entries are tied to the field or the harvest, so they stay put when the schedule changes. All samples are dried by the lab; composites also get a micro extraction.</p>
 
-      {edit && <TestSheet d={d} r={edit} api={api} flash={flash} onClose={() => setEdit(null)} onSaved={async m => { setEdit(null); await onSaved(m) }} />}
+      {edit && <TestSheet d={d} r={edit} api={api} comp={comp} flash={flash} onClose={() => { setEdit(null); loadFiles() }} onSaved={async m => { setEdit(null); loadFiles(); await onSaved(m) }} />}
       {proto && <ProtoSheet p={proto} api={api} flash={flash} onClose={() => setProto(null)} onSaved={async m => { setProto(null); await onSaved(m) }} />}
     </>
   )
 }
 
-function TestSheet({ d, r, api, flash, onClose, onSaved }: { d: CultData; r: TestRow; api: CultApi; flash: Flash; onClose: () => void; onSaved: (m: string) => Promise<void> }) {
+function TestSheet({ d, r, api, comp, flash, onClose, onSaved }: { d: CultData; r: TestRow; api: CultApi; comp: CompApi; flash: Flash; onClose: () => void; onSaved: (m: string) => Promise<void> }) {
   const [t, setT] = useState<Partial<CTest>>(r.test ?? { crop_year: d.year, site: r.site, kind: r.kind, field_id: r.kind === 'area' ? r.field_id : null, harvest_id: r.harvest?.id ?? null, lab: d.settings.labs[0] ?? null })
   const [busy, setBusy] = useState(false)
   const set = (x: Partial<CTest>) => setT(v => ({ ...v, ...x }))
   async function save() {
     setBusy(true)
     try { await api.save<CTest>('cult_tests', t); await onSaved('Test saved') } catch (e) { flash(errText(e), true) } finally { setBusy(false) }
+  }
+  // drop results before the entry exists: save it first, then attach
+  async function firstFiles(fs: File[]) {
+    setBusy(true)
+    try {
+      const row = await api.save<CTest>('cult_tests', t); setT(row)
+      for (const f of fs) {
+        const path = await comp.upload(f, 'testing')
+        await comp.addDoc({ doc_type: 'testing', title: `${r.ref} pre-harvest results`, file_path: path, file_name: f.name, mime: f.type || null, size_bytes: f.size,
+          site: r.site, crop_year: d.year, links: [{ kind: 'test', id: String(row.id) }] })
+      }
+      flash('Results attached')
+    } catch (e) { flash(errText(e), true) } finally { setBusy(false) }
   }
   async function del() {
     setBusy(true)
@@ -109,6 +132,14 @@ function TestSheet({ d, r, api, flash, onClose, onSaved }: { d: CultData; r: Tes
         <F label="Results received"><DateIn value={t.results_on} onChange={v => set({ results_on: v })} /></F>
         <F label="Result"><TextIn value={t.result} list="cult-results" onChange={v => set({ result: v })} placeholder="Pass / Fail" /></F>
       </div>
+      <div className="grid3">
+        <F label="Total THC" hint="%"><NumIn value={t.total_thc ?? null} onChange={v => set({ total_thc: v })} /></F>
+        <F label="Total cannabinoids" hint="%"><NumIn value={t.total_cannabinoids ?? null} onChange={v => set({ total_cannabinoids: v })} /></F>
+        <F label="Moisture" hint="%"><NumIn value={t.moisture ?? null} onChange={v => set({ moisture: v })} /></F>
+      </div>
+      {t.id ? <DocList api={comp} kind="test" refId={t.id} docType="testing" flash={flash} title="Results (PDF)"
+          defaults={{ site: r.site, crop_year: d.year, title: `${r.ref} pre-harvest results` }} empty="Drop the lab's results PDF here. It shows on every package from this harvest." />
+        : <><div className="cdl-h">Results (PDF)</div><DropZone compact disabled={busy} onFiles={firstFiles} label="drop the lab's results PDF (saves this entry)" /></>}
       <datalist id="cult-labs">{d.settings.labs.map(l => <option key={l} value={l} />)}</datalist>
       <datalist id="cult-results"><option value="Pass" /><option value="Fail" /><option value="Retest" /></datalist>
       <F label="Notes"><textarea value={t.notes ?? ''} onChange={e => set({ notes: e.target.value || null })} /></F>

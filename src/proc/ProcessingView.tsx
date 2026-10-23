@@ -16,6 +16,7 @@ import { ModulePeople } from '../users'
 import { Fold } from '../fold'
 import { CrewTab, RunDayLog } from '../pay/CrewView'
 import { InvTable } from '../invtable'
+import { ItemLotRows, TestRows } from '../comp/trace'
 import type { Col, GroupBy, Chip } from '../invtable'
 
 // ---------- small helpers ----------
@@ -657,6 +658,8 @@ function PackageSheet({ c, p, onClose }: { c: Ctx; p: Pallet; onClose: () => voi
       <dt>Crop year</dt><dd>{p.crop_year ?? ''}</dd>
       <dt>Harvested</dt><dd>{p.harvest_date ?? ''} {p.zone ? <span className="muted">· {p.zone}</span> : null}</dd>
       <dt>Grown at</dt><dd>{p.origin_site ?? ''}</dd>
+      <ItemLotRows sb={c.sb} p={p} />
+      <TestRows sb={c.sb} palletId={p.id} flash={c.flash} />
       {p.processor_id ? <><dt>Dried by</dt><dd>{c.procName(p.processor_id)}</dd></> : null}
       {made && <><dt>Made in</dt><dd><a onClick={() => c.openRun(made)}>{made.code}</a></dd></>}
       {usedIn.length > 0 && <><dt>Used in</dt><dd>{usedIn.map(x => <a key={x.id} onClick={() => c.openRun(x)}>{x.code} </a>)}</dd></>}

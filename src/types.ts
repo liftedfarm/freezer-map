@@ -83,7 +83,7 @@ export interface InvEvent {
 }
 
 export interface Vehicle { id: number; name: string; plate: string | null; kind: string | null; notes: string | null; active: boolean; spaces: number; across: number; owner: string | null }
-export interface Customer { id: number; name: string; kind: 'internal' | 'external'; license: string | null; address: string | null; contact: string | null; notes: string | null; active: boolean; price_per_lb?: number | null; contract_lbs?: number | null; monthly_min_lbs?: number | null; deposit_usd?: number | null; storage_fee?: number | null; reserves_enabled?: boolean; legal_name?: string | null; payment_terms?: string | null; billing_address?: string | null; billing_contact?: string | null; billing_email?: string | null; billing_phone?: string | null; ship_to_name?: string | null; ship_to_address?: string | null; receiving_contact?: string | null }
+export interface Customer { id: number; name: string; kind: 'internal' | 'external'; license: string | null; address: string | null; contact: string | null; notes: string | null; active: boolean; price_per_lb?: number | null; contract_lbs?: number | null; monthly_min_lbs?: number | null; deposit_usd?: number | null; storage_fee?: number | null; reserves_enabled?: boolean; legal_name?: string | null; payment_terms?: string | null; billing_address?: string | null; billing_contact?: string | null; billing_email?: string | null; billing_phone?: string | null; ship_to_name?: string | null; ship_to_address?: string | null; receiving_contact?: string | null; license_expires?: string | null }
 export interface Strain { id: number; name: string; aliases: string[]; color: string | null; notes: string | null; active: boolean; show_on_menu?: boolean; strain_no?: number | null; default_grade?: Grade }
 export type Grade = 'SHO' | 'BHO'
 /** what a lot grade change touched: still on hand, held for orders, already shipped (by invoice) */
@@ -126,7 +126,7 @@ export type Role = 'admin' | 'sales' | 'crew' | 'customer' | 'none'
 export interface Me { email: string; role: Role; display_name: string | null; customer_id: number | null; customer_name: string | null; viewing_as?: boolean; real_email?: string; access: Access }
 export interface AppUser { email: string; role: Role; customer_id: number | null; display_name: string | null; added_by: string | null; created_at: string; last_seen: string | null; modules?: string[]; owner?: boolean; access?: Partial<Record<ModKey, Level>>; prefs?: Prefs }
 /** the parts of the app. Levels per person: off (missing), user, admin. Owners are admin everywhere. */
-export type ModKey = 'distribution' | 'sales' | 'cultivation' | 'nursery' | 'processing' | 'accounting' | 'admin'
+export type ModKey = 'distribution' | 'sales' | 'cultivation' | 'nursery' | 'processing' | 'accounting' | 'compliance' | 'admin'
 export type Level = 'view' | 'user' | 'admin'
 export const MODULES: { key: ModKey; label: string; what: string; user: string; admin: string }[] = [
   { key: 'distribution', label: 'Distribution', what: 'Freezer map, transit, review', user: 'Move, split, load and ship pallets', admin: '+ Distribution settings (vehicles, strains)' },
@@ -135,6 +135,7 @@ export const MODULES: { key: ModKey; label: string; what: string; user: string; 
   { key: 'nursery', label: 'Nursery', what: 'Mother plants, cuttings, clone orders and deliveries', user: 'Mothers, batches, deliver clones, invoices', admin: '+ Nursery settings (rooms, prices, tag ranges); void invoices' },
   { key: 'processing', label: 'Processing', what: 'Dry flower: drying, bucking, trimming, crew pay', user: 'Wet packages, send out / receive, bucking and trimming runs, commit to orders', admin: '+ Processing settings (processors)' },
   { key: 'accounting', label: 'Accounting', what: 'Invoices to QuickBooks, payments, classes', user: 'Check and send invoices to QuickBooks', admin: '+ connect QuickBooks, products, classes and class rules' },
+  { key: 'compliance', label: 'Compliance', what: 'METRC, CCOF, document library, deadlines', user: 'Add documents, check off METRC work, deadlines, CCOF materials, reconcile', admin: '+ Compliance settings (document types, SharePoint backup)' },
   { key: 'admin', label: 'Admin', what: 'Company dashboard, users and access, app settings', user: 'Everything in Admin', admin: 'Everything in Admin' },
 ]
 export interface Prefs { theme?: 'light' | 'dark' | 'system'; lang?: 'en' | 'es'; start_module?: ModKey; start_site?: Site; notify?: { requests?: boolean; orders?: boolean } }

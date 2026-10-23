@@ -30,9 +30,12 @@ import { NURSERY_TABS, NURSERY_TAIL } from './nursery/tabs'
 import type { NTab } from './nursery/tabs'
 import { ACCT_TABS, ACCT_TAIL } from './acct/tabs'
 import { PROC_TABS, PROC_TAIL } from './proc/tabs'
+import { COMP_TABS, COMP_TAIL } from './comp/tabs'
+import type { CTab } from './comp/tabs'
 import type { PTab } from './proc/tabs'
 import type { ATab } from './acct/tabs'
 import { LicensesPanel } from './licenses'
+import { TestRows } from './comp/trace'
 import { LoadForm, LoadView, PickLoad, TransitView, stopColor } from './loads'
 import type { LoadCtx } from './loads'
 import { lang, setLang, t } from './i18n'
@@ -45,17 +48,18 @@ const CultView = lazy(() => import('./cult/CultView'))
 const NurseryView = lazy(() => import('./nursery/NurseryView'))
 const AccountingView = lazy(() => import('./acct/AccountingView'))
 const ProcessingView = lazy(() => import('./proc/ProcessingView'))
+const ComplianceView = lazy(() => import('./comp/ComplianceView'))
 
-type View = 'dash' | 'inventory' | 'fulfill' | 'map' | 'freezer' | 'transit' | 'load' | 'review' | 'activity' | 'settings' | 'sales' | 'cult' | 'nursery' | 'proc' | 'acct' | 'admin' | 'mine'
+type View = 'dash' | 'inventory' | 'fulfill' | 'map' | 'freezer' | 'transit' | 'load' | 'review' | 'activity' | 'settings' | 'sales' | 'cult' | 'nursery' | 'proc' | 'acct' | 'comp' | 'admin' | 'mine'
 // modules: each person has a level (User / Admin) per module; Owners have all of them (Admin > Settings > Users)
-type Mod = 'dist' | 'sales' | 'cult' | 'nurs' | 'proc' | 'acct' | 'admin'
-const MOD_KEY: Record<Mod, ModKey> = { dist: 'distribution', sales: 'sales', cult: 'cultivation', nurs: 'nursery', proc: 'processing', acct: 'accounting', admin: 'admin' }
-const KEY_MOD: Record<ModKey, Mod> = { distribution: 'dist', sales: 'sales', cultivation: 'cult', nursery: 'nurs', processing: 'proc', accounting: 'acct', admin: 'admin' }
+type Mod = 'dist' | 'sales' | 'cult' | 'nurs' | 'proc' | 'acct' | 'comp' | 'admin'
+const MOD_KEY: Record<Mod, ModKey> = { dist: 'distribution', sales: 'sales', cult: 'cultivation', nurs: 'nursery', proc: 'processing', acct: 'accounting', comp: 'compliance', admin: 'admin' }
+const KEY_MOD: Record<ModKey, Mod> = { distribution: 'dist', sales: 'sales', cultivation: 'cult', nursery: 'nurs', processing: 'proc', accounting: 'acct', compliance: 'comp', admin: 'admin' }
 /** Admin > Settings: every module's settings in one place */
-const ALL_SETTINGS: [Mod, string][] = [['admin', 'Admin'], ['dist', 'Distribution'], ['sales', 'Sales'], ['cult', 'Production'], ['nurs', 'Nursery'], ['proc', 'Processing'], ['acct', 'Accounting']]
-const MOD_LABEL: Record<Mod, string> = { dist: 'Distribution', sales: 'Sales', cult: 'Production', nurs: 'Nursery', proc: 'Processing', acct: 'Accounting', admin: 'Admin' }
+const ALL_SETTINGS: [Mod, string][] = [['admin', 'Admin'], ['dist', 'Distribution'], ['sales', 'Sales'], ['cult', 'Production'], ['nurs', 'Nursery'], ['proc', 'Processing'], ['acct', 'Accounting'], ['comp', 'Compliance']]
+const MOD_LABEL: Record<Mod, string> = { dist: 'Distribution', sales: 'Sales', cult: 'Production', nurs: 'Nursery', proc: 'Processing', acct: 'Accounting', comp: 'Compliance', admin: 'Admin' }
 const ML = (m: Mod) => t(MOD_LABEL[m])
-const MOD_WHAT: Record<Mod, string> = { dist: 'Freezer map · transit · review', sales: 'Reserves · menu · orders', cult: 'Harvests · fields · plan', nurs: 'Mothers · cuttings · deliveries', proc: 'Drying · bucking · trimming', acct: 'Invoices to QuickBooks · payments', admin: 'Company · users · app settings' }
+const MOD_WHAT: Record<Mod, string> = { dist: 'Freezer map · transit · review', sales: 'Reserves · menu · orders', cult: 'Harvests · fields · plan', nurs: 'Mothers · cuttings · deliveries', proc: 'Drying · bucking · trimming', acct: 'Invoices to QuickBooks · payments', comp: 'METRC · CCOF · documents · deadlines', admin: 'Company · users · app settings' }
 type SalesTab = 'dash' | 'inventory' | SalesMode | 'invoices' | 'review' | 'activity' | 'settings'
 type AdminTab = 'dash' | 'review' | 'activity' | 'settings'
 interface NavItem { k: string; l: ReactNode; on: boolean; go: () => void }
@@ -66,6 +70,7 @@ const MOD_ICON: Record<Mod, ReactNode> = {
   nurs: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M7 20h10l-1.5-6h-7z" /><path d="M12 14V9" /><path d="M12 9c0-3-2-5-5-5 0 3 2 5 5 5zM12 9c0-2.5 2-4.5 5-4.5 0 2.5-2 4.5-5 4.5z" /></svg>,
   proc: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="6" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><path d="M20 4 8.1 15.9M14.5 14.5 20 20M8.1 8.1 12 12" /></svg>,
   acct: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><rect x="4" y="2" width="16" height="20" rx="2" /><path d="M8 6h8M8 10h2M14 10h2M8 14h2M14 14h2M8 18h2M14 18h2" /></svg>,
+  comp: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /><path d="m9 15 2 2 4-4" /></svg>,
   admin: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M12 2 4 5v6c0 5 3.4 9.3 8 11 4.6-1.7 8-6 8-11V5l-8-3z" /><path d="m9 12 2 2 4-4" /></svg>,
 }
 const stored = (k: string) => { try { return localStorage.getItem(k) } catch { return null } }
@@ -290,6 +295,22 @@ function describe(ix: Index, e: InvEvent, names?: Map<number, string>) {
     case 'acct_connected': { const d = e.details as { env?: string; company?: string } | null; return `QuickBooks ${d?.env} connected${d?.company ? `: ${d.company}` : ''}` }
     case 'acct_disconnected': { const d = e.details as { env?: string } | null; return `QuickBooks ${d?.env} disconnected` }
     case 'acct_settings': return `Accounting settings: ${e.note} changed`
+    case 'comp_doc_added': { const d = e.details as { version?: number } | null; return `Document added: ${e.note}${(d?.version ?? 1) > 1 ? ` (version ${d?.version})` : ''}` }
+    case 'comp_doc_updated': return `Document changed: ${e.note}`
+    case 'comp_doc_deleted': return `Document removed: ${e.note}`
+    case 'comp_deadline_saved': return `Deadline saved: ${e.note}`
+    case 'comp_deadline_done': { const d = e.details as { next?: string | null } | null; return `Done: ${e.note}${d?.next ? ` (next due ${d.next})` : ''}` }
+    case 'comp_deadline_deleted': return `Deadline deleted: ${e.note}`
+    case 'comp_material': { const d = e.details as { changes?: { ccof_status?: string } } | null; return `CCOF material ${e.note}${d?.changes?.ccof_status ? `: ${d.changes.ccof_status.replace('_', ' ')}` : ' updated'}` }
+    case 'comp_metrc_status': { const d = e.details as { n?: number } | null; return `${d?.n ?? ''} METRC action${d?.n === 1 ? '' : 's'} marked ${e.note === 'todo' ? 'to do' : e.note === 'error' ? 'problem' : e.note}` }
+    case 'comp_metrc_upload': { const d = e.details as { rows?: number } | null; return `METRC export uploaded for ${e.note} (${d?.rows ?? 0} packages)` }
+    case 'comp_error': return `METRC error logged: ${e.note}`
+    case 'comp_error_fixed': return `METRC error fixed: ${e.note}`
+    case 'comp_playbook': return `Playbook: ${e.note}`
+    case 'comp_customer_license': { const d = e.details as { license?: string; expires?: string } | null; return `Customer license for ${e.note}: ${d?.license ?? 'none'}${d?.expires ? `, expires ${d.expires}` : ''}` }
+    case 'comp_license': { const d = e.details as { expires?: string } | null; return `License ${e.note} expires ${d?.expires ?? '(no date)'}` }
+    case 'comp_setting': return `Compliance settings: ${e.note}`
+    case 'comp_backup': { const d = e.details as { copied?: number; archived?: number; failed?: number } | null; return `SharePoint backup: ${d?.copied ?? 0} copied, ${d?.archived ?? 0} archived, ${d?.failed ?? 0} failed` }
     case 'invoice_paid': { const d = e.details as { inv?: string; total?: number; via?: string } | null; return `${d?.inv} paid${d?.via ? ` (from ${d.via})` : ''}` }
     default: return `${e.type} ${code}`
   }
@@ -318,13 +339,14 @@ export default function App() {
   const [site, setSite] = useState<Site>('OHR')
   useEffect(() => { if (GO) history.replaceState(null, '', location.pathname) }, [])
   const storedMod = stored('fm.mod') as Mod | null
-  const [view, setView] = useState<View>(GO_ACCT ? 'acct' : GO_TAB ? 'sales' : storedMod === 'cult' ? 'cult' : storedMod === 'nurs' ? 'nursery' : storedMod === 'acct' ? 'acct' : storedMod === 'proc' ? 'proc' : storedMod === 'sales' ? 'sales' : storedMod === 'admin' ? 'admin' : 'dash')
+  const [view, setView] = useState<View>(GO_ACCT ? 'acct' : GO_TAB ? 'sales' : storedMod === 'cult' ? 'cult' : storedMod === 'nurs' ? 'nursery' : storedMod === 'acct' ? 'acct' : storedMod === 'proc' ? 'proc' : storedMod === 'comp' ? 'comp' : storedMod === 'sales' ? 'sales' : storedMod === 'admin' ? 'admin' : 'dash')
   const [mod, setModS] = useState<Mod>(GO_ACCT ? 'acct' : GO_TAB ? 'sales' : storedMod && storedMod in MOD_KEY ? storedMod : 'dist')
   const [cultTab, setCultTabS] = useState<CultTab>(() => ([...CULT_TABS, ...CULT_TAIL].find(t => t.t === stored('cult.tab'))?.t ?? 'dashboard'))
   const [salesTab, setSalesTabS] = useState<SalesTab>(GO_TAB ?? 'dash')
   const [adminSet, setAdminSet] = useState<Mod>('admin')
   const [adminTab, setAdminTabS] = useState<AdminTab>('dash')
   const [procTab, setProcTabS] = useState<PTab>(() => ([...PROC_TABS, ...PROC_TAIL].find(x => x.t === stored('proc.tab'))?.t ?? 'dashboard'))
+  const [compTab, setCompTabS] = useState<CTab>(() => ([...COMP_TABS, ...COMP_TAIL].find(x => x.t === stored('comp.tab'))?.t ?? 'dashboard'))
   const [acctTab, setAcctTabS] = useState<ATab>(GO_ACCT ? (QBO_BACK ? 'settings' : 'dashboard') : 'dashboard')
   const [nurTab, setNurTabS] = useState<NTab>(() => ([...NURSERY_TABS, ...NURSERY_TAIL].find(t => t.t === stored('nur.tab'))?.t ?? 'dashboard'))
   const [modMenu, setModMenu] = useState(false)
@@ -336,6 +358,7 @@ export default function App() {
   const setNurTab = (t: NTab) => { setNurTabS(t); store('nur.tab', t); setView('nursery'); top() }
   const setAcctTab = (t: ATab) => { setAcctTabS(t); setView('acct'); top() }
   const setProcTab = (t: PTab) => { setProcTabS(t); store('proc.tab', t); setView('proc'); top() }
+  const setCompTab = (t: CTab) => { setCompTabS(t); store('comp.tab', t); setView('comp'); top() }
   const lastView = useRef<View>('dash')
   const go = (v: View) => { if (view !== 'mine') lastView.current = view; setView(v); top() }
   const [freezerId, setFreezerId] = useState<number | null>(null)
@@ -389,7 +412,7 @@ export default function App() {
   const isAdminOf = (m: Mod) => lv[MOD_KEY[m]] === 'admin'
   const goMod = (m: Mod) => {
     setModS(m); store('fm.mod', m); setModMenu(false)
-    if (m === 'cult') setCultTab('dashboard'); else if (m === 'nurs') setNurTab('dashboard'); else if (m === 'acct') setAcctTab('dashboard'); else if (m === 'proc') setProcTab('dashboard'); else if (m === 'sales') setSalesTab('dash'); else if (m === 'admin') setAdminTab('dash'); else go('dash')
+    if (m === 'cult') setCultTab('dashboard'); else if (m === 'nurs') setNurTab('dashboard'); else if (m === 'acct') setAcctTab('dashboard'); else if (m === 'proc') setProcTab('dashboard'); else if (m === 'comp') setCompTab('dashboard'); else if (m === 'sales') setSalesTab('dash'); else if (m === 'admin') setAdminTab('dash'); else go('dash')
   }
   // signed in: personal settings (theme, where to start, which site)
   useEffect(() => {
@@ -664,8 +687,11 @@ export default function App() {
   const acItem = (t: ATab, l: string): NavItem => ({ k: t, l, on: view === 'acct' && acctTab === t, go: () => setAcctTab(t) })
   const acctMain = ACCT_TABS.map(x => acItem(x.t, x.l))
   const acctTail = ACCT_TAIL.filter(x => x.t !== 'settings' || isAdminOf('acct')).map(x => acItem(x.t, x.l))
+  const coItem = (t: CTab, l: string): NavItem => ({ k: t, l, on: view === 'comp' && compTab === t, go: () => setCompTab(t) })
+  const compMain = COMP_TABS.map(x => coItem(x.t, x.l))
+  const compTail = COMP_TAIL.filter(x => x.t !== 'settings' || isAdminOf('comp')).map(x => coItem(x.t, x.l))
   const NAV: Record<Mod, { main: NavItem[]; tail: NavItem[] }> = {
-    acct: { main: acctMain, tail: acctTail }, proc: { main: procMain, tail: procTail },
+    acct: { main: acctMain, tail: acctTail }, proc: { main: procMain, tail: procTail }, comp: { main: compMain, tail: compTail },
     dist: { main: distMain, tail: distTail }, sales: { main: salesMain, tail: salesTail }, cult: { main: cultMain, tail: cultTail }, nurs: { main: nurMain, tail: nurTail }, admin: { main: adminMain, tail: adminTail } }
   const nav = NAV[cur]
   const all = [...nav.main, ...nav.tail]
@@ -677,7 +703,7 @@ export default function App() {
     const [m, t] = j.split('.') as [Mod, string]
     if (!lv[MOD_KEY[m]]) { flash(`You don't have ${MOD_LABEL[m]}`, true); return }
     setModS(m); store('fm.mod', m)
-    if (m === 'dist') go(t as View); else if (m === 'sales') setSalesTab(t as SalesTab); else if (m === 'cult') setCultTab(t as CultTab); else if (m === 'nurs') setNurTab(t as NTab); else if (m === 'acct') setAcctTab(t as ATab); else if (m === 'proc') setProcTab(t as PTab); else setAdminTab(t === 'users' ? 'settings' : t as AdminTab)
+    if (m === 'dist') go(t as View); else if (m === 'sales') setSalesTab(t as SalesTab); else if (m === 'cult') setCultTab(t as CultTab); else if (m === 'nurs') setNurTab(t as NTab); else if (m === 'acct') setAcctTab(t as ATab); else if (m === 'proc') setProcTab(t as PTab); else if (m === 'comp') setCompTab(t as CTab); else setAdminTab(t === 'users' ? 'settings' : t as AdminTab)
   }
   const appName = ML(cur)
   document.title = noMods ? 'Lifted Farms' : `${view === 'mine' ? t('My settings') : ML(cur)} · Lifted Farms`
@@ -848,6 +874,9 @@ export default function App() {
         {view === 'acct' && cur === 'acct' && acctTab === 'activity' && <ActivityView ix={ix} module="accounting" />}
         {view === 'acct' && cur === 'acct' && acctTab !== 'activity' && <Suspense fallback={<p className="muted">Loading…</p>}><AccountingView backend={backend} flash={flash} tab={acctTab} go={setAcctTab}
           isAdmin={isAdminOf('acct')} canEdit={lv.accounting === 'user' || lv.accounting === 'admin'} notice={GO_ACCT ? QBO_BACK : null} /></Suspense>}
+        {view === 'comp' && cur === 'comp' && compTab === 'activity' && <ActivityView ix={ix} module="compliance" />}
+        {view === 'comp' && cur === 'comp' && compTab !== 'activity' && <Suspense fallback={<p className="muted">Loading…</p>}><ComplianceView backend={backend} flash={flash} tab={compTab} go={setCompTab}
+          isAdmin={isAdminOf('comp')} canEdit={lv.compliance === 'user' || lv.compliance === 'admin'} me={me?.email ?? null} /></Suspense>}
         {view === 'admin' && cur === 'admin' && adminTab === 'dash' && <AdminDashboard backend={backend} open={jump} />}
         {view === 'admin' && cur === 'admin' && adminTab === 'review' && <AdminReview backend={backend} open={jump} />}
         {view === 'admin' && cur === 'admin' && adminTab === 'activity' && <ActivityView ix={ix} module="all" />}
@@ -865,6 +894,8 @@ export default function App() {
             isAdmin={isAdminOf('proc')} canEdit={isAdminOf('proc')} customers={snap.customers ?? []} strains={snap.strains ?? []} onChanged={() => { reload() }} /></Suspense>}
           {adminSet === 'acct' && <Suspense fallback={<p className="muted">Loading…</p>}><AccountingView backend={backend} flash={flash} tab="settings" go={setAcctTab}
             isAdmin={isAdminOf('acct')} canEdit={isAdminOf('acct')} notice={null} /></Suspense>}
+          {adminSet === 'comp' && <Suspense fallback={<p className="muted">Loading…</p>}><ComplianceView backend={backend} flash={flash} tab="settings" go={setCompTab}
+            isAdmin={isAdminOf('comp')} canEdit={isAdminOf('comp')} me={me?.email ?? null} /></Suspense>}
         </div>}
         {view === 'settings' && cur === 'dist' && distSettings}
       </main>
@@ -906,7 +937,7 @@ export default function App() {
       </>}
 
       {selected && !banner && (
-        <PalletSheet ix={ix} p={selected} busy={busy} where={where}
+        <PalletSheet ix={ix} p={selected} busy={busy} where={where} flash={flash}
           others={selected.slot_id != null && !selected.container_id ? (ix.inSlot.get(selected.slot_id) ?? []).filter(x => x.id !== selected.id) : []}
           onPick={setPalletId}
           onClose={() => setPalletId(null)}
@@ -1342,8 +1373,9 @@ function ListView({ title, note, empty, items, ix, where, onPallet, showReason }
 }
 
 /** which module an activity line belongs to */
-function eventModule(e: InvEvent): 'distribution' | 'sales' | 'admin' | 'nursery' | 'cultivation' | 'processing' | 'accounting' {
+function eventModule(e: InvEvent): 'distribution' | 'sales' | 'admin' | 'nursery' | 'cultivation' | 'processing' | 'accounting' | 'compliance' {
   const t = e.type, d = e.details as { list?: string; via?: string } | null
+  if (/^comp_/.test(t)) return 'compliance'
   if (/^acct_/.test(t) || (t === 'invoice_paid' && d?.via === 'QuickBooks')) return 'accounting'
   if (/^nursery/.test(t)) return 'nursery'
   if (/^proc_/.test(t) || t === 'pay_day' || t === 'pay_employee') return 'processing'
@@ -1357,7 +1389,7 @@ function eventModule(e: InvEvent): 'distribution' | 'sales' | 'admin' | 'nursery
 }
 const CULT_TBL: Record<string, string> = { cult_harvests: 'Harvest', cult_plantings: 'Planting', cult_tests: 'Test', cult_flower_picks: 'Dry flower pick', cult_demand: 'Plan strain',
   cult_plan: 'Plan row', cult_nursery_orders: 'Nursery delivery', cult_receipts: 'Plants received', app_settings: 'Production setting' }
-interface Line { id: string; at: string; who: string | null; text: ReactNode; note?: string | null; mod: 'distribution' | 'sales' | 'admin' | 'cultivation' | 'nursery' | 'processing' | 'accounting' }
+interface Line { id: string; at: string; who: string | null; text: ReactNode; note?: string | null; mod: 'distribution' | 'sales' | 'admin' | 'cultivation' | 'nursery' | 'processing' | 'accounting' | 'compliance' }
 
 /** Activity: each module shows its own; Admin shows everything with a filter */
 /** loading screen: the logo and a quiet spinner, same for every module */
@@ -1365,7 +1397,7 @@ function Splash() {
   return <div className="center splash"><img className="logo-login" src="/logo.png" alt="Lifted Farms" /><div className="spin" aria-label="Loading" /></div>
 }
 
-function ActivityView({ ix, module }: { ix: Index; module: 'distribution' | 'sales' | 'processing' | 'accounting' | 'all' }) {
+function ActivityView({ ix, module }: { ix: Index; module: 'distribution' | 'sales' | 'processing' | 'accounting' | 'compliance' | 'all' }) {
   const [events, setEvents] = useState<InvEvent[] | null>(null)
   const [cult, setCult] = useState<Line[]>([])
   const [names, setNames] = useState<Map<number, string>>(new Map())
@@ -1386,7 +1418,7 @@ function ActivityView({ ix, module }: { ix: Index; module: 'distribution' | 'sal
   const lines: Line[] = [...(events ?? []).map(e => ({ id: `e${e.id}`, at: e.at, who: e.user_email, text: describe(ix, e, names), note: e.note, mod: eventModule(e) } as Line)), ...cult]
     .filter(l => module === 'all' ? only === 'all' || l.mod === only : l.mod === module)
     .sort((a, b) => b.at.localeCompare(a.at))
-  const CH: [string, string][] = [['all', 'Everything'], ['distribution', 'Distribution'], ['sales', 'Sales'], ['cultivation', 'Production'], ['nursery', 'Nursery'], ['processing', 'Processing'], ['accounting', 'Accounting'], ['admin', 'Admin']]
+  const CH: [string, string][] = [['all', 'Everything'], ['distribution', 'Distribution'], ['sales', 'Sales'], ['cultivation', 'Production'], ['nursery', 'Nursery'], ['processing', 'Processing'], ['accounting', 'Accounting'], ['compliance', 'Compliance'], ['admin', 'Admin']]
   return (
     <div className="list">
       <h2>Activity</h2>
@@ -1404,7 +1436,7 @@ function ActivityView({ ix, module }: { ix: Index; module: 'distribution' | 'sal
 
 type SheetAction = 'split' | 'merge' | 'tag' | 'weight' | 'addto' | 'addmixed'
 
-function PalletSheet({ ix, p, others, busy, where, onClose, onGo, onMove, onRemove, onClear, onPick, onForm, onTakeOff, onBreak, onLineage, loadInfo, customerName, onOpenLoad, onPutOnLoad, onPulled, held, onHeld, originAdmin, onOrigin, inRun, canGrade, onLotGrade, onPalletGrade }: {
+function PalletSheet({ ix, p, others, busy, where, flash, onClose, onGo, onMove, onRemove, onClear, onPick, onForm, onTakeOff, onBreak, onLineage, loadInfo, customerName, onOpenLoad, onPutOnLoad, onPulled, held, onHeld, originAdmin, onOrigin, inRun, canGrade, onLotGrade, onPalletGrade }: { flash: (t: string, bad?: boolean) => void;
   held?: string; onHeld?: () => void; originAdmin?: boolean; onOrigin?: (site: string) => void; inRun?: string
   canGrade?: boolean; onLotGrade?: (lot: HarvestLot, grade: Grade | null) => void; onPalletGrade?: (grade: Grade | null) => void
   ix: Index; p: Pallet; others: Pallet[]; busy: boolean; where: (p: Pallet) => string
@@ -1478,6 +1510,7 @@ function PalletSheet({ ix, p, others, busy, where, onClose, onGo, onMove, onRemo
                   {showSku && <div className="muted small"><div className="mono">{item.sku}</div><div>{item.metrc_name}</div></div>}</>
               : <span className="muted">none (needs strain, farm and year)</span>}</dd>
             <dt>Harvest lot</dt><dd>{lot ? <><span className="mono">{lot.code}</span>{lot.metrc_name && lot.metrc_name !== lot.code && <div className="muted small">METRC: {lot.metrc_name}</div>}</> : <span className="muted">none</span>}</dd>
+            <TestRows sb={backend.client()} palletId={p.id} flash={flash} />
             <dt>Grade</dt><dd>
               <span className={`pill grade ${g.grade.toLowerCase()}`}>{g.grade}</span>
               <span className="muted"> {g.from === 'pallet' ? 'set on this pallet' : g.from === 'lot' ? `whole lot${lot?.grade_reason ? ` (${lot.grade_reason})` : ''}` : 'strain default'}</span>
