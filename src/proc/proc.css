@@ -21,3 +21,11 @@
 .pill.prod.pr-unbucked { background: color-mix(in srgb, #92400e 14%, var(--panel)); color: #b45309; }
 .pill.prod.pr-bucked { background: color-mix(in srgb, #a16207 14%, var(--panel)); color: #a16207; }
 .proc .pill { margin-left: 6px; }
+.putgrid { display: grid; grid-template-columns: 1fr 1fr; grid-auto-flow: column; grid-template-rows: repeat(13, auto); gap: 4px; margin-top: 6px; }
+.putspot { display: flex; justify-content: space-between; gap: 6px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); font-size: 12px; text-align: left; }
+.putspot.full { background: color-mix(in srgb, var(--warn) 12%, var(--panel)); }
+.putspot span { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.proc .actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 4px; }
+.proc .fc { background: color-mix(in srgb, var(--brand) 8%, var(--panel)); border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px; margin: 8px 0; font-size: 14px; }
+.proc .fc .muted { font-size: 12px; }
+.proc .list.wide { max-width: 1180px; }

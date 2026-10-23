@@ -94,3 +94,10 @@ Run `supabase/048_piece_rate.sql`, then `supabase/import_piece_fl25.sql` (FL25 h
   Bucking $3/lb at 2 lb/hr, trimming $10/lb at 0.75 lb/hr (rates with start dates in Accounting > Settings > Crew and piece rates).
 - Accounting > Payroll: bi-weekly periods (from 12/22/2025), per person by task and farm, adjustments with a reason, close (locks the lines),
   CSV for payroll, mark sent to payroll. Accounting Admins can reopen.
+
+## Processing, simpler flow (049)
+
+Run `supabase/049_processing_flow.sql`. Each package's sheet (Processing › Inventory) shows its next steps: Put in a trailer, Buck (straight from wet too),
+Send to processor (prints a manifest sheet), Back unbucked, Trim, Sell as bucked, Commit to an order. Forecasts per strain (this strain's runs + FL25 Totals,
+then all strains, then a default wet-to-bucked % in Settings). Forecast standards / smalls / trim can be promised from bucked packages only; when the package
+is trimmed, the real packages go on the order automatically. Available shows what's free to sell per strain. Yields show labor $/lb per strain.

@@ -4,9 +4,9 @@ import type { Pallet, Product } from '../types'
 function fail(error: { message: string } | null) { if (error) throw new Error(error.message) }
 const num = (x: unknown) => (x == null ? null : Number(x))
 
-export interface Processor { id: number; name: string; short: string | null; in_house: boolean; license: string | null; active: boolean; sort: number; notes: string | null }
-export interface DryHarvest { id: number; crop_year: number; site: string; field: string | null; strain: string; status: string; planned_on: string | null; harvested_on: string | null; raw_lbs: number | null; plants: number | null }
-export interface OLine { id: number; order_id: number; so: string | null; customer_id: number; customer: string; strain: string; product: Product; lbs: number; crop_year: number; wanted: string | null; on_load: boolean; picked: number }
+export interface Processor { id: number; name: string; short: string | null; in_house: boolean; license: string | null; active: boolean; sort: number; notes: string | null; address?: string | null; contact?: string | null; phone?: string | null }
+export interface DryHarvest { id: number; crop_year: number; site: string; field: string | null; strain: string; status: string; planned_on: string | null; harvested_on: string | null; raw_lbs: number | null; plants: number | null; dry_conversion?: number | null }
+export interface OLine { id: number; order_id: number; so: string | null; customer_id: number; customer: string; strain: string; product: Product; lbs: number; crop_year: number; wanted: string | null; on_load: boolean; picked: number; promised: number }
 export interface Run {
   id: number; code: string; kind: 'buck' | 'trim'; site: string; strain: string | null; crop_year: number | null; request_id: number | null; status: 'open' | 'done' | 'cancelled'
   started_on: string; finished_on: string | null; input_lbs: number | null; output_lbs: number | null; mold_lbs: number | null; loss_lbs: number | null; notes: string | null
@@ -21,11 +21,18 @@ export interface Yield {
   strain: string; crop_year: number | null; wet_lbs: number; bucked_in: number; bucked: number; buck_trim: number; buck_mold: number; moisture: number
   trim_in: number; standards: number; smalls: number; trim_lbs: number; trim_mold: number; trim_loss: number; buck_runs: number; trim_runs: number
 }
+/** forecast shares (049): dry = bucked / wet, bt = buck trim / bucked, std / sml / trm / mold = share of bucked lbs going into trimming */
+export interface Shares { dry?: number | null; bt?: number | null; std?: number | null; sml?: number | null; trm?: number | null; mold?: number | null; buck_runs?: number; trim_runs?: number; history?: boolean }
+export interface Rates { default_dry: number; all: Shares; strains: Record<string, Shares> }
+export interface Promise_ { id: number; pallet_id: number; line_id: number; product: 'standards' | 'smalls' | 'trim'; lbs: number; so: string | null; customer: string }
+export interface History { strain: string; crop_year: number; source: string; bucked: number; buck_mold: number; buck_trim: number; standards: number; trim_mold: number; smalls: number; trim_lbs: number; notes: string | null }
+export interface Labor { strain: string; crop_year: number | null; task: 'buck' | 'trim'; lbs: number; hours: number; pay: number }
 export interface Spot { id: number; code: string; row: number; freezer_id: number }
 export interface Box { id: number; site: string; number: number; kind: string }
 export interface PData {
   pallets: Pallet[]; runs: Run[]; inputs: RunInput[]; requests: Req[]; processors: Processor[]
   harvests: DryHarvest[]; lines: OLine[]; customers: { id: number; name: string }[]; held: { pallet_id: number; so: string | null; customer: string }[]
+  promises: Promise_[]; rates: Rates
   slots: Map<number, Spot>; freezers: Map<number, Box>
 }
 export interface OutRow { product: Product; lbs: number | null; tag: string }
@@ -43,7 +50,7 @@ export class ProcApi {
       this.sb.from('proc_run_inputs').select('*').limit(5000),
       this.sb.from('proc_requests').select('*').order('due_on', { ascending: true, nullsFirst: false }).limit(1000),
       this.sb.from('proc_processors').select('*').order('sort').order('name'),
-      this.rpc<{ harvests: DryHarvest[]; lines: OLine[]; customers: { id: number; name: string }[]; held: PData['held'] }>('proc_data'),
+      this.rpc<{ harvests: DryHarvest[]; lines: OLine[]; customers: { id: number; name: string }[]; held: PData['held']; promises?: Promise_[]; rates?: Rates }>('proc_data'),
       this.sb.from('slots').select('id,code,row,freezer_id').limit(5000),
       this.sb.from('freezers').select('id,site,number,kind'),
     ])
@@ -57,7 +64,8 @@ export class ProcApi {
       requests: nums<Req>(reqs.data ?? [], ['lbs']),
       processors: (procs.data ?? []) as Processor[],
       harvests: nums<DryHarvest>(extra.harvests ?? [], ['raw_lbs']),
-      lines: nums<OLine>(extra.lines ?? [], ['lbs', 'picked']),
+      lines: nums<OLine>(extra.lines ?? [], ['lbs', 'picked', 'promised']).map(l => ({ ...l, promised: l.promised ?? 0 })),
+      promises: nums<Promise_>(extra.promises ?? [], ['lbs']), rates: extra.rates ?? { default_dry: 0.075, all: {}, strains: {} },
       customers: extra.customers ?? [], held: extra.held ?? [],
       slots: new Map(((slots.data ?? []) as Spot[]).map(s => [s.id, s])),
       freezers: new Map(((fz.data ?? []) as Box[]).map(f => [f.id, f])),
@@ -93,5 +101,12 @@ export class ProcApi {
     const s = (f: (x: typeof r[number]) => number) => r.reduce((a, x) => a + Number(f(x)), 0)
     return { people: new Set(r.map(x => x.employee_id)).size, days: new Set(r.map(x => x.work_date)).size, lbs: s(x => x.lbs), other: s(x => Number(x.mold) + Number(x.smalls) + Number(x.trim)), hours: s(x => x.hours), pay: s(x => x.pay) }
   }
+  commitForecast(line: number, pallet: number, lbs: number) { return this.rpc<unknown>('proc_commit_forecast', { p_line: line, p_pallet: pallet, p_lbs: lbs }) }
+  setDryDefault(pct: number) { return this.rpc<void>('proc_set_dry_default', { p_pct: pct }) }
+  uncommit(id: number) { return this.rpc<void>('proc_uncommit', { p_id: id }) }
+  async idsOf(codes: string[]) { const { data, error } = await this.sb.from('pallets').select('id').in('code', codes); fail(error); return ((data ?? []) as { id: number }[]).map(x => x.id) }
+  manifest(ids: number[]) { return this.rpc<import('../types').StopManifest>('proc_manifest', { p_ids: ids }) }
+  async history() { const { data, error } = await this.sb.from('proc_yield_history').select('*'); fail(error); return ((data ?? []) as History[]).map(h => ({ ...h, bucked: Number(h.bucked), buck_mold: Number(h.buck_mold), buck_trim: Number(h.buck_trim), standards: Number(h.standards), trim_mold: Number(h.trim_mold), smalls: Number(h.smalls), trim_lbs: Number(h.trim_lbs) })) }
+  labor(year: number | null) { return this.rpc<Labor[]>('proc_labor', { p_year: year }).then(r => (r ?? []).map(x => ({ ...x, lbs: Number(x.lbs), hours: Number(x.hours), pay: Number(x.pay) }))).catch(() => [] as Labor[]) }
   saveProcessor(p: Partial<Processor>) { return this.rpc<Processor>('proc_save_processor', { p }) }
 }

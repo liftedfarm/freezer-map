@@ -21,7 +21,7 @@ export async function manifestPdf(m: StopManifest): Promise<Blob> {
   pdf.setFont('helvetica', 'normal').setFontSize(9).setTextColor(...mute)
   pdf.text(`For completing the METRC manifest. Not the manifest itself.`, M, y + 14)
   pdf.setFont('helvetica', 'bold').setFontSize(10).setTextColor(...ink)
-  pdf.text(`${m.load} · stop ${m.stop} · ${dfmt(m.load_date)}`, W - M, y, { align: 'right' })
+  pdf.text(`${m.load}${/processor/.test(m.to.kind ?? '') ? '' : ` · stop ${m.stop}`} · ${dfmt(m.load_date)}`, W - M, y, { align: 'right' })
   pdf.setFont('helvetica', 'normal').setFontSize(9).setTextColor(...mute)
   pdf.text(`METRC manifest #: ${m.manifest ?? '________________'}`, W - M, y + 14, { align: 'right' })
   y += 34
@@ -35,7 +35,7 @@ export async function manifestPdf(m: StopManifest): Promise<Blob> {
   }
   const fromRows = m.from.length ? m.from.flatMap((f, i) => [...(i ? [' '] : []), ...lic(f)]) : ['Nothing planned on this stop yet']
   const b1 = block(M, m.from.length > 1 ? 'SHIPPER (TWO LICENSES: TWO MANIFESTS)' : 'SHIPPER (FROM)', fromRows)
-  const b2 = block(M + colW + 10, m.transfer ? 'DESTINATION (OUR LICENSE)' : 'DESTINATION (CUSTOMER)', lic(m.to))
+  const b2 = block(M + colW + 10, m.transfer ? 'DESTINATION (OUR LICENSE)' : /processor/.test(m.to.kind ?? '') ? 'DESTINATION (DRYING PROCESSOR)' : 'DESTINATION (CUSTOMER)', lic(m.to))
   const b3 = block(M + 2 * (colW + 10), 'TRANSPORTER', [...lic(m.transporter), `Vehicle: ${m.vehicle ?? '–'}${m.plate ? ` (${m.plate})` : ''}`, `Driver: ${m.driver ?? '________________'}`])
   y = Math.max(b1, b2, b3) + 8
   if (m.orders.length) { pdf.setFont('helvetica', 'normal').setFontSize(9).setTextColor(...mute).text(`For: ${m.orders.join(', ')}`, M, y); y += 14 }
