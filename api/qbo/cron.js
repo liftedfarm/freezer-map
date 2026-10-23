@@ -1,4 +1,4 @@
-// Nightly (vercel.json crons): pull paid / balance for invoices in QuickBooks.
+// Hourly 7am-7pm Pacific, Mon-Sat (vercel.json crons, in UTC): pull paid / balance for invoices in QuickBooks.
 // If CRON_SECRET is set in Vercel, Vercel sends it and anything else is turned away.
 import { ENV, connection, missingSetup, send, syncBalances, table } from './_lib.js'
 
