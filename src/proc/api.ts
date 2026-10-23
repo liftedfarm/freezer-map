@@ -41,17 +41,27 @@ const PAL_NUM = ['og_weight', 'current_weight'] as const
 
 export class ProcApi {
   constructor(private sb: SupabaseClient) {}
+  /** the database hands back at most 1,000 rows per request: keep asking until it's all here (there are 1,100+ freezer spots) */
+  private async all(q: (a: number, b: number) => PromiseLike<{ data: unknown[] | null; error: { message: string } | null }>) {
+    const out: unknown[] = []
+    for (let a = 0; ; a += 1000) {
+      const { data, error } = await q(a, a + 999)
+      if (error) return { data: null, error }
+      out.push(...(data ?? []))
+      if ((data ?? []).length < 1000) return { data: out, error: null }
+    }
+  }
   private async rpc<T>(fn: string, args?: object): Promise<T> { const { data, error } = await this.sb.rpc(fn, args ?? {}); fail(error); return data as T }
 
   async load(): Promise<PData> {
     const [pal, runs, inputs, reqs, procs, extra, slots, fz] = await Promise.all([
-      this.sb.from('pallets').select('*').neq('product', 'fresh_frozen').not('status', 'in', '(archived,merged)').order('id', { ascending: false }).limit(5000),
-      this.sb.from('proc_runs').select('*').order('id', { ascending: false }).limit(1000),
-      this.sb.from('proc_run_inputs').select('*').limit(5000),
+      this.all((a, b) => this.sb.from('pallets').select('*').neq('product', 'fresh_frozen').not('status', 'in', '(archived,merged)').order('id', { ascending: false }).range(a, b)),
+      this.all((a, b) => this.sb.from('proc_runs').select('*').order('id', { ascending: false }).range(a, b)),
+      this.all((a, b) => this.sb.from('proc_run_inputs').select('*').order('id').range(a, b)),
       this.sb.from('proc_requests').select('*').order('due_on', { ascending: true, nullsFirst: false }).limit(1000),
       this.sb.from('proc_processors').select('*').order('sort').order('name'),
       this.rpc<{ harvests: DryHarvest[]; lines: OLine[]; customers: { id: number; name: string }[]; held: PData['held']; promises?: Promise_[]; rates?: Rates }>('proc_data'),
-      this.sb.from('slots').select('id,code,row,freezer_id').limit(5000),
+      this.all((a, b) => this.sb.from('slots').select('id,code,row,freezer_id').order('id').range(a, b)),
       this.sb.from('freezers').select('id,site,number,kind'),
     ])
     for (const r of [pal, runs, inputs, reqs, procs, slots, fz]) fail(r.error)

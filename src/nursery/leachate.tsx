@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
+import { pageAll } from '../pageAll'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { NData } from './types'
 import { fmtD, today } from './calc'
@@ -26,7 +27,7 @@ export function Leachate({ sb, d, flash }: { sb: SupabaseClient; d: NData; flash
   const [open, setOpen] = useState<Set<string> | null>(null)
   const [ed, setEd] = useState<Partial<Leach> | null>(null)
   const load = async () => {
-    const { data, error } = await sb.from('nursery_leachate').select('*').order('taken_on', { ascending: false }).order('id').limit(5000)
+    const { data, error } = await pageAll((a, b) => sb.from('nursery_leachate').select('*').order('taken_on', { ascending: false }).order('id').range(a, b))
     if (error) { setErr(/nursery_leachate/.test(error.message) ? t('Leachate needs 041_leachate.sql run in Supabase.') : error.message); return }
     setRows((data ?? []) as Leach[]); setErr(null)
   }

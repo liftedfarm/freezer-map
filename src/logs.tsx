@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
+import { pageAll } from './pageAll'
 import type { ReactNode } from 'react'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { MONTHS_ES, MONTHS_LONG_ES, lang, t, tn } from './i18n'
@@ -77,7 +78,7 @@ export function OpsLogs({ sb, module, sites, areas, strains, flash, batches, wag
   const [opened, setOpened] = useState<Set<string> | null>(null)   // null: only the latest month open
   const load = useCallback(async () => {
     const [l, p, r] = await Promise.all([
-      sb.from('ops_logs').select('*').eq('module', module).order('log_on', { ascending: false }).order('id', { ascending: false }).limit(5000),
+      pageAll((a, b) => sb.from('ops_logs').select('*').eq('module', module).order('log_on', { ascending: false }).order('id', { ascending: false }).range(a, b)),
       sb.from('input_products').select('*').eq('module', module).order('name').then(r => (r.error ? sb.from('input_products').select('*').order('name') : r)),
       sb.from('ops_recipes').select('*').eq('module', module).order('sort'),
     ])
