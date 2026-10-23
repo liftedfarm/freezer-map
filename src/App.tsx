@@ -3,6 +3,8 @@ import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } fro
 import type { ReactNode } from 'react'
 import { Backend, CONFIG_MISSING, IS_PORTAL, makeBackend, portalUrl } from './api'
 import { FREEZER_STATUSES, PRODUCT_LABEL, PRODUCT_SHORT, FINISH_LABEL } from './types'
+import { DistInventory, SalesInventory } from './inventory'
+import type { InvCtx } from './inventory'
 import { MergeForm, MergeHere, MixedBuilder, NewPalletChooser, PickMixed, SingleForm, SplitForm, TagForm, WeightForm, lbs } from './forms'
 import { SettingsView } from './settings'
 import { ModulePeople, UsersTab } from './users'
@@ -44,15 +46,17 @@ const NurseryView = lazy(() => import('./nursery/NurseryView'))
 const AccountingView = lazy(() => import('./acct/AccountingView'))
 const ProcessingView = lazy(() => import('./proc/ProcessingView'))
 
-type View = 'dash' | 'fulfill' | 'map' | 'freezer' | 'transit' | 'load' | 'review' | 'activity' | 'settings' | 'sales' | 'cult' | 'nursery' | 'proc' | 'acct' | 'admin' | 'mine'
+type View = 'dash' | 'inventory' | 'fulfill' | 'map' | 'freezer' | 'transit' | 'load' | 'review' | 'activity' | 'settings' | 'sales' | 'cult' | 'nursery' | 'proc' | 'acct' | 'admin' | 'mine'
 // modules: each person has a level (User / Admin) per module; Owners have all of them (Admin > Settings > Users)
 type Mod = 'dist' | 'sales' | 'cult' | 'nurs' | 'proc' | 'acct' | 'admin'
 const MOD_KEY: Record<Mod, ModKey> = { dist: 'distribution', sales: 'sales', cult: 'cultivation', nurs: 'nursery', proc: 'processing', acct: 'accounting', admin: 'admin' }
 const KEY_MOD: Record<ModKey, Mod> = { distribution: 'dist', sales: 'sales', cultivation: 'cult', nursery: 'nurs', processing: 'proc', accounting: 'acct', admin: 'admin' }
+/** Admin > Settings: every module's settings in one place */
+const ALL_SETTINGS: [Mod, string][] = [['admin', 'Admin'], ['dist', 'Distribution'], ['sales', 'Sales'], ['cult', 'Production'], ['nurs', 'Nursery'], ['proc', 'Processing'], ['acct', 'Accounting']]
 const MOD_LABEL: Record<Mod, string> = { dist: 'Distribution', sales: 'Sales', cult: 'Production', nurs: 'Nursery', proc: 'Processing', acct: 'Accounting', admin: 'Admin' }
 const ML = (m: Mod) => t(MOD_LABEL[m])
 const MOD_WHAT: Record<Mod, string> = { dist: 'Freezer map · transit · review', sales: 'Reserves · menu · orders', cult: 'Harvests · fields · plan', nurs: 'Mothers · cuttings · deliveries', proc: 'Drying · bucking · trimming', acct: 'Invoices to QuickBooks · payments', admin: 'Company · users · app settings' }
-type SalesTab = 'dash' | SalesMode | 'invoices' | 'review' | 'activity' | 'settings'
+type SalesTab = 'dash' | 'inventory' | SalesMode | 'invoices' | 'review' | 'activity' | 'settings'
 type AdminTab = 'dash' | 'review' | 'activity' | 'settings'
 interface NavItem { k: string; l: ReactNode; on: boolean; go: () => void }
 const MOD_ICON: Record<Mod, ReactNode> = {
@@ -318,6 +322,7 @@ export default function App() {
   const [mod, setModS] = useState<Mod>(GO_ACCT ? 'acct' : GO_TAB ? 'sales' : storedMod && storedMod in MOD_KEY ? storedMod : 'dist')
   const [cultTab, setCultTabS] = useState<CultTab>(() => ([...CULT_TABS, ...CULT_TAIL].find(t => t.t === stored('cult.tab'))?.t ?? 'dashboard'))
   const [salesTab, setSalesTabS] = useState<SalesTab>(GO_TAB ?? 'dash')
+  const [adminSet, setAdminSet] = useState<Mod>('admin')
   const [adminTab, setAdminTabS] = useState<AdminTab>('dash')
   const [procTab, setProcTabS] = useState<PTab>(() => ([...PROC_TABS, ...PROC_TAIL].find(x => x.t === stored('proc.tab'))?.t ?? 'dashboard'))
   const [acctTab, setAcctTabS] = useState<ATab>(GO_ACCT ? (QBO_BACK ? 'settings' : 'dashboard') : 'dashboard')
@@ -567,6 +572,12 @@ export default function App() {
     putBack: (item, p) => { setView('map'); startPlacing({ title: `Putting ${p.code} back in a freezer`, sub: 'Open a freezer and tap the slot.', run: slot => act(() => backend.unloadPallet(item.id, slot.id), `${p.code} back in ${slot.code}`) }) },
     api: backend,
   }
+  const invCtx: InvCtx = {
+    pallets: snap.pallets, pallet: id => ix.pallet.get(id), where, grade: p => gradeOf(ix, p),
+    item: id => id != null ? ix.sku.get(id) : undefined, lot: id => id != null ? ix.lot.get(id) : undefined,
+    held: id => { const o = heldBy.get(id); return o ? `${o.customer} · ${o.so ?? 'order'}` : undefined },
+    onLoad: id => ix.loadOf.get(id)?.load.code, inRun: id => snap.inRun?.[id], open: id => setPalletId(id),
+  }
   const byNearness = (p: Pallet) => (a: Pallet, b: Pallet) => {
     const fz = (x: Pallet) => ix.slot.get(x.slot_id ?? -1)?.freezer_id
     return Number(b.slot_id === p.slot_id) - Number(a.slot_id === p.slot_id)
@@ -608,6 +619,15 @@ export default function App() {
     flash('Shuffle added to the plan. Tap Apply to save.')
   }
   const invStrains = snap.pallets.reduce((m, p) => p.strain ? m.set(p.strain, (m.get(p.strain) ?? 0) + 1) : m, new Map<string, number>())
+  // each module's settings, used in the module and again in Admin > Settings
+  const distSettings = <SettingsView key="dist-set" backend={backend} flash={flash} onChanged={() => { reload() }} inventoryStrains={invStrains} title="Distribution settings" lists={['vehicles', 'strains']}
+    extra={[{ k: 'people', l: 'People', node: <ModulePeople sb={backend.client()} module="distribution" flash={flash} /> }]} />
+  const salesSettings = <SettingsView key="sales-set" backend={backend} flash={flash} onChanged={() => { reload() }} inventoryStrains={invStrains} title="Sales settings"
+    lists={['customers', 'strains']} canTerms={salesAdmin} extra={[{ k: 'terms', l: 'Payment terms', node: <TermsPanel backend={backend} flash={flash} canEdit={salesAdmin} /> },
+      { k: 'deadlines', l: 'Reserve deadlines', node: <DeadlinesPanel backend={backend} flash={flash} /> },
+      { k: 'people', l: 'People', node: <ModulePeople sb={backend.client()} module="sales" flash={flash} /> }]} />
+  const cultSettings = <Suspense fallback={<p className="muted">Loading…</p>}><CultView backend={backend} flash={flash} tab="setup" go={setCultTab} onPalletsChanged={() => { reload() }} /></Suspense>
+  const strainSettings = <div className="modset"><SettingsView key="cult-strains" backend={backend} flash={flash} onChanged={() => { reload() }} inventoryStrains={invStrains} title="Strains" lists={['strains']} /></div>
   const selWeight = sel.reduce((a, id) => { const p = ix.pallet.get(id); return a + (p ? weightOf(ix, p) : 0) }, 0)
 
   // ---------- navigation: the same shape in every module ----------
@@ -616,6 +636,7 @@ export default function App() {
   const distMain: NavItem[] = [
     { k: 'dash', l: 'Dashboard', on: view === 'dash', go: () => go('dash') },
     { k: 'map', l: 'Map', on: view === 'map' || view === 'freezer', go: () => go(view !== 'map' && view !== 'freezer' && freezerId != null ? 'freezer' : 'map') },
+    { k: 'inventory', l: 'Inventory', on: view === 'inventory', go: () => go('inventory') },
     { k: 'fulfill', l: <>Fulfillment{badge(toFulfill)}</>, on: view === 'fulfill', go: () => go('fulfill') },
     { k: 'transit', l: <>Transit{badge(openLoads.length)}</>, on: view === 'transit' || view === 'load', go: () => go('transit') },
   ]
@@ -625,7 +646,7 @@ export default function App() {
     ...(isAdminOf('dist') ? [{ k: 'settings', l: 'Settings', on: view === 'settings', go: () => go('settings') }] : []),
   ]
   const sItem = (t: SalesTab, l: ReactNode): NavItem => ({ k: t, l, on: view === 'sales' && salesTab === t, go: () => setSalesTab(t) })
-  const salesMain: NavItem[] = [sItem('dash', 'Dashboard'), sItem('menu', SALES_TITLES.menu), sItem('orders', <>Orders{badge(counts.orders, true)}</>), sItem('invoices', 'Invoices'),
+  const salesMain: NavItem[] = [sItem('dash', 'Dashboard'), sItem('inventory', 'Inventory'), sItem('menu', SALES_TITLES.menu), sItem('orders', <>Orders{badge(counts.orders, true)}</>), sItem('invoices', 'Invoices'),
     sItem('requests', <>Requests{badge(counts.requests, salesAdmin)}</>), sItem('customer', 'Reserves'), sItem('strain', 'By strain')]
   const fillsToOk = (forders ?? []).filter(o => o.state === 'needs_ok').length
   const salesTail: NavItem[] = [sItem('review', <>Review{badge(salesBadge + fillsToOk, true)}</>), sItem('activity', 'Activity'), ...(isAdminOf('sales') ? [sItem('settings', 'Settings')] : [])]
@@ -796,16 +817,16 @@ export default function App() {
             items={review} ix={ix} where={where} onPallet={setPalletId} showReason />
         </>)}
         {view === 'activity' && cur === 'dist' && <ActivityView ix={ix} module="distribution" />}
+        {view === 'inventory' && cur === 'dist' && <DistInventory c={invCtx} flash={flash}
+          onMove={ids => { setPlan(pl => addToTray(pl, ids)); go('map'); flash(`${ids.length} in the tray. Open a freezer and tap where they go.`) }} />}
         {view === 'sales' && cur === 'sales' && (() => {
           const goS = (m: SalesMode) => setSalesTab(m)
           if (salesTab === 'dash') return <SalesDashboard backend={backend} customers={snap.customers ?? []} isAdmin={salesAdmin} go={goS} />
           if (salesTab === 'review') return <SalesReview backend={backend} customers={snap.customers ?? []} isAdmin={salesAdmin} go={goS} fulfil={forders} onFulfil={refreshF} flash={flash} />
           if (salesTab === 'activity') return <ActivityView ix={ix} module="sales" />
+          if (salesTab === 'inventory') return <SalesInventory c={invCtx} strains={snap.strains ?? []} sb={backend.client()} onNewOrder={isSales ? () => setNewOrder(true) : undefined} />
           if (salesTab === 'invoices') return <InvoicesView backend={backend} customers={snap.customers ?? []} flash={flash} isAdmin={salesAdmin} sender={me?.display_name} />
-          if (salesTab === 'settings') return <SettingsView backend={backend} flash={flash} onChanged={() => { reload() }} inventoryStrains={invStrains} title="Sales settings"
-            lists={['customers', 'strains']} canTerms={salesAdmin} extra={[{ k: 'terms', l: 'Payment terms', node: <TermsPanel backend={backend} flash={flash} canEdit={salesAdmin} /> },
-              { k: 'deadlines', l: 'Reserve deadlines', node: <DeadlinesPanel backend={backend} flash={flash} /> },
-              { k: 'people', l: 'People', node: <ModulePeople sb={backend.client()} module="sales" flash={flash} /> }]} />
+          if (salesTab === 'settings') return salesSettings
           return <ReservesView key={`sales-${ordersKey}`} backend={backend} flash={flash} isAdmin={salesAdmin} mode={salesTab} onCounts={refreshCounts} fulfil={new Map((forders ?? []).map(f => [f.id, f]))} onFulfil={refreshF} customers={snap.customers ?? []}
             onNewOrder={() => setNewOrder(true)} onDoc={(k, id) => setDoc({ kind: k, id })}
             onInvoice={async id => { try { const inv = await backend.makeInvoice(id); setDoc({ kind: 'invoice', id: inv.id }) } catch (e) { flash(String((e as Error).message ?? e), true) } }} strains={snap.strains ?? []}
@@ -819,7 +840,7 @@ export default function App() {
         {view === 'transit' && <TransitView ctx={ctx} onOpen={id => { setLoadId(id); setView('load'); window.scrollTo(0, 0) }} onNew={() => setLoadForm({})} />}
         {view === 'load' && loadId != null && <LoadView ctx={ctx} loadId={loadId} onBack={() => setView('transit')} onEdit={() => setLoadForm({ load: (snap.loads ?? []).find(l => l.id === loadId) })} />}
         {view === 'cult' && inCult && <Suspense fallback={<p className="muted">Loading…</p>}><CultView backend={backend} flash={flash} tab={cultTab} go={setCultTab} onPalletsChanged={() => { reload() }} /></Suspense>}
-        {view === 'cult' && inCult && cultTab === 'setup' && <div className="modset"><SettingsView backend={backend} flash={flash} onChanged={() => { reload() }} inventoryStrains={invStrains} title="Strains" lists={['strains']} /></div>}
+        {view === 'cult' && inCult && cultTab === 'setup' && strainSettings}
         {view === 'nursery' && cur === 'nurs' && <Suspense fallback={<p className="muted">Loading…</p>}><NurseryView backend={backend} flash={flash} tab={nurTab} go={setNurTab} customers={snap.customers ?? []} isAdmin={isAdminOf('nurs')} sender={me?.display_name} me={me?.email} /></Suspense>}
         {view === 'proc' && cur === 'proc' && procTab === 'activity' && <ActivityView ix={ix} module="processing" />}
         {view === 'proc' && cur === 'proc' && procTab !== 'activity' && <Suspense fallback={<p className="muted">Loading…</p>}><ProcessingView backend={backend} flash={flash} tab={procTab} go={setProcTab}
@@ -830,12 +851,22 @@ export default function App() {
         {view === 'admin' && cur === 'admin' && adminTab === 'dash' && <AdminDashboard backend={backend} open={jump} />}
         {view === 'admin' && cur === 'admin' && adminTab === 'review' && <AdminReview backend={backend} open={jump} />}
         {view === 'admin' && cur === 'admin' && adminTab === 'activity' && <ActivityView ix={ix} module="all" />}
-        {view === 'admin' && cur === 'admin' && adminTab === 'settings' && <SettingsView backend={backend} flash={flash} onChanged={() => { reload() }} inventoryStrains={invStrains} title="Admin settings"
-          lists={[]} extra={[{ k: 'users', l: 'Users and access', node: <UsersTab backend={backend} me={me!} customers={snap.customers ?? []} flash={flash} /> },
-            { k: 'licenses', l: 'Licenses', node: <LicensesPanel backend={backend} flash={flash} /> },
-            { k: 'app', l: 'App settings', node: <AppSettingsPanel backend={backend} flash={flash} /> }]} />}
-        {view === 'settings' && cur === 'dist' && <SettingsView backend={backend} flash={flash} onChanged={() => { reload() }} inventoryStrains={invStrains} title="Distribution settings" lists={['vehicles', 'strains']}
-          extra={[{ k: 'people', l: 'People', node: <ModulePeople sb={backend.client()} module="distribution" flash={flash} /> }]} />}
+        {view === 'admin' && cur === 'admin' && adminTab === 'settings' && <div className="allset">
+          <div className="seg wrap modpick">{ALL_SETTINGS.map(([k, l]) => <button key={k} className={adminSet === k ? 'on' : ''} onClick={() => setAdminSet(k)}>{l}</button>)}</div>
+          {adminSet === 'admin' && <SettingsView backend={backend} flash={flash} onChanged={() => { reload() }} inventoryStrains={invStrains} title="Admin settings"
+            lists={[]} extra={[{ k: 'users', l: 'Users and access', node: <UsersTab backend={backend} me={me!} customers={snap.customers ?? []} flash={flash} /> },
+              { k: 'licenses', l: 'Licenses', node: <LicensesPanel backend={backend} flash={flash} /> },
+              { k: 'app', l: 'App settings', node: <AppSettingsPanel backend={backend} flash={flash} /> }]} />}
+          {adminSet === 'dist' && distSettings}
+          {adminSet === 'sales' && salesSettings}
+          {adminSet === 'cult' && <>{cultSettings}{strainSettings}</>}
+          {adminSet === 'nurs' && <Suspense fallback={<p className="muted">Loading…</p>}><NurseryView backend={backend} flash={flash} tab="settings" go={setNurTab} customers={snap.customers ?? []} isAdmin={isAdminOf('nurs')} sender={me?.display_name} me={me?.email} /></Suspense>}
+          {adminSet === 'proc' && <Suspense fallback={<p className="muted">Loading…</p>}><ProcessingView backend={backend} flash={flash} tab="settings" go={setProcTab}
+            isAdmin={isAdminOf('proc')} canEdit={isAdminOf('proc')} customers={snap.customers ?? []} strains={snap.strains ?? []} onChanged={() => { reload() }} /></Suspense>}
+          {adminSet === 'acct' && <Suspense fallback={<p className="muted">Loading…</p>}><AccountingView backend={backend} flash={flash} tab="settings" go={setAcctTab}
+            isAdmin={isAdminOf('acct')} canEdit={isAdminOf('acct')} notice={null} /></Suspense>}
+        </div>}
+        {view === 'settings' && cur === 'dist' && distSettings}
       </main>
 
       {active(plan) && L && (

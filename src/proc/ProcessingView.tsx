@@ -15,6 +15,8 @@ import { ScanButton } from '../scan'
 import { ModulePeople } from '../users'
 import { Fold } from '../fold'
 import { CrewTab, RunDayLog } from '../pay/CrewView'
+import { InvTable } from '../invtable'
+import type { Col, GroupBy, Chip } from '../invtable'
 
 // ---------- small helpers ----------
 const n0 = (x: number | null | undefined) => (x == null || !isFinite(x) ? '' : Math.round(x).toLocaleString())
@@ -567,39 +569,53 @@ function RunSheet({ c, run, logDate, setLogDate, onClose }: { c: Ctx; run: Run; 
   </Sheet>
 }
 
-// ---------- Inventory: every dry package, with its next step ----------
+// ---------- Inventory: every dry package, as a table (shared InvTable) ----------
+const STAGES = ['Wet', 'Out for drying', 'Unbucked', 'Bucked', 'Standards', 'Smalls', 'Trim']
 function Inventory({ c }: { c: Ctx }) {
   const { d } = c
-  const [prod, setProd] = useState<Product | 'all'>('all')
-  const [q, setQ] = useState('')
-  const sel = useSel()
-  const kinds: Product[] = ['wet', 'unbucked', 'bucked', 'standards', 'smalls', 'trim']
-  const oh = onHand(d)
-  const ql = q.trim().toLowerCase()
-  const rows = d.pallets.filter(p => (live(p) || p.status === 'at_processor') && (prod === 'all' || p.product === prod)
-    && (!ql || `${p.code} ${p.strain} ${p.package_tag ?? ''}`.toLowerCase().includes(ql)))
-    .sort((a, b) => (a.strain ?? '').localeCompare(b.strain ?? '') || kinds.indexOf(a.product!) - kinds.indexOf(b.product!) || a.code.localeCompare(b.code))
+  const stage = (p: Pallet) => p.status === 'at_processor' ? 'Out for drying' : PL(p.product) as string
+  const daysOut = (p: Pallet) => p.status === 'at_processor' && p.sent_on ? days(p.sent_on, today()) : null
+  const rows = d.pallets.filter(p => live(p) || p.status === 'at_processor')
+  const fc = (p: Pallet) => { const f = forecast(d, p); return p.product === 'wet' || p.product === 'unbucked' ? f.bucked : p.product === 'bucked' ? f.std : 0 }
+  const cols: Col<Pallet>[] = [
+    { k: 'code', l: 'Package', phone: true, get: p => <b>{p.code}</b>, val: p => p.code },
+    { k: 'strain', l: 'Strain', phone: true, get: p => p.strain ?? '', val: p => p.strain ?? '' },
+    { k: 'stage', l: 'Stage', phone: true, get: p => <Prod p={p.product} />, val: stage },
+    { k: 'lbs', l: 'Lbs', num: true, phone: true, get: p => <>{n0(w(p))}{p.product === 'wet' || p.product === 'unbucked' ? <span className="muted small"> wet</span> : null}</>, val: w },
+    { k: 'proc', l: 'Processor', get: p => p.processor_id ? c.procName(p.processor_id) : '', val: p => c.procName(p.processor_id) },
+    { k: 'sent', l: 'Sent on', get: p => fmtD(p.sent_on), val: p => p.sent_on ?? '' },
+    { k: 'out', l: 'Days out', num: true, get: p => { const n = daysOut(p); return n == null ? '' : <span className={n > 21 ? 'warn-t' : ''}>{n}</span> }, val: p => daysOut(p) ?? -1 },
+    { k: 'fc', l: 'Forecast', num: true, get: p => { const n = fc(p); return n ? <span className="muted small">~{n0(n)} {p.product === 'bucked' ? 'std' : 'bucked'}</span> : '' }, val: fc },
+    { k: 'held', l: 'Committed to', get: p => c.heldFor(p.id) ? <span className="pill okp">{c.heldFor(p.id)}</span> : '', val: p => c.heldFor(p.id) ?? '' },
+    { k: 'run', l: 'Open run', get: p => c.runOf(p.id) ? <span className="pill warnp">{c.runOf(p.id)!.code}</span> : '', val: p => c.runOf(p.id)?.code ?? '' },
+    { k: 'where', l: 'Where', get: p => <span className="small">{c.where(p)}</span>, val: p => c.where(p) },
+    { k: 'crop', l: 'Crop', get: p => p.crop_year ?? '', val: p => p.crop_year ?? 0 },
+    { k: 'tag', l: 'METRC tag', on: false, get: p => <Tag p={p} />, val: p => p.package_tag ?? '' },
+    { k: 'farm', l: 'Grown at', on: false, get: p => p.origin_site ?? '', val: p => p.origin_site ?? '' },
+  ]
+  const groups: GroupBy<Pallet>[] = [
+    { k: 'stage', l: 'Stage', key: stage, order: k => STAGES.indexOf(k) },
+    { k: 'strain', l: 'Strain', key: p => p.strain ?? '' },
+    { k: 'proc', l: 'Processor', key: p => p.status === 'at_processor' ? c.procName(p.processor_id) || 'Processor' : 'Here' },
+    { k: 'crop', l: 'Crop year', key: p => String(p.crop_year ?? ''), order: k => -Number(k || 0) },
+  ]
+  const chips: Chip<Pallet>[] = [
+    { k: 'stage', l: 'Stage', get: stage, order: STAGES },
+    { k: 'crop', l: 'Crop year', get: p => String(p.crop_year ?? '') },
+    { k: 'farm', l: 'Grown at', get: p => p.origin_site ?? '' },
+  ]
   const picked = (ids: number[]) => d.pallets.filter(p => ids.includes(p.id))
   const all = (ids: number[], ok: (p: Pallet) => boolean, what: string) => { if (picked(ids).every(ok)) return true; c.flash(`Pick only ${what}`, true); return false }
-  return (
-    <div className="list">
-      <div className="row between wrap toolbar"><h2>Inventory</h2>{c.canEdit && rows.length > 0 && <SelButton sel={sel} />}</div>
-      <div className="row wrap toolbar">
-        <div className="seg wrap">{(['all', ...kinds] as const).map(k => <button key={k} className={prod === k ? 'on' : ''} onClick={() => setProd(k)}>
-          {k === 'all' ? 'All' : `${PL(k)} ${oh.get(k)?.n ? `(${oh.get(k)!.n})` : ''}`}</button>)}</div>
-        <input className="search" type="search" placeholder="Strain, package or tag" value={q} onChange={e => setQ(e.target.value)} />
-      </div>
-      <p className="muted">{rows.length} packages · {n0(sum(rows.map(w)))} lbs{prod === 'unbucked' || prod === 'wet' ? ' (wet weight on paper)' : ''}. Tap a package for its next step, or Select several to buck, trim or send them together.</p>
-      {rows.length ? <PkgTable c={c} rows={rows} sel={sel} showProduct={prod === 'all'} extraOnPhone={false} extra={p => { const f = forecast(d, p)
-        return p.product === 'wet' || p.product === 'unbucked' ? <span className="muted small">~{n0(f.bucked)} bucked</span>
-          : p.product === 'bucked' ? <span className="muted small">~{n0(f.std)} std</span> : null }} /> : <p className="muted">Nothing here.</p>}
-      <SelBar sel={sel} noun="package" actions={[
-        { label: 'Buck', run: async ids => { if (all(ids, p => (p.product === 'wet' || p.product === 'unbucked') && live(p), 'wet or unbucked packages that are here')) c.start('buck', ids) } },
-        { label: 'Trim', run: async ids => { if (all(ids, p => p.product === 'bucked' && live(p), 'bucked packages')) c.start('trim', ids) } },
-        { label: 'Send to processor', run: async ids => { if (all(ids, p => (p.product === 'wet' || p.product === 'unbucked') && live(p), 'wet or unbucked packages that are here')) c.send(ids) } },
-      ]} />
-    </div>
-  )
+  return <InvTable id="proc" title="Inventory" rows={rows} rowId={p => p.id} cols={cols} groups={groups} defaultGroup="stage" chips={chips}
+    text={p => `${p.code} ${p.strain ?? ''} ${p.package_tag ?? ''} ${stage(p)} ${c.procName(p.processor_id)}`}
+    lbs={w} onOpen={p => c.openPkg(p)}
+    note={<>Every dry package from wet to finished, grouped like a pipeline. Wet and unbucked weights are wet weight on paper. Tap a package for its next step, or Select several to buck, trim or send them together.</>}
+    totals={rs => { const fin = rs.filter(p => ['standards', 'smalls', 'trim'].includes(p.product ?? '')); return <>{n0(sum(fin.map(w)))} lbs finished · {rs.filter(p => p.status === 'at_processor').length} out for drying</> }}
+    actions={c.canEdit ? [
+      { label: 'Buck', run: async ids => { if (all(ids, p => (p.product === 'wet' || p.product === 'unbucked') && live(p), 'wet or unbucked packages that are here')) c.start('buck', ids) } },
+      { label: 'Trim', run: async ids => { if (all(ids, p => p.product === 'bucked' && live(p), 'bucked packages')) c.start('trim', ids) } },
+      { label: 'Send to processor', run: async ids => { if (all(ids, p => (p.product === 'wet' || p.product === 'unbucked') && live(p), 'wet or unbucked packages that are here')) c.send(ids) } },
+    ] : undefined} />
 }
 
 /** forecast block: what a wet / unbucked / bucked package should turn into */

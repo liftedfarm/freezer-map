@@ -724,3 +724,27 @@ button.plain { background: none; border: 0; padding: 0; text-align: left; color:
 .gradeset { gap: 12px; margin-top: 6px; flex-wrap: wrap; }
 .gradeset label { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
 dd .small { font-size: 12px; margin-top: 2px; word-break: break-all; }
+
+/* inventory tables (Distribution, Sales, Processing) */
+.inv .invbar { gap: 10px; align-items: center; }
+.inv .invbar label { gap: 6px; font-size: 13px; }
+.inv .chips { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 4px 0 8px; }
+.inv .chipset { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.inv .chipset .muted { margin-right: 2px; }
+.inv .chip.on { background: var(--brand); color: var(--brand-ink); border-color: var(--brand); }
+.inv button.chip { font-size: 12px; padding: 3px 9px; }
+.inv .invtot { font-size: 13px; margin: 4px 0 2px; }
+.inv .colpick { position: relative; }
+.inv .colmenu { position: absolute; z-index: 30; right: 0; top: 100%; margin-top: 4px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; display: grid; gap: 4px; min-width: 170px; box-shadow: 0 8px 24px rgba(0,0,0,.25); }
+.inv .colmenu label { font-size: 13px; white-space: nowrap; }
+.inv th.sortable { cursor: pointer; user-select: none; }
+.inv tr.ghead td { cursor: default; }
+.inv tr.ghead a.fold { text-decoration: none; display: inline-block; width: 14px; }
+.inv tr.shortrow td { background: color-mix(in srgb, var(--bad) 7%, var(--panel)); }
+.inv tr.xrow td { background: var(--bg); }
+.inv .drill { display: grid; gap: 8px; padding: 4px 2px; }
+.inv .drill-p { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.inv .flags { display: inline-flex; flex-wrap: wrap; gap: 3px; }
+.pill.mixedp { background: color-mix(in srgb, #7c3aed 18%, var(--panel)); color: #a78bfa; margin-left: 6px; }
+.allset .modpick { margin: 4px 0 12px; }
+@media (max-width: 700px) { .inv .cwrap .ctable { min-width: 0; } }
