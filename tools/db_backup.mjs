@@ -83,10 +83,23 @@ try {
   const [year, month] = m ? [m[1], `${m[1]}-${m[2]}`] : [String(new Date().getFullYear()), new Date().toISOString().slice(0, 7)]
   const root = (process.env.SP_FOLDER || 'Database Backups').split('/').map(s => s.trim()).filter(Boolean)
 
-  const g = graph(await token())
-  const drive = (await g(`/sites/${await siteId(g, process.env.SP_SITE)}/drive`)).id
-  const folder = await ensure(g, drive, [...root, year, month])
-  const item = await upload(g, drive, folder, name, bytes)
+  let step = 'Microsoft sign-in'
+  try {
+    const tok = await token()
+    try {   // what the app is allowed to do (permission names only, nothing secret)
+      const claims = JSON.parse(Buffer.from(tok.split('.')[1], 'base64url').toString())
+      console.log(`Signed in as app ${claims.appid || claims.azp}; permissions: ${(claims.roles || []).join(', ') || 'none'}`)
+    } catch {}
+    const g = graph(tok)
+    step = `Finding the SharePoint site ${process.env.SP_SITE}`
+    const sid = await siteId(g, process.env.SP_SITE)
+    step = 'Opening the site\'s Documents library'
+    const drive = (await g(`/sites/${sid}/drive`)).id
+    step = `Making the folder ${[...root, year, month].join('/')}`
+    const folder = await ensure(g, drive, [...root, year, month])
+    step = 'Uploading the file'
+    var item = await upload(g, drive, folder, name, bytes)
+  } catch (e) { throw new Error(`${step}: ${e.message || e}${e.status ? ` (${e.status})` : ''}`) }
   const size = item && item.size
   if (size !== statSync(file).size) throw new Error(`Uploaded size ${size} doesn't match the dump (${bytes.length} bytes)`)
   console.log(`Uploaded ${[...root, year, month, item.name || name].join('/')} (${(bytes.length / 1048576).toFixed(1)} MB)`)
