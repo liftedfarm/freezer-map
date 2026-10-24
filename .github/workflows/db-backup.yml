@@ -67,7 +67,11 @@ jobs:
           [ "$(psql -tAc "select case when has_schema_privilege('auth','usage') then has_table_privilege('auth.users','select') else false end")" = "t" ] && SCHEMAS="$SCHEMAS -n auth" || SKIPPED="logins (auth)"
           [ "$(psql -tAc "select case when has_schema_privilege('storage','usage') then has_table_privilege('storage.objects','select') else false end")" = "t" ] && SCHEMAS="$SCHEMAS -n storage" || SKIPPED="$SKIPPED file list (storage)"
           [ -n "$SKIPPED" ] && echo "::warning::Backup login can't read: $SKIPPED. App tables are still backed up."
-          pg_dump -Fc -Z 6 $SCHEMAS -f "$FILE" || { echo "::error::pg_dump failed"; exit 1; }
+          # Skip Supabase-internal tables the backup login can't read (e.g. storage.migrations)
+          LIST=$(echo "$SCHEMAS" | sed 's/-n //g; s/ /,/g')
+          EXCL=$(psql -tAc "select string_agg('--exclude-table=' || schemaname || '.' || tablename, ' ') from pg_tables where schemaname = any(string_to_array('$LIST', ',')) and not has_table_privilege(format('%I.%I', schemaname, tablename), 'select')")
+          [ -n "$EXCL" ] && echo "Skipping tables the backup login can't read: ${EXCL//--exclude-table=/}"
+          pg_dump -Fc -Z 6 $SCHEMAS $EXCL -f "$FILE" || { echo "::error::pg_dump failed"; exit 1; }
           # Check the file reads back and has the main tables in it
           pg_restore --list "$FILE" > contents.txt || { echo "::error::Dump file doesn't read back"; exit 1; }
           TABLES=$(grep -c ' TABLE DATA ' contents.txt || true)
