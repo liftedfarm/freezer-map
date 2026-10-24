@@ -3,7 +3,7 @@ import { accessFromRole } from './types'
 import type { SalesDoc } from './docs'
 import type { Item, HarvestLot, LotImpact, Invoice, NewOrderLine, PaymentTerm, FOrder, Prefs, ModKey, Level, ReserveYears, CustomerTerms, UnmatchedTag, ShippedCheck, StopManifest, OrderInput, Terms, MenuNumbers, MenuRow, ReserveRequest, Balance, ImportResult, Order, RoshiRow, Reserve, LinkInfo, AppUser, Customer, Me, Role, Freezer, FreezerStatus, InvEvent, ListName, ListRow, Load, LoadItem, LoadStop, MixLine, Pallet, Settings, SingleInput, Slot, Snapshot, StopInput, Strain, Vehicle } from './types'
 
-export interface SaveUser { email: string; name: string; kind: 'staff' | 'customer' | 'none'; customerId: number | null; access: Partial<Record<ModKey, Level>>; owner?: boolean }
+export interface SaveUser { email: string; name: string; kind: 'staff' | 'customer' | 'none'; customerId: number | null; access: Partial<Record<ModKey, Level>>; owner?: boolean; login?: 'microsoft' | 'email' | null }
 export interface Overview {
   crop_year: number
   freezers: { lbs: number; pallets: number }; open_spaces: number; needs_spot: number
@@ -26,6 +26,9 @@ export interface Backend {
   demo: boolean
   getUser(): Promise<string | null>
   signIn(): Promise<void>
+  /** staff without a Lifted email (058): a 6-digit code by email */
+  sendCode(email: string): Promise<void>
+  verifyCode(email: string, code: string): Promise<void>
   signOut(): Promise<void>
   me(): Promise<Me>
   listUsers(): Promise<AppUser[]>
@@ -58,7 +61,8 @@ export interface Backend {
   salesCounts(): Promise<{ orders: number; requests: number }>
   placeOrder(lines: OrderInput[], note: string, po: string, wanted: string | null): Promise<number>
   cancelMyOrder(id: number): Promise<void>
-  setOrderStatus(id: number, status: string, so: string, note: string): Promise<void>
+  setOrderStatus(id: number, status: string, so: string, note: string, date?: string | null): Promise<void>
+  setSpan(palletId: number, toSlot: number | null): Promise<void>
   setOrderLine(orderId: number, lineId: number | null, strain: string, lbs: number, price: number | null): Promise<void>
   myTerms(): Promise<Terms | null>
   startViewAs(email: string): Promise<void>
@@ -192,6 +196,15 @@ class SupaBackend implements Backend {
     const { data } = await this.sb.auth.getSession()
     return data.session?.user.email ?? null
   }
+  async sendCode(email: string) {
+    const { error } = await this.sb.auth.signInWithOtp({ email: email.trim().toLowerCase(), options: { shouldCreateUser: true } })
+    if (error) throw new Error(/rate limit/i.test(error.message) ? 'Too many codes asked for. Wait a minute and try again.' : error.message)
+  }
+  async verifyCode(email: string, code: string) {
+    const { error } = await this.sb.auth.verifyOtp({ email: email.trim().toLowerCase(), token: code.trim(), type: 'email' })
+    if (error) throw new Error(/expired|invalid/i.test(error.message) ? 'That code is wrong or has expired. Ask for a new one.' : error.message)
+    location.reload()
+  }
   async signIn() {
     await this.sb.auth.signInWithOAuth({
       provider: 'azure',
@@ -226,7 +239,7 @@ class SupaBackend implements Backend {
   }
   async saveUser(u: SaveUser) {
     const { error } = await this.sb.rpc('save_user', { p_email: u.email, p_name: u.name || null, p_kind: u.kind, p_customer: u.customerId,
-      p_access: u.access, p_owner: u.owner ?? null })
+      p_access: u.access, p_owner: u.owner ?? null, ...(u.login ? { p_login: u.login } : {}) })
     if (error && /save_user/.test(error.message)) throw new Error('Run 024_module_roles.sql in Supabase first')
     fail(error)
   }
@@ -439,8 +452,13 @@ class SupaBackend implements Backend {
     return data as number
   }
   async cancelMyOrder(id: number) { const { error } = await this.sb.rpc('cancel_my_order', { p_id: id }); fail(error) }
-  async setOrderStatus(id: number, status: string, so: string, note: string) {
-    const { error } = await this.sb.rpc('set_order_status', { p_id: id, p_status: status, p_so: so || null, p_note: note || null }); fail(error)
+  async setOrderStatus(id: number, status: string, so: string, note: string, date?: string | null) {
+    const { error } = await this.sb.rpc('set_order_status', { p_id: id, p_status: status, p_so: so || null, p_note: note || null, ...(date ? { p_date: date } : {}) }); fail(error)
+  }
+  async setSpan(palletId: number, toSlot: number | null) {
+    const { error } = await this.sb.rpc('set_pallet_span', { p_pallet: palletId, p_to_slot: toSlot })
+    if (error && /set_pallet_span/.test(error.message)) throw new Error('Run 057_harvest_push.sql in Supabase first')
+    fail(error)
   }
   async setOrderLine(orderId: number, lineId: number | null, strain: string, lbs: number, price: number | null) {
     const { error } = await this.sb.rpc('set_order_line', { p_order: orderId, p_line: lineId, p_strain: strain, p_lbs: lbs, p_price: price }); fail(error)
@@ -694,6 +712,8 @@ class DemoBackend implements Backend {
 
   async getUser() { return this.user }
   async signIn() {}
+  async sendCode() {}
+  async verifyCode() {}
   async signOut() {}
   private users: AppUser[] = [{ email: 'demo@lifted-organics.com', role: 'admin', customer_id: null, display_name: 'Demo', added_by: 'setup', created_at: new Date().toISOString(), last_seen: new Date().toISOString() }]
   async me(): Promise<Me> { return { email: this.user, role: 'admin', display_name: 'Demo', customer_id: null, customer_name: null, access: { ...accessFromRole('admin'), owner: true } } }
@@ -717,6 +737,7 @@ class DemoBackend implements Backend {
   async placeOrder(): Promise<number> { throw new Error('Not in demo') }
   async cancelMyOrder() {}
   async setOrderStatus() {}
+  async setSpan() { throw new Error('Not in demo') }
   async setOrderLine() {}
   async myTerms() { return null }
   async startViewAs() { throw new Error('Not in demo') }

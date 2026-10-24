@@ -1,3 +1,4 @@
+import { TextIn } from './cult/ui'
 import { useMemo, useState } from 'react'
 import { ScanButton } from './scan'
 import type { MixLine, Pallet, SingleInput } from './types'
@@ -282,7 +283,7 @@ export function SingleForm({ where, strains, busy, onClose, onSubmit }: {
       <div className="field"><label>Pallet # <span className="muted">(from the label; leave blank to auto-number S1, S2…)</span></label>
         <input value={code} onChange={e => setCode(e.target.value.toUpperCase())} placeholder="e.g. T011" autoFocus /></div>
       <div className="field"><label>Strain</label>
-        <input list="strain-list" value={strain} onChange={e => setStrain(e.target.value)} placeholder="Start typing" />
+        <TextIn list="strain-list" value={strain} onChange={v => setStrain(v ?? '')} placeholder="Start typing" />
         <datalist id="strain-list">{strains.map(s => <option key={s} value={s} />)}</datalist>
         {strain.trim() && !known && <div className="warn-t small-note">Not in the Strains list. Check the spelling, or add it in Settings.</div>}
       </div>
@@ -333,7 +334,7 @@ export function MergeHere({ where, candidates, whereOf, busy, onClose, onSubmit 
   return (
     <Dialog title={`Merged pallet in ${where}`} onClose={onClose}>
       <div className="field"><label>Strain</label>
-        <input list="merge-strains" value={strain} onChange={e => { setStrain(e.target.value); setPicked(new Set()) }} placeholder="Start typing" autoFocus />
+        <TextIn list="merge-strains" value={strain} onChange={v => { setStrain(v ?? ''); setPicked(new Set()) }} placeholder="Start typing" autoFocus />
         <datalist id="merge-strains">{strains.map(s => <option key={s} value={s} />)}</datalist>
       </div>
       {strain.trim() && (

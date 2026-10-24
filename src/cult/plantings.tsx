@@ -60,7 +60,7 @@ export function PlantingsTab({ d, c, site, q, api, flash, onSaved }: { d: CultDa
                   return (
                     <tr key={p.id} className="tap" onClick={() => sel.on ? sel.toggle(p.id) : setEdit(p)}>
                       <SelBox sel={sel} id={p.id} />
-                      <td>{p.strain}{p.batch && p.batch > 1 ? <span className="muted"> · batch {p.batch}</span> : null}{p.source !== 'clone' && <span className="muted"> · {p.source}</span>}</td>
+                      <td>{p.strain}{p.trial && <> <span className="kpill k-trial" title="Trial">T</span></>}{p.batch && p.batch > 1 ? <span className="muted"> · batch {p.batch}</span> : null}{p.source !== 'clone' && <span className="muted"> · {p.source}</span>}</td>
                       <td className="nowrap">{fmtD(p.planted_on)}</td><td className="num">{n0(p.plants)}</td><td className="num hide-s">{p.spacing_in ? `${p.spacing_in}"` : ''}</td>
                       <td className="num">{n2(plantingAcres(p, c.site.get(p.site)))}</td><td className="hide-s">{p.nursery ?? ''}</td><td className="num">{n2(p.est_lbs_per_plant)}</td>
                       <td className="hide-s nowrap">{fmtD(p.first_flower)}</td>
@@ -136,6 +136,8 @@ function PlantingSheet({ d, c, p, api, flash, onClose, onSaved }: { d: CultData;
         {x.source !== 'clone' && <F label="Seed lbs"><NumIn value={x.seed_lbs} onChange={v => set({ seed_lbs: v })} /></F>}
       </div>
       <datalist id="cult-nurseries">{[...new Set(d.plantings.map(p => p.nursery).filter(Boolean))].map(n => <option key={n!} value={n!} />)}</datalist>
+      <label className="check"><input type="checkbox" checked={x.trial ?? !!d.strains.find(s => s.name.toLowerCase() === (x.strain ?? '').toLowerCase())?.trial}
+        onChange={e => set({ trial: e.target.checked })} /> <span>Trial planting <span className="muted">(its pallets are T pallets; on by default for trial strains)</span></span></label>
       <F label="Notes"><textarea value={x.notes ?? ''} onChange={e => set({ notes: e.target.value || null })} /></F>
       {x.plants && x.est_lbs_per_plant ? <p className="cnote">Projected {n0(x.plants * x.est_lbs_per_plant)} lbs fresh frozen.</p> : null}
       <SaveBar busy={busy} disabled={!x.strain?.trim() || !x.site} onCancel={onClose}

@@ -62,7 +62,7 @@ function Todo({ c }: { c: Ctx }) {
         <tbody>{shown.map(r => <tr key={r.id} onClick={() => sel.on && sel.toggle(r.id)} className={sel.on ? 'tap' : ''}>
           <SelBox sel={sel} id={r.id} />
           <td className="nowrap small">{when(r.at)}<div className="muted">{(r.details?.by as string | undefined)?.split('@')[0] ?? ''}</div></td>
-          <td><b>{r.action}</b>{r.summary && <div className="muted small">{r.summary}</div>}{r.note && <div className="small neg">{r.note}</div>}</td>
+          <td><b>{r.action}</b>{r.due_at && r.status === 'todo' && <div className={`small ${new Date(r.due_at) < new Date() ? 'neg' : 'muted'}`}>{new Date(r.due_at) > new Date() ? 'Not before' : 'Due'} {when(r.due_at)}</div>}{r.summary && <div className="muted small">{r.summary}</div>}{r.note && <div className="small neg">{r.note}</div>}</td>
           <td>{r.code ?? ''}</td><td className="mono small hide-s" title={r.tag ?? ''}>{short(r.tag)}</td><td className="num">{n2(r.lbs)}</td>
           <td className="mono small hide-s">{r.license ?? ''}</td>
           <td><span className={`pill ${ST[r.status][1]}`}>{ST[r.status][0]}</span>{r.done_by && <div className="muted small">{r.done_by.split('@')[0]}</div>}</td>

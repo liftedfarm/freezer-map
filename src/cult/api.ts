@@ -18,6 +18,8 @@ async function all<T>(page: (from: number, to: number) => PromiseLike<{ data: un
 const num = (v: unknown) => (v == null || v === '' ? null : Number(v))
 const KEY: Partial<Record<CultTable, string>> = { sites: 'code', cult_test_protocols: 'kind' }
 
+export interface TagRule { site: string; letter: string; prefix: string; offset: number; digits: number; license: string | null; active: boolean; notes: string | null }
+
 export class CultApi {
   constructor(public sb: SupabaseClient) {}
 
@@ -34,7 +36,7 @@ export class CultApi {
       all<CTest>((a, b) => this.sb.from('cult_tests').select('*').eq('crop_year', y).range(a, b)),
       all<Protocol>((a, b) => this.sb.from('cult_test_protocols').select('*').range(a, b)),
       all<Pick>((a, b) => this.sb.from('cult_flower_picks').select('*').eq('crop_year', y).range(a, b)),
-      all<StrainLite>((a, b) => this.sb.from('strains').select('name,aliases,roshi_name,active').order('name').range(a, b)),
+      all<StrainLite>((a, b) => this.sb.from('strains').select('*').order('name').range(a, b)),
       all<{ crop_year: number }>((a, b) => this.sb.from('cult_harvests').select('crop_year').range(a, b)),
       all<Receipt>((a, b) => this.sb.from('cult_receipts').select('*').eq('crop_year', y).order('received_on').range(a, b)),
     ])
@@ -60,7 +62,7 @@ export class CultApi {
       fields: fix(fields, ['acres']),
       plantings: fix(plantings, ['spacing_in', 'beds', 'acres', 'est_lbs_per_plant', 'seed_lbs']),
       harvests: fix(harvests, ['est_lbs_per_plant', 'est_raw_per_plant', 'deleaf_rate', 'buck_rate', 'dry_conversion', 'acres', 'est_yield_per_acre',
-        'raw_lbs', 'ff_lbs', 'bucked_lbs', 'trim_lbs', 'mold_lbs']).map(h => ({ ...h, raw_bins: (h.raw_bins ?? []).map(Number) })),
+        'raw_lbs', 'ff_lbs', 'bucked_lbs', 'trim_lbs', 'mold_lbs', 'metrc_wet_lbs', 'waste_lbs']).map(h => ({ ...h, raw_bins: (h.raw_bins ?? []).map(Number) })),
       tests, picks: fix(picks, ['dry_lbs']), receipts,
       pallets: fix(pallets, ['og_weight', 'current_weight']),
     }
@@ -145,7 +147,7 @@ export class CultApi {
     fail(error)
   }
 
-  async addPallets(harvestId: number, rows: { lbs: number; tag: string; code?: string; boxes?: number | null; partial?: boolean }[]): Promise<string[]> {
+  async addPallets(harvestId: number, rows: { lbs: number; tag: string; code?: string; boxes?: number | null; partial?: boolean; pending?: boolean }[]): Promise<string[]> {
     const { data, error } = await this.sb.rpc('cult_add_pallets', { p_harvest: harvestId, p_rows: rows })
     fail(error)
     return (data ?? []) as string[]
@@ -178,6 +180,37 @@ export class CultApi {
   async nextTags(site: string, n = 6): Promise<string[]> {
     const { data, error } = await this.sb.rpc('next_tags', { p_site: site, p_purpose: 'harvest', p_count: n }); return error ? [] : (data ?? []) as string[]
   }
+
+  // ---------- push to METRC (057) ----------
+  private async rpc<T = unknown>(fn: string, args: object): Promise<T> {
+    const { data, error } = await this.sb.rpc(fn, args)
+    if (error && /Could not find the function|does not exist/.test(error.message)) throw new Error('Run 057_harvest_push.sql in Supabase first')
+    fail(error); return data as T
+  }
+  nextPallet(harvestId: number, skip = 0) { return this.rpc<{ code: string; tag: string | null; available: boolean | null; letter: string }>('cult_next_pallet', { p_harvest: harvestId, p_skip: skip }) }
+  editPallet(id: number, p: { lbs?: number | null; boxes?: number | null; tag?: string | null; pending?: boolean; partial?: boolean; code?: string; note?: string | null }) { return this.rpc('cult_edit_pallet', { p_pallet: id, p }) }
+  editWeight(id: number, lbs: number) { return this.rpc('cult_edit_weight', { p_id: id, p_lbs: lbs }) }
+  setPlants(harvestId: number, plants: number) { return this.rpc('cult_set_plants', { p_harvest: harvestId, p_plants: plants }) }
+  rename(harvestId: number, strain: string) { return this.rpc('cult_rename', { p_harvest: harvestId, p_strain: strain }) }
+  push(harvestId: number, pallets: number[] | null, allowPending = false) {
+    return this.rpc<{ pushed: number; wet_lbs: number; packed_lbs: number; new_wet: number; new_plants: number }>('cult_push', { p_harvest: harvestId, p_pallets: pallets, p_allow_pending: allowPending })
+  }
+  unpush(palletId: number) { return this.rpc('cult_unpush', { p_pallet: palletId }) }
+  continueTomorrow(harvestId: number, plants: number | null, on: string | null, notes: string | null) {
+    return this.rpc<number>('cult_continue', { p_harvest: harvestId, p_plants: plants, p_on: on, p_notes: notes })
+  }
+  async metrcStatus(): Promise<Map<number, { open: number; due: string | null }>> {
+    const { data, error } = await this.sb.rpc('cult_metrc_status')
+    const m = new Map<number, { open: number; due: string | null }>()
+    if (!error) for (const r of (data ?? []) as { harvest_id: number; open_steps: number; next_due: string | null }[]) m.set(Number(r.harvest_id), { open: r.open_steps, due: r.next_due })
+    return m
+  }
+  async tagRules(): Promise<TagRule[]> {
+    const { data, error } = await this.sb.from('tag_rules').select('*').order('site')
+    if (error) return []
+    return (data ?? []) as TagRule[]
+  }
+  saveTagRule(r: Partial<TagRule> & { delete?: boolean }) { return this.rpc<TagRule>('save_tag_rule', { p: r }) }
 
   async log(limit = 150): Promise<LogRow[]> {
     const { data, error } = await this.sb.from('cult_log').select('*').order('at', { ascending: false }).limit(limit)

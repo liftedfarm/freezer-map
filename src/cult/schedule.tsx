@@ -25,6 +25,7 @@ export function ScheduleTab({ d, c, site, q, onOpen, api, flash, onSaved }: { d:
   [d, c, site, mode, kind, ql])
   const weeks = new Map<string, Harvest[]>()
   for (const h of rows) { const w = h.planned_on ? monday(h.planned_on) : 'none'; (weeks.get(w) ?? weeks.set(w, []).get(w)!).push(h) }
+  const trialOf = (h: Harvest) => !!(h.planting_id && c.planting.get(h.planting_id)?.trial) || c.field.get(h.field_id ?? -1)?.kind === 'trials'
   const late = d.harvests.filter(h => h.status === 'planned' && h.planned_on && h.planned_on < now && (!site || h.site === site))
 
   return (
@@ -60,8 +61,12 @@ export function ScheduleTab({ d, c, site, q, onOpen, api, flash, onSaved }: { d:
                     return (
                       <tr key={h.id} className={`tap ${h.status}`} onClick={() => sel.on ? sel.toggle(h.id) : onOpen(h)}>
                         <SelBox sel={sel} id={h.id} />
-                        <td className="nowrap">{fmtD(h.planned_on, true)}{h.status === 'done' && h.harvested_on && h.harvested_on !== h.planned_on && <div className="muted small">cut {fmtD(h.harvested_on)}</div>}</td>
-                        <td>{h.strain}<div className="show-s"><span className="fpill">{h.site} {fieldName(c, h.field_id)}</span><span className={`kpill k-${h.kind}`}>{KIND_SHORT[h.kind]}</span></div>
+                        <td className="nowrap">{mode === 'upcoming' && h.status === 'planned'
+                          ? <span onClick={e => e.stopPropagation()}><input type="date" className="cdate" value={h.planned_on ?? ''} aria-label={`${h.strain} harvest date`}
+                              onChange={e => { const v = e.target.value || null; if (v !== h.planned_on) bulk(() => api.save<Harvest>('cult_harvests', { id: h.id, planned_on: v }), `${h.strain} moved to ${fmtD(v, true)}`)() }} /></span>
+                          : fmtD(h.planned_on, true)}{h.status === 'done' && h.harvested_on && h.harvested_on !== h.planned_on && <div className="muted small">cut {fmtD(h.harvested_on)}</div>}</td>
+                        <td>{h.strain}{trialOf(h) && <> <span className="kpill k-trial" title="Trial strain">T</span></>}{(h.day_no ?? 1) > 1 && <> <span className="kpill s-planned">Day {h.day_no}</span></>}
+                          {h.planted_strain && h.planted_strain !== h.strain && <div className="muted small">planted as {h.planted_strain}</div>}<div className="show-s"><span className="fpill">{h.site} {fieldName(c, h.field_id)}</span><span className={`kpill k-${h.kind}`}>{KIND_SHORT[h.kind]}</span></div>
                           {h.notes && <div className="muted small">{h.notes.length > 60 ? h.notes.slice(0, 60) + '…' : h.notes}</div>}</td>
                         <td className="hide-s"><span className="fpill">{h.site} {fieldName(c, h.field_id)}</span></td>
                         <td className="hide-s"><span className={`kpill k-${h.kind}`}>{KIND_SHORT[h.kind]}</span></td>
@@ -112,7 +117,10 @@ export function HarvestSheet({ d, c, harvest, api, flash, onClose, onSaved, onLo
   const plantings = d.plantings.filter(p => p.site === h.site && (!h.field_id || p.field_id === h.field_id) && (!h.strain || p.strain.toLowerCase() === h.strain.toLowerCase()))
   const k = calcHarvest(c, { raw_bins: [], ...h } as Harvest)
   const logging = h.status === 'done'
-  const strainNames = d.strains.filter(s => s.active !== false).map(s => s.name)
+  // the strains actually planted this crop year (at this site), so a harvest can only be scheduled for something in the ground
+  const planted = [...new Set(d.plantings.filter(p => !h.site || p.site === h.site).map(p => p.strain))].sort((a, b) => a.localeCompare(b))
+  const strainNames = planted.length ? planted : d.strains.filter(s => s.active !== false).map(s => s.name)
+  const offList = !!h.strain?.trim() && planted.length > 0 && !planted.some(n => n.toLowerCase() === h.strain!.trim().toLowerCase())
   const pallets = !isNew ? (c.palletsOf.get(h.id!) ?? []) : []
 
   async function save(extra: Partial<Harvest> = {}, msg = 'Saved') {
@@ -139,7 +147,7 @@ export function HarvestSheet({ d, c, harvest, api, flash, onClose, onSaved, onLo
     <Sheet title={isNew ? 'Add harvest' : `${h.strain}`} sub={!isNew && <>{h.site} {fieldName(c, h.field_id ?? null)} · {KIND_LABEL[h.kind as HarvestKind]} · {h.status}</>} onClose={onClose} wide>
       <StrainList id="cult-strains" names={strainNames} />
       <div className="grid2">
-        <F label="Strain"><TextIn value={h.strain} onChange={v => set({ strain: v ?? '' })} list="cult-strains" autoFocus={isNew} /></F>
+        <F label="Strain" hint={offList ? <span className="warn-t">not planted at {h.site} this year</span> : 'planted strains'}><TextIn value={h.strain} onChange={v => set({ strain: v ?? '', planting_id: null })} list="cult-strains" autoFocus={isNew} /></F>
         <F label="Site"><Choices value={h.site ?? 'OHR'} options={d.sites.map(s => ({ v: s.code, l: s.code }))} onChange={v => set({ site: v, field_id: null, planting_id: null })} /></F>
         <F label="Field"><Pick value={h.field_id ?? null} blank="Pick a field…" onChange={v => set({ field_id: v, planting_id: null })} options={fields.map(f => ({ v: f.id, l: `${f.code}  (${f.name})` }))} /></F>
         <F label="Type"><Pick value={h.kind ?? 'ff'} onChange={v => set({ kind: v ?? 'ff' })} options={KINDS} /></F>

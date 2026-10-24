@@ -52,7 +52,7 @@ export interface AppLog {
 }
 
 export interface MAction {
-  id: number; at: string; license: string | null; action: string; pallet_id: number | null; code: string | null; tag: string | null; lbs: number | null
+  id: number; at: string; due_at?: string | null; harvest_id?: number | null; license: string | null; action: string; pallet_id: number | null; code: string | null; tag: string | null; lbs: number | null
   summary: string | null; details: Record<string, unknown> | null; status: 'todo' | 'done' | 'error' | 'skipped'; note: string | null; done_by: string | null; done_at: string | null
 }
 export interface Upload { id: number; license: string; file_name: string | null; rows: number; uploaded_by: string | null; uploaded_at: string }

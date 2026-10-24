@@ -1,11 +1,11 @@
-import { useState } from 'react'
-import type { CultApi } from './api'
+import { useEffect, useState } from 'react'
+import type { CultApi, TagRule } from './api'
 import { n0, n2, pct } from './calc'
 import type { CField, CSite, CultData, LogRow } from './types'
 import { F, NumIn, Pick, SaveBar, Sheet, TextIn, errText } from './ui'
 import type { Flash } from './ui'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { Fold } from '../fold'
+import { can, Fold } from '../fold'
 import { ModulePeople } from '../users'
 
 const TABLE_LABEL: Record<string, string> = {
@@ -67,6 +67,7 @@ export function SetupTab({ d, api, sb, flash, onSaved }: { d: CultData; api: Cul
       <F label="Days from harvest to ready" hint="(availability)"><NumIn value={ready} onChange={setReady} /></F>
       <button className="primary" onClick={saveSettings}>Save lists</button>
       </Fold>
+      <Fold id="cset.tags" title="METRC tags from pallet numbers"><TagRules api={api} flash={flash} /></Fold>
       <Fold id="cset.people" title="People"><ModulePeople sb={sb} module="cultivation" flash={flash} /></Fold>
 
       <p className="cnote">Every change in Production is listed under Activity.</p>
@@ -120,5 +121,49 @@ function FieldSheet({ d, f, api, flash, onClose, onSaved }: { d: CultData; f: Pa
       <label className="check"><input type="checkbox" checked={x.active !== false} onChange={e => set({ active: e.target.checked })} /> In use</label>
       <SaveBar busy={busy} disabled={!x.code?.trim() || !x.name?.trim()} onSave={save} onCancel={onClose} />
     </Sheet>
+  )
+}
+
+/** pallet # → METRC package tag, per site and letter: tag = prefix + (offset + number) padded to the digits. P53 at OHR = 1A406030007AD3D000010053. */
+function TagRules({ api, flash }: { api: CultApi; flash: Flash }) {
+  const [rules, setRules] = useState<TagRule[] | null>(null)
+  const [ed, setEd] = useState<Partial<TagRule> | null>(null)
+  const [busy, setBusy] = useState(false)
+  const load = () => api.tagRules().then(setRules)
+  useEffect(() => { load() }, [])
+  const mine = can('cultivation', 'tag_rules')
+  const sample = (r: Partial<TagRule>, n = 53) => r.prefix ? r.prefix + String((Number(r.offset) || 0) + n).padStart(Number(r.digits) || 9, '0') : ''
+  const save = async (r: Partial<TagRule> & { delete?: boolean }) => {
+    setBusy(true)
+    try { await api.saveTagRule(r); await load(); setEd(null); flash(r.delete ? 'Rule removed' : 'Tag rule saved') } catch (e) { flash(errText(e), true) } finally { setBusy(false) }
+  }
+  if (!rules) return <p className="muted">Loading…</p>
+  return (
+    <>
+      <div className="cwrap tight"><table className="ctable">
+        <thead><tr><th>Site</th><th>Pallets</th><th>Tag for #53</th><th className="hide-s">License</th><th /></tr></thead>
+        <tbody>{rules.map(r => <tr key={r.site + r.letter} className={r.active ? '' : 'cancelled'}>
+          <td>{r.site}</td><td>{r.letter}…</td><td className="mono small">{sample(r)}</td><td className="hide-s">{r.license ?? ''}</td>
+          <td>{mine && <button className="ghost small" onClick={() => setEd(r)}>Edit</button>}</td></tr>)}
+          {!rules.length && <tr><td colSpan={5} className="muted">No rules yet. Tags are typed or scanned.</td></tr>}</tbody>
+      </table></div>
+      {mine && !ed && <button className="ghost small" onClick={() => setEd({ site: 'OHR', letter: 'P', offset: 0, digits: 9, active: true })}>+ Rule</button>}
+      {ed && <div className="grid3">
+        <F label="Site"><TextIn value={ed.site} onChange={v => setEd({ ...ed, site: (v ?? '').toUpperCase() })} /></F>
+        <F label="Pallet letter"><TextIn value={ed.letter} onChange={v => setEd({ ...ed, letter: (v ?? '').toUpperCase() })} /></F>
+        <F label="Tag start" hint="before the number"><TextIn value={ed.prefix} onChange={v => setEd({ ...ed, prefix: (v ?? '').toUpperCase().replace(/\s/g, '') })} /></F>
+        <F label="Add to the number"><NumIn value={ed.offset} onChange={v => setEd({ ...ed, offset: v ?? 0 })} /></F>
+        <F label="Digits"><NumIn value={ed.digits} onChange={v => setEd({ ...ed, digits: v ?? 9 })} /></F>
+        <F label="License"><TextIn value={ed.license} onChange={v => setEd({ ...ed, license: v })} /></F>
+        <label className="check"><input type="checkbox" checked={ed.active !== false} onChange={e => setEd({ ...ed, active: e.target.checked })} /> <span>On</span></label>
+        <p className="cnote" style={{ gridColumn: '1 / -1' }}>{ed.letter ?? ''}53 → <span className="mono">{sample(ed) || '…'}</span></p>
+        <div className="row" style={{ gridColumn: '1 / -1' }}>
+          <button className="ghost" onClick={() => setEd(null)}>Cancel</button>
+          {rules.some(r => r.site === ed.site && r.letter === ed.letter) && <button className="ghost danger" disabled={busy} onClick={() => save({ site: ed.site, letter: ed.letter, delete: true })}>Remove</button>}
+          <button className="primary" disabled={busy || !ed.site || !ed.letter || !ed.prefix} onClick={() => save(ed)}>Save rule</button>
+        </div>
+      </div>}
+      <p className="cnote">The Harvest log fills in each pallet's METRC tag from its number. Trial (T) pallets have no rule: their tags are checked against METRC and typed. A tag typed or scanned on a pallet always wins.</p>
+    </>
   )
 }

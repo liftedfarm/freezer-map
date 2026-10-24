@@ -51,6 +51,7 @@ const COLS: Record<ListName, Col[]> = {
     { key: 'name', label: 'Name', kind: 'text', synonyms: ['name', 'strain', 'strain name', 'cultivar'] },
     { key: 'aliases', label: 'Other names', kind: 'aliases', synonyms: ['aliases', 'alias', 'other names', 'also known as', 'aka'], hint: 'comma separated' },
     { key: 'show_on_menu', label: 'Show on menu', kind: 'bool', synonyms: ['show on menu', 'on menu', 'menu'], hint: 'off: customers can\'t order new lbs of it' },
+    { key: 'trial', label: 'Trial strain', kind: 'bool', synonyms: ['trial', 'trial strain'], hint: 'T pallets; follows it through the crop plan, plantings, harvests and inventory. Turn off when it goes into production.' },
     { key: 'color', label: 'Map color', kind: 'color', synonyms: ['color', 'colour', 'map color', 'hex'], hint: '#RRGGBB' },
     { key: 'notes', label: 'Notes', kind: 'text', synonyms: ['notes', 'note', 'comments', 'lineage'] },
     { key: 'active', label: 'Active', kind: 'active', synonyms: ['active', 'status'] },
@@ -308,7 +309,7 @@ function summary(list: ListName, r: ListRow, inv: Map<string, number>) {
   if (list === 'customers') { const c = r as Customer; return [c.kind === 'internal' ? 'Internal' : 'External', c.kind === 'external' ? (c.reserves_enabled ? 'Reserves on' : 'Menu only') : '', c.price_per_lb != null ? `$${Number(c.price_per_lb).toFixed(2)}/lb` : '', c.license, c.contact].filter(Boolean).join(' · ') }
   const s = r as Strain
   const n = [s.name, ...(s.aliases ?? [])].reduce((a, x) => a + (inv.get(x) ?? [...inv.entries()].find(([k]) => k.toLowerCase() === x.toLowerCase())?.[1] ?? 0), 0)
-  return [s.show_on_menu === false ? 'Hidden from menu' : '', n ? `${n} pallet${n === 1 ? "" : "s"} in inventory` : 'none in inventory', s.aliases?.length ? `also: ${s.aliases.join(', ')}` : ''].filter(Boolean).join(' · ')
+  return [s.trial ? 'Trial strain' : '', s.show_on_menu === false ? 'Hidden from menu' : '', n ? `${n} pallet${n === 1 ? "" : "s"} in inventory` : 'none in inventory', s.aliases?.length ? `also: ${s.aliases.join(', ')}` : ''].filter(Boolean).join(' · ')
 }
 
 function EditForm({ list, row, busy, onClose, onSave, extra, terms }: {

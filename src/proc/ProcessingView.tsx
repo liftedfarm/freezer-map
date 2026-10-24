@@ -15,6 +15,7 @@ import { ScanButton } from '../scan'
 import { ModulePeople } from '../users'
 import { Fold } from '../fold'
 import { CrewTab, RunDayLog } from '../pay/CrewView'
+import type { RunLite } from '../pay/CrewView'
 import { InvTable } from '../invtable'
 import { ItemLotRows, TestRows } from '../comp/trace'
 import type { Col, GroupBy, Chip } from '../invtable'
@@ -28,13 +29,21 @@ const addDays = (iso: string, n: number) => { const d = new Date(iso + 'T12:00:0
 const days = (a: string, b: string) => Math.round((new Date(b + 'T12:00:00').getTime() - new Date(a + 'T12:00:00').getTime()) / 86400000)
 const fmtD = (iso: string | null | undefined) => (iso ? new Date(iso.slice(0, 10) + 'T12:00:00').toLocaleDateString([], { month: 'short', day: 'numeric' }) : '')
 const canon = (s: string | null | undefined) => (s ?? '').trim().toLowerCase()
-const live = (p: Pallet) => p.status === 'in_freezer' || p.status === 'unslotted'
+const live = (p: Pallet) => (p.status === 'in_freezer' || p.status === 'unslotted') && p.pushed !== false
 const w = (p: Pallet) => p.current_weight ?? 0
 const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0)
 const PL = (p: Product | string | undefined) => PRODUCT_LABEL[(p ?? 'fresh_frozen') as Product] ?? p
 const REQ_PRODUCT: Record<Req['product'], string> = { standards: 'Standards', smalls: 'Smalls', trim: 'Trim', any: 'Trimmed (any)' }
-const KIND: Record<Run['kind'], string> = { buck: 'Bucking', trim: 'Trimming' }
-const OUTS: Record<Run['kind'], Product[]> = { buck: ['bucked', 'trim'], trim: ['standards', 'smalls', 'trim'] }
+const KIND: Record<Run['kind'], string> = { buck: 'Bucking', sort: 'Sorting', trim: 'Trimming', machine: 'Machine trim' }
+const OUTS: Record<Run['kind'], Product[]> = { buck: ['bucked', 'trim'], sort: ['bucked_standards', 'smalls'], trim: ['standards', 'smalls', 'trim'], machine: ['standards', 'trim'] }
+/** what each run takes in. Hand trim also takes machine trimmed standards (to finish them by hand). */
+const takes = (kind: Run['kind'], p: Pallet) => kind === 'buck' ? p.product === 'unbucked' || p.product === 'wet'
+  : kind === 'sort' ? p.product === 'bucked'
+  : kind === 'machine' ? ['bucked', 'bucked_standards', 'smalls'].includes(p.product ?? '')
+  : ['bucked', 'bucked_standards', 'smalls'].includes(p.product ?? '') || (p.product === 'standards' && !!p.machine_trimmed)
+const TAKES: Record<Run['kind'], string> = { buck: 'wet or unbucked', sort: 'bucked', trim: 'bucked, bucked standards, smalls or machine trimmed standards', machine: 'bucked, bucked standards or smalls' }
+/** sort and machine runs are simple: weight in, weight out, no crew or piece rate */
+const simple = (k: Run['kind']) => k === 'sort' || k === 'machine'
 
 interface Ctx {
   d: PData; api: ProcApi; flash: Flash; canEdit: boolean; isAdmin: boolean; reload: () => Promise<void>
@@ -100,7 +109,7 @@ export default function ProcessingView({ backend, flash, tab, go, isAdmin, canEd
       {tab === 'dashboard' && <Dashboard c={c} go={go} />}
       {tab === 'incoming' && <Drying c={c} />}
       {tab === 'runs' && <Runs c={c} onStart={k => setStartKind({ kind: k })} />}
-      {tab === 'crew' && sb && <CrewTab sb={sb} runs={d.runs} flash={flash} canEdit={canEdit} isAdmin={isAdmin} onOpenRun={(id, date) => { const r = d.runs.find(x => x.id === id); if (r) c.openRun(r, date) }} />}
+      {tab === 'crew' && sb && <CrewTab sb={sb} runs={d.runs.filter(r => !simple(r.kind)) as RunLite[]} flash={flash} canEdit={canEdit} isAdmin={isAdmin} onOpenRun={(id, date) => { const r = d.runs.find(x => x.id === id); if (r) c.openRun(r, date) }} />}
       {tab === 'orders' && <Orders c={c} />}
       {tab === 'inventory' && <Inventory c={c} />}
       {tab === 'yields' && <Yields c={c} />}
@@ -199,7 +208,7 @@ function Dashboard({ c, go }: { c: Ctx; go: (t: PTab) => void }) {
 }
 
 function ByStrain({ d }: { d: PData }) {
-  const cols: Product[] = ['wet', 'unbucked', 'bucked', 'standards', 'smalls', 'trim']
+  const cols: Product[] = ['wet', 'unbucked', 'bucked', 'bucked_standards', 'standards', 'smalls', 'trim']
   const m = new Map<string, { lbs: Record<string, number>; std: number; sml: number; trm: number }>()
   for (const p of d.pallets) {
     if (!(live(p) || p.status === 'at_processor') || !cols.includes(p.product as Product)) continue
@@ -406,7 +415,7 @@ function Runs({ c, onStart }: { c: Ctx; onStart: (k: Run['kind']) => void }) {
   return (
     <div className="list">
       <div className="row between wrap toolbar"><h2>Runs</h2>
-        {c.canEdit && <div className="row"><button className="primary" onClick={() => onStart('buck')}>+ Bucking</button><button className="primary" onClick={() => onStart('trim')}>+ Trimming</button></div>}</div>
+        {c.canEdit && <div className="row"><button className="primary" onClick={() => onStart('buck')}>+ Bucking</button><button className="primary" onClick={() => onStart('sort')}>+ Sorting</button><button className="primary" onClick={() => onStart('trim')}>+ Trimming</button><button className="primary" onClick={() => onStart('machine')}>+ Machine trim</button></div>}</div>
       <div className="seg">{([['open', `Being worked (${c.d.runs.filter(r => r.status === 'open').length})`], ['done', 'Done'], ['all', 'All']] as const).map(([k, l]) =>
         <button key={k} className={f === k ? 'on' : ''} onClick={() => setF(k)}>{l}</button>)}</div>
       {!rows.length ? <p className="muted">{f === 'open' ? 'Nothing being worked. Start a bucking or trimming run when the crew starts on a lot.' : 'No runs yet.'}</p> : <div className="cwrap"><table className="ctable">
@@ -422,8 +431,7 @@ function Runs({ c, onStart }: { c: Ctx; onStart: (k: Run['kind']) => void }) {
 }
 
 function StartRun({ c, kind, req, pre, onClose, onDone }: { c: Ctx; kind: Run['kind']; req?: Req; pre?: number[]; onClose: () => void; onDone: (r: Run) => void }) {
-  const need: Product[] = kind === 'buck' ? ['unbucked', 'wet'] : ['bucked']
-  const cands = c.d.pallets.filter(p => need.includes(p.product as Product) && live(p) && !c.runOf(p.id) && !c.heldFor(p.id))
+  const cands = c.d.pallets.filter(p => takes(kind, p) && live(p) && !c.runOf(p.id) && !c.heldFor(p.id))
   const strains = [...new Set(cands.map(p => p.strain ?? ''))].sort()
   const preStrain = pre?.length ? c.d.pallets.find(p => p.id === pre[0])?.strain ?? null : null
   const [strain, setStrain] = useState<string | null>(preStrain ?? (req ? (strains.find(s => canon(s) === canon(req.strain)) ?? req.strain) : strains.length === 1 ? strains[0] : null))
@@ -443,15 +451,19 @@ function StartRun({ c, kind, req, pre, onClose, onDone }: { c: Ctx; kind: Run['k
       c.flash(`${r.code} started`); await c.reload(); onDone(r)
     } catch (e) { c.flash(errText(e), true) } finally { setBusy(false) }
   }
-  return <Sheet wide title={kind === 'buck' ? 'Start bucking' : 'Start trimming'} sub={kind === 'buck' ? 'Wet or unbucked packages go in whole (not weighed on the stem; wet ones count as dried in house)' : 'Bucked packages, all or part of each'} onClose={onClose}>
-    {!cands.length ? <p className="muted">No {kind === 'buck' ? 'wet or unbucked' : 'bucked'} packages free to work on.</p> : <>
+  const TITLE: Record<Run['kind'], string> = { buck: 'Start bucking', sort: 'Start sorting', trim: 'Start trimming', machine: 'Start machine trim' }
+  const SUB: Record<Run['kind'], string> = { buck: 'Wet or unbucked packages go in whole (not weighed on the stem; wet ones count as dried in house)',
+    sort: 'Bucked flower in; bucked standards and smalls out. No piece rate.', trim: 'Bucked, bucked standards or smalls (or machine trimmed standards to finish by hand), all or part of each',
+    machine: 'Smalls or bucked in; standards and trim out. No piece rate. Marked machine trimmed inside the app only (never in METRC or for customers).' }
+  return <Sheet wide title={TITLE[kind]} sub={SUB[kind]} onClose={onClose}>
+    {!cands.length ? <p className="muted">No {TAKES[kind]} packages free to work on.</p> : <>
       <F label="Strain"><Pick value={strain} blank="Pick a strain…" options={strains.map(s => ({ v: s, l: `${s} (${n0(sum(cands.filter(p => p.strain === s).map(w)))} lbs)` }))} onChange={v => { setStrain(v); setPick({}); setRequest(null) }} /></F>
       {strain && <div className="cwrap"><table className="ctable">
-        <thead><tr><th /><th>Package</th><th className="num">Lbs</th><th className="hide-s">Where</th>{kind === 'trim' && <th className="num">Use</th>}</tr></thead>
+        <thead><tr><th /><th>Package</th><th className="num">Lbs</th><th className="hide-s">Where</th>{kind !== 'buck' && <th className="num">Use</th>}</tr></thead>
         <tbody>{list.map(p => { const on_ = String(p.id) in pick
           return <tr key={p.id}><td className="selcol"><input type="checkbox" checked={on_} onChange={() => setPick(x => { const n = { ...x }; if (on_) delete n[p.id]; else n[p.id] = null; return n })} /></td>
-            <td><b>{p.code}</b> <Tag p={p} /></td><td className="num">{n0(w(p))}</td><td className="small hide-s">{c.where(p)}</td>
-            {kind === 'trim' && <td className="num">{on_ && <span className="qtyin"><NumIn value={pick[p.id]} placeholder={`all ${n0(w(p))}`} onChange={v => setPick(x => ({ ...x, [p.id]: v }))} /></span>}</td>}</tr> })}</tbody>
+            <td><b>{p.code}</b> {kind !== 'buck' && kind !== 'sort' && <Prod p={p.product} />}{p.machine_trimmed && <span className="muted small"> machine</span>} <Tag p={p} /></td><td className="num">{n0(w(p))}</td><td className="small hide-s">{c.where(p)}</td>
+            {kind !== 'buck' && <td className="num">{on_ && <span className="qtyin"><NumIn value={pick[p.id]} placeholder={`all ${n0(w(p))}`} onChange={v => setPick(x => ({ ...x, [p.id]: v }))} /></span>}</td>}</tr> })}</tbody>
       </table></div>}
       {kind === 'trim' && reqs.length > 0 && <F label="For trim request" hint="(optional)"><Pick value={request} blank="None (trimming ahead)" options={reqs.map(q => ({ v: q.id, l: `${n0(q.lbs)} lbs ${REQ_PRODUCT[q.product]}${q.due_on ? ` by ${fmtD(q.due_on)}` : ''}${q.customer_id ? ` · ${c.d.customers.find(x => x.id === q.customer_id)?.name ?? ''}` : ''}` }))} onChange={setRequest} /></F>}
       <div className="grid2"><F label="Started"><DateIn value={on} onChange={setOn} /></F><F label="Notes"><TextIn value={notes} onChange={v => setNotes(v ?? '')} /></F></div>
@@ -492,7 +504,7 @@ function RunSheet({ c, run, logDate, setLogDate, onClose }: { c: Ctx; run: Run; 
   }, [crew])
   const out = sum(rows.map(r => r.lbs ?? 0)), inp = run.input_lbs ?? 0, loss = inp - out - (mold ?? 0)
   const TRIM_TOL = 0.05   // trimming: in and out should match within 5% (water loss, sticky trays)
-  const off = run.kind === 'trim' && inp > 0 && Math.abs(loss) > inp * TRIM_TOL
+  const off = run.kind !== 'buck' && inp > 0 && Math.abs(loss) > inp * TRIM_TOL
   async function fill() {
     try {
       const n = rows.filter(r => r.lbs && !r.tag).length
@@ -512,16 +524,16 @@ function RunSheet({ c, run, logDate, setLogDate, onClose }: { c: Ctx; run: Run; 
   }
   if (logDate && c.sb) return <Sheet wide title={`${run.code} · ${KIND[run.kind]} · crew`} sub={`${run.strain ?? ''} ${run.crop_year ?? ''}`} onClose={onClose}>
     <button className="ghost small backrun" onClick={() => setLogDate(null)}>← Back to the run</button>
-    <RunDayLog sb={c.sb} run={run} date0={logDate} flash={c.flash} canEdit={c.canEdit} onSaved={loadCrew} />
+    <RunDayLog sb={c.sb} run={run as RunLite} date0={logDate} flash={c.flash} canEdit={c.canEdit} onSaved={loadCrew} />
   </Sheet>
   return <Sheet wide title={`${run.code} · ${KIND[run.kind]}`} sub={`${run.strain ?? ''} ${run.crop_year ?? ''} · started ${fmtD(run.started_on)}${run.finished_on ? ` · done ${fmtD(run.finished_on)}` : ''}${run.status === 'cancelled' ? ' · cancelled' : ''}`} onClose={onClose}>
     {req && <div className="infobox">For trim request: {n0(req.lbs)} lbs {REQ_PRODUCT[req.product]}{req.due_on ? ` by ${fmtD(req.due_on)}` : ''}{req.customer_id ? ` · ${d.customers.find(x => x.id === req.customer_id)?.name}` : ''}</div>}
     <h3 className="csec">In <span className="muted">{n0(inp)} lbs{run.kind === 'buck' ? ' wet, on paper' : ''}</span></h3>
     <div className="dlist">{ins.map(({ i, p }) => <button key={i.id} className="drow linkrow" onClick={() => p && c.openPkg(p)}>
       <span className="grow"><b>{p?.code ?? `#${i.pallet_id}`}</b> <span className="muted">{p ? PL(p.product) : ''} · {p ? c.where(p) : ''}</span></span><b>{n0(i.lbs)} lbs</b>{!i.whole && <span className="muted">part</span>}</button>)}</div>
-    <h3 className="csec">Crew {run.status !== 'cancelled' && <button className="ghost small" onClick={() => setLogDate(today())}>{c.canEdit ? 'Log a day' : 'See the days'}</button>}</h3>
-    {crew && !crew.people && <p className="muted small-note">No crew days logged on this run yet.</p>}
-    {crew && crew.people > 0 && <>
+    {!simple(run.kind) && <h3 className="csec">Crew {run.status !== 'cancelled' && <button className="ghost small" onClick={() => setLogDate(today())}>{c.canEdit ? 'Log a day' : 'See the days'}</button>}</h3>}
+    {!simple(run.kind) && crew && !crew.people && <p className="muted small-note">No crew days logged on this run yet.</p>}
+    {!simple(run.kind) && crew && crew.people > 0 && <>
       <div className="cwrap tight"><table className="ctable crewdays">
         <thead><tr><th>Day</th><th className="num">People</th><th className="num">Hours</th><th className="num">{run.kind === 'buck' ? 'Bucked' : 'Flower'}</th><th className="num">lbs/hr</th>
 <th className="num hide-s">At target</th><th className="num">Pay</th><th className="num hide-s">Rate</th></tr></thead>
@@ -545,7 +557,8 @@ function RunSheet({ c, run, logDate, setLogDate, onClose }: { c: Ctx; run: Run; 
     </>}
     {open && <>
       <h3 className="csec">What came out</h3>
-      {filled ? <p className="muted small-note">Filled in from the crew log ({crew?.days} day{crew?.days === 1 ? '' : 's'}). If the scale says different on a package, change it here.</p>
+      {simple(run.kind) ? <p className="muted small-note">Weigh what came out. {run.kind === 'machine' ? 'The standards are marked machine trimmed in the app only.' : ''}</p>
+        : filled ? <p className="muted small-note">Filled in from the crew log ({crew?.days} day{crew?.days === 1 ? '' : 's'}). If the scale says different on a package, change it here.</p>
         : !crew?.people && <p className="muted small-note">Log the crew's days above (Log a day) and these fill in.</p>}
       {rows.map((r, i) => <div key={i} className="row noline">
         <select value={r.product} onChange={e => { setTouched(true); setRows(rs => rs.map((x, j) => j === i ? { ...x, product: e.target.value as Product } : x)) }}>{OUTS[run.kind].map(k => <option key={k} value={k}>{PL(k)}{run.kind === 'buck' && k === 'trim' ? ' (buck trim)' : ''}</option>)}</select>
@@ -571,7 +584,7 @@ function RunSheet({ c, run, logDate, setLogDate, onClose }: { c: Ctx; run: Run; 
 }
 
 // ---------- Inventory: every dry package, as a table (shared InvTable) ----------
-const STAGES = ['Wet', 'Out for drying', 'Unbucked', 'Bucked', 'Standards', 'Smalls', 'Trim']
+const STAGES = ['Wet', 'Out for drying', 'Unbucked', 'Bucked', 'Bucked Standards', 'Standards', 'Smalls', 'Trim']
 function Inventory({ c }: { c: Ctx }) {
   const { d } = c
   const stage = (p: Pallet) => p.status === 'at_processor' ? 'Out for drying' : PL(p.product) as string
@@ -581,7 +594,7 @@ function Inventory({ c }: { c: Ctx }) {
   const cols: Col<Pallet>[] = [
     { k: 'code', l: 'Package', phone: true, get: p => <b>{p.code}</b>, val: p => p.code },
     { k: 'strain', l: 'Strain', phone: true, get: p => p.strain ?? '', val: p => p.strain ?? '' },
-    { k: 'stage', l: 'Stage', phone: true, get: p => <Prod p={p.product} />, val: stage },
+    { k: 'stage', l: 'Stage', phone: true, get: p => <><Prod p={p.product} />{p.machine_trimmed && <span className="muted small" title="Inside the app only"> machine</span>}</>, val: stage },
     { k: 'lbs', l: 'Lbs', num: true, phone: true, get: p => <>{n0(w(p))}{p.product === 'wet' || p.product === 'unbucked' ? <span className="muted small"> wet</span> : null}</>, val: w },
     { k: 'proc', l: 'Dried by', get: p => p.processor_id ? c.procName(p.processor_id) : '', val: p => c.procName(p.processor_id) },
     { k: 'sent', l: 'Sent on', get: p => fmtD(p.sent_on), val: p => p.sent_on ?? '' },
@@ -614,7 +627,9 @@ function Inventory({ c }: { c: Ctx }) {
     totals={rs => { const fin = rs.filter(p => ['standards', 'smalls', 'trim'].includes(p.product ?? '')); return <>{n0(sum(fin.map(w)))} lbs finished · {rs.filter(p => p.status === 'at_processor').length} out for drying</> }}
     actions={c.canEdit ? [
       { label: 'Buck', run: async ids => { if (all(ids, p => (p.product === 'wet' || p.product === 'unbucked') && live(p), 'wet or unbucked packages that are here')) c.start('buck', ids) } },
-      { label: 'Trim', run: async ids => { if (all(ids, p => p.product === 'bucked' && live(p), 'bucked packages')) c.start('trim', ids) } },
+      { label: 'Sort', run: async ids => { if (all(ids, p => takes('sort', p) && live(p), 'bucked packages')) c.start('sort', ids) } },
+      { label: 'Trim', run: async ids => { if (all(ids, p => takes('trim', p) && live(p), TAKES.trim + ' packages')) c.start('trim', ids) } },
+      { label: 'Machine trim', run: async ids => { if (all(ids, p => takes('machine', p) && live(p), TAKES.machine + ' packages')) c.start('machine', ids) } },
       { label: 'Send to processor', run: async ids => { if (all(ids, p => (p.product === 'wet' || p.product === 'unbucked') && live(p), 'wet or unbucked packages that are here')) c.send(ids) } },
     ] : undefined} />
 }
@@ -639,7 +654,7 @@ function PackageSheet({ c, p, onClose }: { c: Ctx; p: Pallet; onClose: () => voi
   const here = live(p), free = here && !r && !h, can = c.canEdit
   const go = (f: () => void) => { onClose(); f() }
   return <Sheet title={p.code} sub={<>{p.strain} <Prod p={p.product} /></>} onClose={onClose}>
-    {r && <div className="infobox">Being {r.kind === 'buck' ? 'bucked' : 'trimmed'} in <a onClick={() => c.openRun(r)}>{r.code}</a>. Open the run to finish it.</div>}
+    {r && <div className="infobox">Being {r.kind === 'buck' ? 'bucked' : r.kind === 'sort' ? 'sorted' : r.kind === 'machine' ? 'machine trimmed' : 'trimmed'} in <a onClick={() => c.openRun(r)}>{r.code}</a>. Open the run to finish it.</div>}
     {h && <div className="infobox held">Committed to {h}. Distribution ships it from Fulfillment.</div>}
     {can && <div className="actions">
       {free && p.slot_id == null && <button className="ghost" onClick={() => go(() => c.putAway(p))}>Put in a trailer</button>}
@@ -648,7 +663,9 @@ function PackageSheet({ c, p, onClose }: { c: Ctx; p: Pallet; onClose: () => voi
       {free && p.product === 'wet' && <button className="ghost" onClick={() => go(() => c.dried([p.id]))}>Dried here</button>}
       {p.status === 'at_processor' && <button className="primary" onClick={() => go(() => c.back([p.id]))}>Back unbucked</button>}
       {p.status === 'at_processor' && <button className="ghost" onClick={() => c.manifest([p.id])}>Manifest sheet</button>}
-      {free && p.product === 'bucked' && <button className="primary" onClick={() => go(() => c.start('trim', [p.id]))}>Trim</button>}
+      {free && p.product === 'bucked' && <button className="ghost" onClick={() => go(() => c.start('sort', [p.id]))}>Sort</button>}
+      {free && takes('trim', p) && <button className="primary" onClick={() => go(() => c.start('trim', [p.id]))}>Trim</button>}
+      {free && takes('machine', p) && p.product !== 'bucked' && <button className="ghost" onClick={() => go(() => c.start('machine', [p.id]))}>Machine trim</button>}
     </div>}
     <Forecast c={c} p={p} />
     <dl>

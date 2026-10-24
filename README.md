@@ -119,3 +119,20 @@ an Entra app with the Microsoft Graph application permission `Sites.Selected` an
 Run `supabase/056_ccof_list.sql` after 055. It loads the CCOF OSP Materials List (10/23/2026), links the Production and Nursery
 products to it, and adds Sites and certifications (OHR and GVR certified, 1PN not). A newer list can be loaded in the app:
 Compliance > CCOF > CCOF list > drop the PDF from MyCCOF (read in the browser with pdf.js).
+
+## Harvest push to METRC (057)
+
+Run `supabase/057_harvest_push.sql` after 056. Pallets logged in the Harvest log start as **not pushed**: they sit in Staging and can be
+moved, fixed or removed, but not sold, loaded, split or merged. **Push** (all or picked, Production Users by default) puts the plants and
+raw bins into the METRC batch and makes the packages (Compliance > METRC to-do). **Finish harvest** queues the waste (raw minus packed)
+for 48 hours later, then Finish harvest in METRC. **Continue tomorrow** finishes today's part and adds the next day as its own harvest
+(`-2` on the batch name). Un-push is Production Admin only. Also: METRC tags from pallet numbers (Production > Settings > METRC tags),
+trial strains (T pallets), Sort and Machine trim runs in Processing (machine trimmed is internal only), whole-stack drag on the freezer map,
+trailer pallets that take several spots, inline harvest dates on the Schedule, strain pick lists, real shipped dates, OHR > GVR manifest to-dos.
+
+## Access (058)
+
+Run `supabase/058_access.sql` after 057. Module Admins run their own module: add people, make Admins of it (Settings > People).
+Staff without a Lifted Microsoft account sign in with an **email code** (never Admins). Admin > Settings > Permissions sets which level
+can do each action, with per-person exceptions. Supabase: Authentication > Email Templates > Magic Link must include `{{ .Token }}`
+so the email carries the 6-digit code (custom SMTP recommended; the built-in sender is rate limited).

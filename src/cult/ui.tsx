@@ -35,7 +35,42 @@ export function DateIn({ value, onChange }: { value: string | null | undefined; 
 }
 
 export function TextIn({ value, onChange, placeholder, list, autoFocus }: { value: string | null | undefined; onChange: (v: string | null) => void; placeholder?: string; list?: string; autoFocus?: boolean }) {
-  return <input value={value ?? ''} placeholder={placeholder} list={list} autoFocus={autoFocus} onChange={e => onChange(e.target.value === '' ? null : e.target.value)} />
+  if (list) return <Combo value={value} onChange={onChange} placeholder={placeholder} list={list} autoFocus={autoFocus} />
+  return <input value={value ?? ''} placeholder={placeholder} autoFocus={autoFocus} onChange={e => onChange(e.target.value === '' ? null : e.target.value)} />
+}
+
+/** a text box with a real drop-down: the choices come from the <datalist id={list}> on the page (shown on focus, filtered as you type).
+ *  Browsers' own datalist pop-ups are easy to miss, so this draws its own. */
+function Combo({ value, onChange, placeholder, list, autoFocus }: { value: string | null | undefined; onChange: (v: string | null) => void; placeholder?: string; list: string; autoFocus?: boolean }) {
+  const [open, setOpen] = useState(false)
+  const [hi, setHi] = useState(0)
+  const [opts, setOpts] = useState<string[]>([])
+  const load = () => {
+    const el = document.getElementById(list) as HTMLDataListElement | null
+    setOpts(el ? [...el.options].map(o => o.value).filter(Boolean) : [])
+  }
+  const q = (value ?? '').trim().toLowerCase()
+  const exact = opts.some(o => o.toLowerCase() === q)
+  const shown = (q && !exact ? opts.filter(o => o.toLowerCase().includes(q)).sort((a, b) => Number(!a.toLowerCase().startsWith(q)) - Number(!b.toLowerCase().startsWith(q))) : opts).slice(0, 60)
+  const pick = (v: string) => { onChange(v); setOpen(false) }
+  return (
+    <span className="combo">
+      <input value={value ?? ''} placeholder={placeholder ?? 'Pick or type'} autoFocus={autoFocus} autoComplete="off" role="combobox" aria-expanded={open}
+        onFocus={() => { load(); setOpen(true); setHi(0) }} onBlur={() => setTimeout(() => setOpen(false), 150)}
+        onChange={e => { onChange(e.target.value === '' ? null : e.target.value); if (!open) load(); setOpen(true); setHi(0) }}
+        onKeyDown={e => {
+          if (!open || !shown.length) return
+          if (e.key === 'ArrowDown') { e.preventDefault(); setHi(i => Math.min(i + 1, shown.length - 1)) }
+          else if (e.key === 'ArrowUp') { e.preventDefault(); setHi(i => Math.max(i - 1, 0)) }
+          else if (e.key === 'Enter' && shown[hi]) { e.preventDefault(); pick(shown[hi]) }
+          else if (e.key === 'Escape') setOpen(false)
+        }} />
+      <button type="button" className="combo-arrow" tabIndex={-1} aria-label="Show choices" onMouseDown={e => { e.preventDefault(); load(); setOpen(o => !o) }}>▾</button>
+      {open && shown.length > 0 && <ul className="combo-list" role="listbox">
+        {shown.map((o, i) => <li key={o} role="option" aria-selected={i === hi} className={i === hi ? 'hi' : ''} onMouseDown={e => { e.preventDefault(); pick(o) }}>{o}</li>)}
+      </ul>}
+    </span>
+  )
 }
 
 export function Pick<T extends string | number>({ value, options, onChange, blank }: { value: T | null | undefined; options: { v: T; l: string }[]; onChange: (v: T | null) => void; blank?: string }) {

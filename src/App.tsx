@@ -8,6 +8,7 @@ import type { InvCtx } from './inventory'
 import { MergeForm, MergeHere, MixedBuilder, NewPalletChooser, PickMixed, SingleForm, SplitForm, TagForm, WeightForm, lbs } from './forms'
 import { SettingsView } from './settings'
 import { ModulePeople, UsersTab } from './users'
+import { PermissionsPanel } from './perms'
 import { AdminDashboard, AdminReview, AppSettingsPanel } from './admin'
 import type { Jump } from './admin'
 import { DeadlinesPanel, SalesDashboard, SalesReview } from './salesdash'
@@ -476,10 +477,24 @@ export default function App() {
     if (r === 'choose') setChoose({ id, slot }); else { setPlan(r); setChoose(null) }
   }
   onDrop((d, t) => {
-    if (!ix) return
-    if ('tray' in t) { setPlan(pl => addToTray(pl, [d.id])); return }
+    if (!ix || !L) return
+    if (d.span) {   // trailer: stretch a pallet over more spots (saved right away), or back to one spot
+      if ('tray' in t) return
+      const p = ix.pallet.get(d.id)
+      act(() => backend.setSpan(d.id, t.slot === p?.slot_id ? null : t.slot), t.slot === p?.slot_id ? `${p?.code} back to one spot` : `${p?.code} now takes more spots`)
+      return
+    }
+    const ids = d.ids?.length ? d.ids : [d.id]
+    if ('tray' in t) { setPlan(pl => addToTray(pl, ids)); return }
     const slot = ix.slot.get(t.slot)
-    if (slot) doPlace(d.id, slot)
+    if (!slot) return
+    if (ids.length === 1) { doPlace(d.id, slot); return }
+    // a whole stack: the first one lands like a single pallet would (into an empty spot), the rest stack on it
+    setPlan(pl => {
+      let next = pl
+      ids.forEach((id, i) => { const r = place(L, next, id, slot.id, i === 0 && occupants(slotView(L, next, slot.id)).length === 0 ? undefined : 'stack'); if (r !== 'choose') next = r })
+      return next
+    })
   })
   async function applyPlan() {
     if (!L) return
@@ -884,6 +899,7 @@ export default function App() {
           <div className="seg setpick">{ALL_SETTINGS.map(([k, l]) => <button key={k} className={adminSet === k ? 'on' : ''} onClick={() => setAdminSet(k)}>{l}</button>)}</div>
           {adminSet === 'admin' && <SettingsView backend={backend} flash={flash} onChanged={() => { reload() }} inventoryStrains={invStrains} title="Admin settings"
             lists={[]} extra={[{ k: 'users', l: 'Users and access', node: <UsersTab backend={backend} me={me!} customers={snap.customers ?? []} flash={flash} /> },
+              { k: 'perms', l: 'Permissions', node: <PermissionsPanel sb={backend.client()} flash={flash} /> },
               { k: 'licenses', l: 'Licenses', node: <LicensesPanel backend={backend} flash={flash} /> },
               { k: 'app', l: 'App settings', node: <AppSettingsPanel backend={backend} flash={flash} /> }]} />}
           {adminSet === 'dist' && distSettings}
@@ -1097,12 +1113,38 @@ function NoAccess({ me, signOut }: { me: Me; signOut: () => void }) {
 }
 
 function Login() {
+  const [code, setCode] = useState<null | { email: string; sent: boolean; code: string; busy: boolean; err: string | null }>(null)
+  const send = async () => {
+    if (!code) return
+    setCode({ ...code, busy: true, err: null })
+    try { await backend.sendCode(code.email); setCode({ ...code, sent: true, busy: false, err: null }) } catch (e) { setCode({ ...code, busy: false, err: (e as Error).message }) }
+  }
+  const verify = async () => {
+    if (!code) return
+    setCode({ ...code, busy: true, err: null })
+    try { await backend.verifyCode(code.email, code.code) } catch (e) { setCode({ ...code, busy: false, err: (e as Error).message }) }
+  }
   return (
     <div className="center login">
       <img className="logo-login logo-l" src="/logo-light.svg" alt="Lifted Farms" /><img className="logo-login logo-d" src="/logo-dark.svg" alt="Lifted Farms" />
       <h1>Lifted Farms</h1>
       <p className="muted">Distribution, sales and production</p>
-      <button className="primary big" onClick={() => backend.signIn()}>Sign in with Microsoft</button>
+      {!code && <button className="primary big" onClick={() => backend.signIn()}>Sign in with Microsoft</button>}
+      {!code && <p className="muted small-print">No Lifted email? <a onClick={() => setCode({ email: '', sent: false, code: '', busy: false, err: null })}>Sign in with an email code</a></p>}
+      {code && <div className="codebox">
+        {!code.sent ? <>
+          <input type="email" autoFocus placeholder="Your email" value={code.email} onChange={e => setCode({ ...code, email: e.target.value })} onKeyDown={e => { if (e.key === 'Enter') send() }} />
+          <button className="primary big" disabled={code.busy || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(code.email.trim())} onClick={send}>{code.busy ? 'Sending…' : 'Email me a code'}</button>
+        </> : <>
+          <p className="muted">We sent a 6-digit code to {code.email}. It works for one hour.</p>
+          <input inputMode="numeric" autoComplete="one-time-code" autoFocus placeholder="Code" value={code.code} maxLength={10}
+            onChange={e => setCode({ ...code, code: e.target.value.replace(/\D/g, '') })} onKeyDown={e => { if (e.key === 'Enter') verify() }} />
+          <button className="primary big" disabled={code.busy || code.code.length < 6} onClick={verify}>{code.busy ? 'Checking…' : 'Sign in'}</button>
+          <a className="small-print" onClick={() => setCode({ ...code, sent: false, code: '' })}>Send a new code</a>
+        </>}
+        {code.err && <p className="bad-t">{code.err}</p>}
+        <p className="muted small-print">Only for people an Admin has added. <a onClick={() => setCode(null)}>Back to Microsoft sign-in</a></p>
+      </div>}
       <p className="muted small-print">Customer? <a href={portalUrl('?portal')}>Sign in to the order portal</a></p>
     </div>
   )
@@ -1216,6 +1258,14 @@ function FreezerView({ ix, L, plan, freezer, query, placing, selecting, sel, sib
   const prev = staging ? undefined : siblings[i - 1], next = staging ? undefined : siblings[i + 1]
   const dead = freezer.status === 'Not Working'
   const placingNow = placing || plan.tray.length > 0
+  const trailer = freezer.kind === 'trailer'
+  // trailers: a pallet stretched over more spots covers the spots between its own and span_to_slot (same side)
+  const coveredBy = new Map<number, Pallet>()
+  if (trailer) for (const s of grid) for (const p of ix.inSlot.get(s.id) ?? []) {
+    const to = p.span_to_slot != null ? ix.slot.get(p.span_to_slot) : undefined
+    if (!to) continue
+    for (const x of grid) if (x.id !== s.id && x.col === s.col && x.row >= Math.min(s.row, to.row) && x.row <= Math.max(s.row, to.row)) coveredBy.set(x.id, p)
+  }
   const tile = (p: Pallet, role: 'stay' | 'incoming' | 'leaving', s: Slot, stacked: boolean, m?: PlanMove) => {
     const on = ix.contentsOf.get(p.id) ?? []
     const sw = swatch(p.strain)
@@ -1228,9 +1278,11 @@ function FreezerView({ ix, L, plan, freezer, query, placing, selecting, sel, sib
         style={stacked && p.kind !== 'mixed' ? sw.style : undefined}
         {...(role !== 'leaving' && !placing ? draggable({ id: p.id, label: `${p.code} · ${p.kind === 'mixed' ? 'Mixed' : p.strain ?? ''}` }) : {})}
         onClick={e => { e.stopPropagation(); onPalletTap(p, role, s) }}>
-        <b>{selecting && <span className={`tick ${picked ? 'on' : ''}`}>{picked ? '✓' : ''}</span>}{p.code}{p.needs_review && <span className="flag" title={p.needs_review}>!</span>}{(p.tag_pending || on.some(c => c.tag_pending)) && <span className="flag tag" title="METRC tag pending">T</span>}{ix.loadOf.has(p.id) && <span className="flag load" title={`Planned on ${ix.loadOf.get(p.id)!.load.code}`}>L</span>}</b>
+        <b>{selecting && <span className={`tick ${picked ? 'on' : ''}`}>{picked ? '✓' : ''}</span>}{p.code}{p.needs_review && <span className="flag" title={p.needs_review}>!</span>}{(p.tag_pending || on.some(c => c.tag_pending)) && <span className="flag tag" title="METRC tag pending">T</span>}{ix.loadOf.has(p.id) && <span className="flag load" title={`Planned on ${ix.loadOf.get(p.id)!.load.code}`}>L</span>}{p.pushed === false && <span className="flag np" title="Not pushed to METRC yet (Harvest log)">NP</span>}</b>
         <span className="strain">{note ? <i className="pnote">{note}</i> : p.kind === 'mixed' ? `Mixed · ${on.length} pkg${on.length === 1 ? '' : 's'}: ${[...new Set(on.map(c => c.strain))].join(', ')}` : <>{p.product && p.product !== 'fresh_frozen' && <em className="prodtag">{PRODUCT_SHORT[p.product]}</em>}{(p.product ?? 'fresh_frozen') === 'fresh_frozen' && gradeOf(ix, p).grade === 'BHO' && <em className="prodtag bho">BHO</em>}{p.strain ?? p.label ?? 'No strain'}</>}</span>
         <span className="w">{p.kind !== 'mixed' && p.current_weight == null ? 'no weight' : lbs(weightOf(ix, p))}</span>
+        {trailer && role === 'stay' && !placing && !stacked && <span className="spangrip" title="Drag to another spot on this side to make it take more space; drag back here to undo"
+          {...draggable({ id: p.id, label: `${p.code}: take spots to…`, span: true })} onClick={e => e.stopPropagation()}>⇕</span>}
       </span>
     )
   }
@@ -1270,12 +1322,15 @@ function FreezerView({ ix, L, plan, freezer, query, placing, selecting, sel, sib
           const ghostOnly = occ.length === 0 && v.leaving.length > 0
           return (
             <button key={s.id} data-slot={s.id}
-              className={`tile ${all ? 'full' : 'empty'} ${placingNow && !dead ? (occ.length ? 'can-combine' : 'can-drop') : ''} ${dim ? 'dim' : ''} ${stacked ? 'stacked' : all ? (mixed ? 'mx' : sw.cls) : ''} ${ghostOnly ? 'vacating' : ''} ${v.incoming.length ? 'arriving' : ''}`}
+              className={`tile ${coveredBy.has(s.id) && !all ? 'spanned' : ''} ${all ? 'full' : 'empty'} ${placingNow && !dead ? (occ.length ? 'can-combine' : 'can-drop') : ''} ${dim ? 'dim' : ''} ${stacked ? 'stacked' : all ? (mixed ? 'mx' : sw.cls) : ''} ${ghostOnly ? 'vacating' : ''} ${v.incoming.length ? 'arriving' : ''}`}
               style={all && !mixed && !stacked ? sw.style : undefined}
               disabled={placingNow && dead}
               onClick={() => onSlot(s)}>
               <span className="code">{staging ? s.row : freezer.kind === 'trailer' ? s.code.slice(2) : s.code}</span>
-              {all === 0 && <span className="muted">{placingNow ? (dead ? 'Not working' : 'Place here') : dead ? 'empty' : staging ? '' : '+ New pallet'}</span>}
+              {all === 0 && coveredBy.has(s.id) && <span className="muted covered">↕ {coveredBy.get(s.id)!.code}</span>}
+              {all === 0 && !coveredBy.has(s.id) && <span className="muted">{placingNow ? (dead ? 'Not working' : 'Place here') : dead ? 'empty' : staging ? '' : '+ New pallet'}</span>}
+              {stacked && !placing && v.stay.length > 1 && <span className="stackgrip" title="Drag to move the whole stack" onClick={e => e.stopPropagation()}
+                {...draggable({ id: v.stay[0].id, ids: v.stay.map(p => p.id), label: `Stack of ${v.stay.length}: ${v.stay.map(p => p.code).join(', ')}` })}>⠿ all {v.stay.length}</span>}
               {v.stay.map(p => tile(p, 'stay', s, stacked))}
               {v.incoming.map(x => tile(x.p, 'incoming', s, stacked, x.m))}
               {v.leaving.map(x => tile(x.p, 'leaving', s, stacked, x.m))}
@@ -1482,6 +1537,8 @@ function PalletSheet({ ix, p, others, busy, where, flash, onClose, onGo, onMove,
         </div>
         {p.needs_review && <div className="warnbox">{p.needs_review}</div>}
         {p.tag_pending && live && <div className="warnbox">METRC tag pending. <a onClick={() => onForm('tag')}>Enter tag</a></div>}
+        {p.pushed === false && live && <div className="warnbox">Not pushed to METRC yet. It can be moved, but it can't be sold, loaded, split or merged until it's pushed in the Harvest log.</div>}
+        {p.span_to_slot != null && ix.slot.get(p.span_to_slot) && <div className="infobox">Takes the spots through {ix.slot.get(p.span_to_slot)!.code.slice(2)}. Drag its ⇕ handle back onto its own spot to take one spot again.</div>}
         {container && <div className="infobox">On mixed pallet {link(container)}. It moves with {container.code}.</div>}
         {held && <div className="infobox held">Held for <a onClick={onHeld}>{held}</a></div>}
         {inRun && <div className="infobox held">In processing run {inRun}. It stays put until the run is finished. It can still be moved to another spot.</div>}

@@ -132,3 +132,21 @@
 .bfrow .bfcode { width: 80px; }
 .hlog .grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 10px; }
 @media (max-width: 640px) { .hlog .grid3 { grid-template-columns: 1fr 1fr; } }
+/* 057: push to METRC */
+.kpill.k-trial { background: #ede9fe; color: #5b21b6; }
+.binrow span.inmetrc::after { content: ' ✓'; color: var(--muted); }
+.binrow a.binfix { margin: 0; color: inherit; text-decoration: underline dotted; cursor: pointer; }
+.binrow .binedit input { width: 70px; padding: 2px 4px; font-size: 13px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); }
+.hpush { margin: 8px 0; gap: 8px; }
+.hpush .primary { padding: 12px 16px; font-size: 16px; }
+.hedit { margin: 6px 0; }
+.drow input[type="checkbox"] { width: 20px; height: 20px; margin-right: 6px; }
+.ctable input.cdate { padding: 3px 4px; font-size: 13px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); max-width: 140px; }
+/* strain (and other) pick-or-type boxes */
+.combo { position: relative; display: flex; align-items: stretch; width: 100%; }
+.combo > input { flex: 1; min-width: 0; padding-right: 28px; }
+.combo-arrow { position: absolute; right: 2px; top: 50%; transform: translateY(-50%); border: 0; background: none; color: var(--muted); padding: 4px 8px; cursor: pointer; }
+.combo-list { position: absolute; z-index: 60; top: 100%; left: 0; right: 0; margin: 2px 0 0; padding: 4px 0; list-style: none; max-height: 260px; overflow: auto;
+  background: var(--card, var(--bg)); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.15); }
+.combo-list li { padding: 7px 12px; cursor: pointer; font-size: 14px; color: var(--ink); }
+.combo-list li.hi, .combo-list li:hover { background: var(--empty); }

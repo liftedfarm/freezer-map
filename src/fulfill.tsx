@@ -122,7 +122,7 @@ function OrderPage({ o, back, backend, reload, flash, pallets, heldBy, onLoad, i
                 <button className="ghost small grow" disabled={busy} onClick={() => setAdding(l.id)}>+ {g ? 'Add another pallet' : 'Assign pallets'}</button>
                 {g === 0 && <button className="ghost small" disabled={busy} onClick={() => run(() => backend.cantFill(l.id, true), `${l.strain} marked can't fill`)}>Can't fill</button>}</div>}
               {editable && adding === l.id && <Pick line={l} need={Math.max(0, Number(l.lbs) - g)} busy={busy} close={() => setAdding(null)}
-                cands={pallets.filter(p => p.status === 'in_freezer' && !p.container_id && p.kind !== 'mixed' && (p.current_weight ?? 0) > 0
+                cands={pallets.filter(p => p.status === 'in_freezer' && p.pushed !== false && !p.container_id && p.kind !== 'mixed' && (p.current_weight ?? 0) > 0
                   && canon(p.strain) === canon(l.strain) && (p.product ?? 'fresh_frozen') === (l.product ?? 'fresh_frozen') && !heldBy.has(p.id) && !onLoad(p.id) && !inRun?.(p.id))}
                 where={where} rank={rank}
                 onWhole={p => run(() => backend.pickPallet(l.id, p.id), `${p.code} assigned`).then(() => setAdding(null))}

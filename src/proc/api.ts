@@ -8,7 +8,7 @@ export interface Processor { id: number; name: string; short: string | null; in_
 export interface DryHarvest { id: number; crop_year: number; site: string; field: string | null; strain: string; status: string; planned_on: string | null; harvested_on: string | null; raw_lbs: number | null; plants: number | null; dry_conversion?: number | null }
 export interface OLine { id: number; order_id: number; so: string | null; customer_id: number; customer: string; strain: string; product: Product; lbs: number; crop_year: number; wanted: string | null; on_load: boolean; picked: number; promised: number }
 export interface Run {
-  id: number; code: string; kind: 'buck' | 'trim'; site: string; strain: string | null; crop_year: number | null; request_id: number | null; status: 'open' | 'done' | 'cancelled'
+  id: number; code: string; kind: 'buck' | 'sort' | 'trim' | 'machine'; site: string; strain: string | null; crop_year: number | null; request_id: number | null; status: 'open' | 'done' | 'cancelled'
   started_on: string; finished_on: string | null; input_lbs: number | null; output_lbs: number | null; mold_lbs: number | null; loss_lbs: number | null; notes: string | null
   created_by: string | null; finished_by: string | null
 }
@@ -90,7 +90,7 @@ export class ProcApi {
   send(ids: number[], processor: number, on: string | null) { return this.rpc<number>('proc_send', { p_ids: ids, p_processor: processor, p_on: on }) }
   receive(ids: number[], site: string, tags: Record<string, string>) { return this.rpc<number>('proc_receive', { p_ids: ids, p_site: site, p_tags: tags }) }
   dried(ids: number[]) { return this.rpc<number>('proc_mark_dried', { p_ids: ids }) }
-  startRun(kind: 'buck' | 'trim', inputs: { pallet: number; lbs: number | null }[], request: number | null, notes: string, site: string, on: string | null) {
+  startRun(kind: 'buck' | 'sort' | 'trim' | 'machine', inputs: { pallet: number; lbs: number | null }[], request: number | null, notes: string, site: string, on: string | null) {
     return this.rpc<Run>('proc_start_run', { p_kind: kind, p_inputs: inputs, p_request: request, p_notes: notes, p_site: site, p_on: on })
   }
   editRun(run: number, inputs: { pallet: number; lbs: number | null }[], request: number | null, notes: string) {

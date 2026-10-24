@@ -22,9 +22,9 @@ export interface Slot {
 
 export type PalletStatus = 'in_freezer' | 'unslotted' | 'in_transit' | 'at_processor' | 'shipped' | 'depleted' | 'archived' | 'merged'
 /** what's in the package: fresh frozen, or a dry flower stage (047) */
-export type Product = 'fresh_frozen' | 'wet' | 'unbucked' | 'bucked' | 'standards' | 'smalls' | 'trim'
-export const PRODUCT_LABEL: Record<Product, string> = { fresh_frozen: 'Fresh Frozen', wet: 'Wet (raw)', unbucked: 'Unbucked', bucked: 'Bucked', standards: 'Standards', smalls: 'Smalls', trim: 'Trim' }
-export const PRODUCT_SHORT: Record<Product, string> = { fresh_frozen: 'FF', wet: 'Wet', unbucked: 'Unbk', bucked: 'Bkd', standards: 'Std', smalls: 'Sml', trim: 'Trim' }
+export type Product = 'fresh_frozen' | 'wet' | 'unbucked' | 'bucked' | 'bucked_standards' | 'standards' | 'smalls' | 'trim'
+export const PRODUCT_LABEL: Record<Product, string> = { fresh_frozen: 'Fresh Frozen', wet: 'Wet (raw)', unbucked: 'Unbucked', bucked: 'Bucked', bucked_standards: 'Bucked Standards', standards: 'Standards', smalls: 'Smalls', trim: 'Trim' }
+export const PRODUCT_SHORT: Record<Product, string> = { fresh_frozen: 'FF', wet: 'Wet', unbucked: 'Unbk', bucked: 'Bkd', bucked_standards: 'BkStd', standards: 'Std', smalls: 'Sml', trim: 'Trim' }
 /** products Sales can put on an order line */
 export const SALE_PRODUCTS: Product[] = ['fresh_frozen', 'standards', 'smalls', 'trim', 'bucked', 'unbucked']
 
@@ -49,6 +49,9 @@ export interface Pallet {
   partial?: boolean
   merged_into?: number | null
   tag_pending?: boolean
+  pushed?: boolean                   // 057: false = logged at harvest, not a METRC package yet
+  span_to_slot?: number | null       // 057: trailers, takes the spots from slot_id to here
+  machine_trimmed?: boolean          // 057: internal only
   kind?: 'package' | 'mixed'
   container_id?: number | null
   received_site?: string | null
@@ -84,7 +87,7 @@ export interface InvEvent {
 
 export interface Vehicle { id: number; name: string; plate: string | null; kind: string | null; notes: string | null; active: boolean; spaces: number; across: number; owner: string | null }
 export interface Customer { id: number; name: string; kind: 'internal' | 'external'; license: string | null; address: string | null; contact: string | null; notes: string | null; active: boolean; price_per_lb?: number | null; contract_lbs?: number | null; monthly_min_lbs?: number | null; deposit_usd?: number | null; storage_fee?: number | null; reserves_enabled?: boolean; legal_name?: string | null; payment_terms?: string | null; billing_address?: string | null; billing_contact?: string | null; billing_email?: string | null; billing_phone?: string | null; ship_to_name?: string | null; ship_to_address?: string | null; receiving_contact?: string | null; license_expires?: string | null }
-export interface Strain { id: number; name: string; aliases: string[]; color: string | null; notes: string | null; active: boolean; show_on_menu?: boolean; strain_no?: number | null; default_grade?: Grade }
+export interface Strain { id: number; name: string; aliases: string[]; color: string | null; notes: string | null; active: boolean; show_on_menu?: boolean; strain_no?: number | null; default_grade?: Grade; trial?: boolean }
 export type Grade = 'SHO' | 'BHO'
 /** what a lot grade change touched: still on hand, held for orders, already shipped (by invoice) */
 export interface LotImpact { on_hand: { pallets: number; lbs: number }; held: { pallet: string; order: string; customer: string; line_grade: Grade | null; lbs: number }[]; shipped: { invoice: string; customer: string; date: string; lbs: number; grade: Grade | null }[] }
@@ -124,7 +127,7 @@ export interface Snapshot {
 
 export type Role = 'admin' | 'sales' | 'crew' | 'customer' | 'none'
 export interface Me { email: string; role: Role; display_name: string | null; customer_id: number | null; customer_name: string | null; viewing_as?: boolean; real_email?: string; access: Access }
-export interface AppUser { email: string; role: Role; customer_id: number | null; display_name: string | null; added_by: string | null; created_at: string; last_seen: string | null; modules?: string[]; owner?: boolean; access?: Partial<Record<ModKey, Level>>; prefs?: Prefs }
+export interface AppUser { login_kind?: 'microsoft' | 'email'; email: string; role: Role; customer_id: number | null; display_name: string | null; added_by: string | null; created_at: string; last_seen: string | null; modules?: string[]; owner?: boolean; access?: Partial<Record<ModKey, Level>>; prefs?: Prefs }
 /** the parts of the app. Levels per person: off (missing), user, admin. Owners are admin everywhere. */
 export type ModKey = 'distribution' | 'sales' | 'cultivation' | 'nursery' | 'processing' | 'accounting' | 'compliance' | 'admin'
 export type Level = 'view' | 'user' | 'admin'
@@ -139,7 +142,7 @@ export const MODULES: { key: ModKey; label: string; what: string; user: string; 
   { key: 'admin', label: 'Admin', what: 'Company dashboard, users and access, app settings', user: 'Everything in Admin', admin: 'Everything in Admin' },
 ]
 export interface Prefs { theme?: 'light' | 'dark' | 'system'; lang?: 'en' | 'es'; start_module?: ModKey; start_site?: Site; notify?: { requests?: boolean; orders?: boolean } }
-export interface Access { owner: boolean; modules: Partial<Record<ModKey, Level>>; prefs: Prefs }
+export interface Access { owner: boolean; modules: Partial<Record<ModKey, Level>>; prefs: Prefs; perms?: Record<string, Record<string, boolean>>; login?: 'microsoft' | 'email' | null }
 export interface UserAccess { email: string; module: ModKey; level: Level }
 /** before 023 is run: work it out from the old role */
 export function accessFromRole(role: Role, extra: string[] = []): Access {

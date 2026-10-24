@@ -27,3 +27,11 @@ export const isAdminOf = (m: string) => !!acc && (acc.owner || (acc.modules as R
 export const isOwnerMe = () => !!acc?.owner
 /** can work in a module (User or Admin, not View) */
 export const canEditMod = (m: string) => !!acc && (acc.owner || ['user', 'admin'].includes((acc.modules as Record<string, string | undefined>)[m] ?? ''))
+/** the permissions grid (058): can I do this action in this module? Before 058: falls back to the level that used to be needed. */
+export function can(m: string, action: string, fallback: 'user' | 'admin' = 'admin') {
+  if (!acc) return false
+  if (acc.owner) return true
+  const p = acc.perms?.[m]?.[action]
+  if (p != null) return p
+  return fallback === 'user' ? canEditMod(m) : isAdminOf(m)
+}

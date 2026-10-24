@@ -4,11 +4,11 @@ import { MODULES } from './types'
 import type { AppUser, Customer, Level, Me, ModKey } from './types'
 import { LANGS } from './i18n'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { isAdminOf, isOwnerMe } from './fold'
+import { can, isOwnerMe } from './fold'
 
 type Kind = 'staff' | 'customer' | 'none'
 const KINDS: { k: Kind; label: string; what: string }[] = [
-  { k: 'staff', label: 'Staff', what: 'Signs in with their Lifted Microsoft account. Pick what they can use below.' },
+  { k: 'staff', label: 'Staff', what: 'Lifted staff. Pick how they sign in and what they can use below.' },
   { k: 'customer', label: 'Customer', what: 'Order portal only, for one customer account' },
   { k: 'none', label: 'No access', what: 'Blocked from the app' },
 ]
@@ -62,7 +62,7 @@ export function UsersTab({ backend, me, customers, flash }: {
         <input className="search" type="search" placeholder="Search people" value={q} onChange={e => setQ(e.target.value)} />
         <button className="primary" onClick={() => setEdit({ role: 'crew', access: { distribution: 'user' } })}>+ Add person</button>
       </div>
-      <p className="muted">Anyone with a Lifted Microsoft account can sign in and starts with Distribution. Give each person a level per module: User works in it, Admin also changes its settings and approves. Owners have everything. For a customer login, add them as Customer, then send the invite link.</p>
+      <p className="muted">Anyone with a Lifted Microsoft account can sign in and starts with Distribution. Staff without a Lifted email sign in with a code sent to their email (they can't be Admins). Give each person a level per module: User works in it, Admin also changes its settings and approves. Owners have everything. For a customer login, add them as Customer, then send the invite link.</p>
       {groups.map(([l, list]) => !list.length ? null : (
         <div key={l}>
           <h3 className="grouph">{l} <span className="muted">{list.length}</span></h3>
@@ -82,7 +82,8 @@ export function UsersTab({ backend, me, customers, flash }: {
         onSave={async (u, kind) => {
           try {
             await backend.saveUser({ email: u.email!, name: u.display_name ?? '', kind, customerId: kind === 'customer' ? u.customer_id ?? null : null,
-              access: kind === 'staff' ? (u.access ?? {}) : {}, owner: me.access.owner ? !!u.owner : undefined })
+              access: kind === 'staff' ? (u.access ?? {}) : {}, owner: me.access.owner ? !!u.owner : undefined,
+              login: kind === 'staff' && u.login_kind && u.login_kind !== edit.login_kind ? u.login_kind : null })
             if (kind === 'staff' && (u.prefs?.lang ?? 'en') !== (edit.prefs?.lang ?? 'en')) await backend.setUserLang(u.email!, u.prefs?.lang ?? 'en')
             await load(); flash('Saved')
             // new customer: keep the card open so the invite link can be made right away
@@ -111,11 +112,12 @@ function UserForm({ user, customers, me, isMe, onClose, onSave, onRemove, backen
   const isNew = !user.created_at
   const iOwn = me.access.owner
   const myLv = me.access.modules as Record<string, string | undefined>
-  const manages = (m: string) => iOwn || (m !== 'admin' && myLv[m] === 'admin')
+  const manages = (m: string) => iOwn || (m === 'admin' ? !!myLv.admin : can(m, 'people'))
   const hasAdminModule = iOwn || !!myLv.admin
-  // Owners, and anyone who's an Admin of something: only an Owner changes them
-  const protectedU = !!user.owner || user.role === 'admin' || Object.values(user.access ?? {}).includes('admin')
-  const locked = (!!user.owner && !iOwn) || (!iOwn && !isNew && (protectedU || isMe))
+  // Owners: only another Owner changes them. Everyone else: you change the modules you manage (the database checks each one).
+  const protectedU = !!user.owner
+  const locked = (!!user.owner && !iOwn) || (!iOwn && !isNew && isMe)
+  const emailLogin = (u.login_kind ?? (/@lifted-organics\.com$/i.test(u.email ?? '') || !isNew ? 'microsoft' : 'email')) === 'email'
   const kindLocked = locked || (!hasAdminModule)
   const emailOk = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test((u.email ?? '').trim())
   const ok = emailOk && !locked && (kind !== 'customer' || !!u.customer_id)
@@ -126,8 +128,8 @@ function UserForm({ user, customers, me, isMe, onClose, onSave, onRemove, backen
     <div className="scrim" onClick={onClose}>
       <div className="sheet form" onClick={e => e.stopPropagation()}>
         <div className="sheet-h"><h2>{isNew ? 'Add person' : 'Edit person'}</h2><button className="ghost" onClick={onClose}>✕</button></div>
-        {locked && <div className="warnbox">{isMe ? 'Ask an Owner to change your own access.' : user.owner ? `${user.display_name || user.email} is an Owner. Only another Owner can change them.` : `${user.display_name || user.email} is an Admin. Only an Owner can change another Admin.`}</div>}
-        {!iOwn && !locked && <p className="muted small">You can change the modules you're an Admin of: Off, View or User. Only Owners make Admins.</p>}
+        {locked && <div className="warnbox">{isMe ? 'Ask an Owner to change your own access.' : `${user.display_name || user.email} is an Owner. Only another Owner can change them.`}</div>}
+        {!iOwn && !locked && <p className="muted small">You can change the modules you run. Admins of a module can make other Admins of it (unless Permissions says otherwise).</p>}
         <div className="field"><label>Email</label>
           <input type="email" value={u.email ?? ''} disabled={!isNew} autoFocus={isNew} onChange={e => set({ email: e.target.value })} placeholder="name@company.com" /></div>
         <div className="field"><label>Name <span className="muted">(what the app shows)</span></label>
@@ -153,18 +155,29 @@ function UserForm({ user, customers, me, isMe, onClose, onSave, onRemove, backen
           </div>
         )}
         {kind === 'staff' && (<>
-          {iOwn && <label className="check"><input type="checkbox" checked={!!u.owner} disabled={isMe} onChange={e => set({ owner: e.target.checked })} />
+          <div className="field"><label>Signs in with</label>
+            <div className="seg">
+              <button className={!emailLogin ? 'on' : ''} disabled={locked || (!isNew && !hasAdminModule)} onClick={() => set({ login_kind: 'microsoft' })}>Lifted Microsoft account</button>
+              <button className={emailLogin ? 'on' : ''} disabled={locked || (!isNew && !hasAdminModule) || !!u.owner} onClick={() => setU(v => ({ ...v, login_kind: 'email', owner: false,
+                access: Object.fromEntries(Object.entries(v.access ?? {}).filter(([k, l]) => k !== 'admin' && l !== 'admin')) }))}>Email code</button>
+            </div>
+            {emailLogin && <p className="muted small">No Lifted email: they get a 6-digit code at this address each time they sign in. They can be View or User, never Admin.</p>}
+          </div>
+          {iOwn && !emailLogin && <label className="check"><input type="checkbox" checked={!!u.owner} disabled={isMe} onChange={e => set({ owner: e.target.checked })} />
             <span><b>Owner</b> <span className="muted">Everything in every module, and can make other Owners</span></span></label>}
           {u.owner ? <p className="muted">Owners have every module as Admin.</p> : (
             <div className="field"><label>Modules</label>
               <div className="accgrid">
                 {MODULES.filter(m => manages(m.key)).map(m => {
                   const lv = a[m.key] ?? null
-                  const opts: [Level | null, string][] = m.key === 'admin' ? [[null, 'Off'], ['admin', 'On']] : iOwn ? [[null, 'Off'], ['view', 'View'], ['user', 'User'], ['admin', 'Admin']] : [[null, 'Off'], ['view', 'View'], ['user', 'User']]
+                  const makeAdmin = !emailLogin && (iOwn || can(m.key, 'make_admins'))
+                  if (m.key === 'admin' && emailLogin) return null
+                  const opts: [Level | null, string][] = m.key === 'admin' ? [[null, 'Off'], ['admin', 'On']] : makeAdmin ? [[null, 'Off'], ['view', 'View'], ['user', 'User'], ['admin', 'Admin']] : [[null, 'Off'], ['view', 'View'], ['user', 'User']]
+                  const adminLocked = !makeAdmin && lv === 'admin'
                   return (
                     <div key={m.key} className="accrow">
                       <div><b>{m.label}</b><div className="muted">{lv === 'admin' && m.key !== 'admin' ? m.admin : lv === 'view' ? 'Sees everything a User sees, can\'t change anything' : lv ? m.user : m.what}</div></div>
-                      <div className="seg">{opts.map(([v, l]) => <button key={l} className={lv === v ? 'on' : ''} disabled={locked || (isMe && m.key === 'admin' && !iOwn)} onClick={() => setLevel(m.key, v)}>{l}</button>)}</div>
+                      {adminLocked ? <span className="pill">Admin</span> : <div className="seg">{opts.map(([v, l]) => <button key={l} className={lv === v ? 'on' : ''} disabled={locked || (isMe && m.key === 'admin' && !iOwn)} onClick={() => setLevel(m.key, v)}>{l}</button>)}</div>}
                     </div>
                   )
                 })}
@@ -225,20 +238,23 @@ function LinkBox({ backend, email, claimed, flash, onLinked }: {
   )
 }
 
-/** a module's Settings > People: who has this module and at what level. Owners set any level; the module's Admins set Off / View / User
- *  for people who aren't Admins. The database checks all of it (set_module_level). */
+/** a module's Settings > People: who has this module and at what level, and add someone to it. Owners set anything; the module's Admins
+ *  (or whoever Permissions allows) add people and set levels, including Admin. Email-code people can't be Admins. The database checks all of it. */
 export function ModulePeople({ sb, module, flash }: { sb: SupabaseClient | null; module: 'distribution' | 'sales' | 'cultivation' | 'nursery' | 'processing' | 'accounting' | 'compliance'; flash: (t: string, bad?: boolean) => void }) {
-  const [rows, setRows] = useState<{ email: string; name: string | null; owner: boolean; last: string | null; lv: Level | null }[] | null>(null)
+  type Row = { email: string; name: string | null; owner: boolean; last: string | null; lv: Level | null; login: 'microsoft' | 'email' }
+  const [rows, setRows] = useState<Row[] | null>(null)
   const [q, setQ] = useState('')
   const [busy, setBusy] = useState(false)
-  const own = isOwnerMe(), can = isAdminOf(module)
+  const [add, setAdd] = useState<{ email: string; name: string; login: 'microsoft' | 'email'; level: Level } | null>(null)
+  const own = isOwnerMe(), manage = own || can(module, 'people'), makeAdmins = own || can(module, 'make_admins')
   const load = async () => {
     if (!sb) return
-    const [u, a] = await Promise.all([sb.from('app_users').select('email,display_name,owner,last_seen,role').in('role', ['admin', 'sales', 'crew']).order('email'),
-      sb.from('module_access').select('email,level').eq('module', module)])
+    let u: { data: unknown[] | null; error: unknown } = await sb.from('app_users').select('email,display_name,owner,last_seen,role,login_kind').in('role', ['admin', 'sales', 'crew']).order('email')
+    if (u.error) u = await sb.from('app_users').select('email,display_name,owner,last_seen,role').in('role', ['admin', 'sales', 'crew']).order('email')   // before 058
+    const a = await sb.from('module_access').select('email,level').eq('module', module)
     const lv = new Map(((a.data ?? []) as { email: string; level: Level }[]).map(x => [x.email, x.level]))
-    setRows(((u.data ?? []) as { email: string; display_name: string | null; owner: boolean; last_seen: string | null }[])
-      .map(x => ({ email: x.email, name: x.display_name, owner: x.owner, last: x.last_seen, lv: x.owner ? 'admin' as Level : lv.get(x.email) ?? null })))
+    setRows(((u.data ?? []) as { email: string; display_name: string | null; owner: boolean; last_seen: string | null; login_kind?: 'microsoft' | 'email' }[])
+      .map(x => ({ email: x.email, name: x.display_name, owner: x.owner, last: x.last_seen, lv: x.owner ? 'admin' as Level : lv.get(x.email) ?? null, login: x.login_kind ?? 'microsoft' })))
   }
   useEffect(() => { load() }, [sb, module])
   if (!rows) return <p className="muted">Loading…</p>
@@ -251,6 +267,14 @@ export function ModulePeople({ sb, module, flash }: { sb: SupabaseClient | null;
     if (error) flash(/set_module_level/.test(error.message) ? 'Run 040_strains_access_pallets.sql in Supabase first' : error.message, true)
     else { flash('Access saved'); load() }
   }
+  const save = async () => {
+    if (!sb || !add) return
+    setBusy(true)
+    const { error } = await sb.rpc('add_module_person', { p_email: add.email.trim().toLowerCase(), p_name: add.name.trim() || null, p_module: module, p_level: add.level, p_login: add.login })
+    setBusy(false)
+    if (error) flash(/add_module_person/.test(error.message) ? 'Run 058_access.sql in Supabase first' : error.message, true)
+    else { flash(`${add.email} added to ${label}`); setAdd(null); load() }
+  }
   const viewAs = async (email: string) => {
     if (!sb) return
     const { error } = await sb.rpc('start_view_as', { p_email: email })
@@ -258,17 +282,32 @@ export function ModulePeople({ sb, module, flash }: { sb: SupabaseClient | null;
   }
   const ql = q.trim().toLowerCase()
   const shown = rows.filter(r => !ql || `${r.email} ${r.name ?? ''}`.toLowerCase().includes(ql)).sort((a, b) => Number(!a.lv) - Number(!b.lv) || a.email.localeCompare(b.email))
-  const opts: [Level | null, string][] = own ? [[null, 'Off'], ['view', 'View'], ['user', 'User'], ['admin', 'Admin']] : [[null, 'Off'], ['view', 'View'], ['user', 'User']]
+  const optsFor = (r: { login: string }): [Level | null, string][] => makeAdmins && r.login !== 'email' ? [[null, 'Off'], ['view', 'View'], ['user', 'User'], ['admin', 'Admin']] : [[null, 'Off'], ['view', 'View'], ['user', 'User']]
+  const emailOk = !!add && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(add.email.trim())
   return <div className="mpeople">
-    <p className="muted small">{own ? `Who has ${label}. You're an Owner, so you can set any level.` : can ? `Who has ${label}. As a ${label} Admin you can set Off, View or User for people who aren't Admins. Only Owners make Admins.` : `Who has ${label}.`}</p>
-    <input className="search" type="search" placeholder="Search people" value={q} onChange={e => setQ(e.target.value)} />
+    <p className="muted small">{own ? `Who has ${label}. You're an Owner, so you can set any level.` : manage ? `Who has ${label}. You can add people and set their level${makeAdmins ? ', including Admin' : ' (Off, View or User)'}. People who sign in with an email code can't be Admins.` : `Who has ${label}.`}</p>
+    <div className="row">
+      <input className="search" type="search" placeholder="Search people" value={q} onChange={e => setQ(e.target.value)} />
+      {manage && !add && <button className="primary small" onClick={() => setAdd({ email: '', name: '', login: 'microsoft', level: 'user' })}>+ Add person</button>}
+    </div>
+    {add && <div className="dcard addperson">
+      <div className="field"><label>Email</label><input type="email" autoFocus value={add.email} placeholder="name@company.com"
+        onChange={e => { const v = e.target.value; setAdd({ ...add, email: v, login: /@lifted-organics\.com\s*$/i.test(v) ? 'microsoft' : v.includes('@') ? 'email' : add.login }) }} /></div>
+      <div className="field"><label>Name</label><input value={add.name} onChange={e => setAdd({ ...add, name: e.target.value })} /></div>
+      <div className="field"><label>Signs in with</label><div className="seg">
+        <button className={add.login === 'microsoft' ? 'on' : ''} onClick={() => setAdd({ ...add, login: 'microsoft' })}>Lifted Microsoft account</button>
+        <button className={add.login === 'email' ? 'on' : ''} onClick={() => setAdd({ ...add, login: 'email', level: add.level === 'admin' ? 'user' : add.level })}>Email code</button></div>
+        {add.login === 'email' && <p className="muted small">For staff without a Lifted email: a 6-digit code is emailed each time they sign in.</p>}</div>
+      <div className="field"><label>{label}</label><div className="seg">{optsFor(add).filter(([v]) => v).map(([v, l]) => <button key={l} className={add.level === v ? 'on' : ''} onClick={() => setAdd({ ...add, level: v! })}>{l}</button>)}</div></div>
+      <div className="row"><button className="ghost" onClick={() => setAdd(null)}>Cancel</button><button className="primary" disabled={busy || !emailOk} onClick={save}>Add</button></div>
+    </div>}
     <div className="dlist">{shown.map(r => {
-      const locked = !can || (!own && (r.owner || r.lv === 'admin'))
+      const locked = !manage || r.owner || (!own && r.lv === 'admin' && !makeAdmins)
       return <div key={r.email} className={`drow ${r.lv ? '' : 'off'}`}>
-        <span className="grow"><b>{r.name || r.email.split('@')[0]}</b><span className="muted small"> · {r.email}{r.owner ? ' · Owner' : ''}</span></span>
+        <span className="grow"><b>{r.name || r.email.split('@')[0]}</b><span className="muted small"> · {r.email}{r.owner ? ' · Owner' : ''}{r.login === 'email' ? ' · email code' : ''}</span></span>
         {locked ? <span className="pill">{r.owner ? 'Owner' : r.lv ? r.lv[0].toUpperCase() + r.lv.slice(1) : 'Off'}</span>
-          : <div className="seg">{opts.map(([v, l]) => <button key={l} disabled={busy} className={r.lv === v ? 'on' : ''} onClick={() => r.lv !== v && set(r.email, v)}>{l}</button>)}</div>}
-        {can && !r.owner && (own || r.lv !== 'admin') && r.lv && <button className="ghost small" title="See what they see (read only, 2 hours)" onClick={() => viewAs(r.email)}>View as</button>}
+          : <div className="seg">{optsFor(r).map(([v, l]) => <button key={l} disabled={busy} className={r.lv === v ? 'on' : ''} onClick={() => r.lv !== v && set(r.email, v)}>{l}</button>)}</div>}
+        {manage && !r.owner && (own || r.lv !== 'admin') && r.lv && <button className="ghost small" title="See what they see (read only, 2 hours)" onClick={() => viewAs(r.email)}>View as</button>}
       </div>
     })}</div>
   </div>

@@ -2,7 +2,8 @@
 // Drop targets are elements with data-slot="<id>" or data-tray.
 import { useEffect, useState } from 'react'
 
-export interface DragPayload { id: number; label: string }
+/** id: the pallet; ids: a whole stack (dragged by its grip); span: a trailer pallet's "take more spots" handle */
+export interface DragPayload { id: number; label: string; ids?: number[]; span?: boolean }
 export type DropTarget = { slot: number } | { tray: true }
 type Listener = (s: { payload: DragPayload; x: number; y: number; over: string | null } | null) => void
 
@@ -48,6 +49,7 @@ export function draggable(payload: DragPayload, enabled = true) {
   return {
     onMouseDown: (e: React.MouseEvent) => {
       if (e.button !== 0) return
+      e.stopPropagation()   // the innermost draggable wins (a pallet in a stack, not the stack)
       const sx = e.clientX, sy = e.clientY
       let started = false
       const move = (ev: MouseEvent) => {
@@ -62,6 +64,7 @@ export function draggable(payload: DragPayload, enabled = true) {
     },
     onTouchStart: (e: React.TouchEvent) => {
       const t = e.touches[0]; if (!t) return
+      e.stopPropagation()
       const sx = t.clientX, sy = t.clientY
       let x = sx, y = sy
       const timer = setTimeout(() => { dragging = { payload, x, y }; navigator.vibrate?.(15); emit() }, 380)

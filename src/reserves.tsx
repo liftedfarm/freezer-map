@@ -349,6 +349,7 @@ function OrderEditor({ backend, o, strains, flash, onChanged }: {
   backend: Backend; o: Order; strains: Strain[]; flash: (t: string, bad?: boolean) => void; onChanged: () => void
 }) {
   const [so, setSo] = useState(o.so_number ?? '')
+  const [shipOn, setShipOn] = useState(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` })
   const [edits, setEdits] = useState<Record<number, { lbs: string; price: string }>>({})
   const [add, setAdd] = useState({ strain: '', lbs: '' })
   const [busy, setBusy] = useState(false)
@@ -396,7 +397,8 @@ function OrderEditor({ backend, o, strains, flash, onChanged }: {
           <input placeholder="Roshi SO # (optional)" value={so} onChange={e => setSo(e.target.value)} />
           {o.status === 'submitted' && <button className="primary small" disabled={busy} onClick={() => run(() => backend.setOrderStatus(o.id, 'pending', so, ''), 'Order confirmed')}>Confirm</button>}
           {o.status === 'pending' && so !== (o.so_number ?? '') && <button className="ghost small" disabled={busy} onClick={() => run(() => backend.setOrderStatus(o.id, 'pending', so, ''), 'SO # saved')}>Save SO #</button>}
-          <button className="ghost small" disabled={busy} onClick={() => run(() => backend.setOrderStatus(o.id, 'shipped', so, ''), 'Marked shipped')}>Mark shipped</button>
+          <span className="row"><input type="date" value={shipOn} onChange={e => setShipOn(e.target.value)} aria-label="Shipped on" title="The day it actually shipped" style={{ maxWidth: 150 }} />
+            <button className="ghost small" disabled={busy} onClick={() => run(() => backend.setOrderStatus(o.id, 'shipped', so, '', shipOn || null), 'Marked shipped')}>Mark shipped</button></span>
           <button className="ghost small" disabled={busy} onClick={() => run(() => backend.setOrderStatus(o.id, 'cancelled', so, ''), 'Order cancelled')}>Cancel order</button>
         </div>
       )}

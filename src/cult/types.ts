@@ -17,7 +17,7 @@ export interface Planting {
   id: number; crop_year: number; site: SiteCode; field_id: number | null; strain: string; batch: number | null; source: Source
   nursery: string | null; planted_on: string | null; plants: number | null; plant_loss: number | null; spacing_in: number | null
   beds: number | null; acres: number | null; license: string | null; first_flower: string | null; est_lbs_per_plant: number | null
-  seed_lbs: number | null; notes: string | null; updated_by?: string | null; updated_at?: string
+  seed_lbs: number | null; notes: string | null; trial?: boolean; updated_by?: string | null; updated_at?: string
 }
 export interface Harvest {
   id: number; crop_year: number; site: SiteCode; field_id: number | null; strain: string; planting_id: number | null
@@ -27,6 +27,9 @@ export interface Harvest {
   harvested_on: string | null; plants_harvested: number | null; raw_bins: number[]; raw_lbs: number | null; ff_lbs: number | null
   bucked_lbs: number | null; trim_lbs: number | null; mold_lbs: number | null; metrc_name: string | null; notes: string | null
   stage?: 'harvesting' | 'drying' | null; dry_lbs?: number | null
+  /** 057: split days, what METRC already has, the planted name before a rename */
+  parent_id?: number | null; day_no?: number | null; metrc_wet_lbs?: number | null; metrc_plants?: number | null
+  waste_lbs?: number | null; planted_strain?: string | null
   updated_by?: string | null; updated_at?: string
 }
 export interface CTest {
@@ -39,10 +42,10 @@ export interface Pick { id: number; crop_year: number; strain: string; dry_lbs: 
 export interface CPallet {
   id: number; code: string; harvest_id: number; og_weight: number | null; current_weight: number | null; status: string
   package_tag: string | null; harvest_date: string | null; slot_id: number | null; parent_id: number | null
-  boxes?: number | null; partial?: boolean; tag_pending?: boolean
+  boxes?: number | null; partial?: boolean; tag_pending?: boolean; pushed?: boolean; notes?: string | null
 }
 /** one weight logged on the Harvest screen (026) */
-export interface CWeight { id: number; harvest_id: number; kind: 'raw' | 'tote' | 'dry'; lbs: number; tag: string | null; note: string | null; created_by: string | null; created_at: string }
+export interface CWeight { id: number; harvest_id: number; kind: 'raw' | 'tote' | 'dry'; lbs: number; pushed?: boolean; tag: string | null; note: string | null; created_by: string | null; created_at: string }
 export interface Demand { id: number; crop_year: number; strain: string; lbs: number; notes: string | null }
 export interface PlanRow {
   id: number; crop_year: number; site: SiteCode; field_id: number | null; strain: string; nursery: string | null; source: Source
@@ -59,7 +62,7 @@ export interface Receipt {
 }
 export interface YieldHist { id: number; crop_year: number; site: string; strain: string; field: string | null; plants: number | null; ff_lbs: number | null; planted_on: string | null; harvested_on: string | null }
 export interface LogRow { id: number; at: string; user_email: string | null; tbl: string; row_id: number | null; op: string; data: Record<string, unknown> | null; was: Record<string, unknown> | null }
-export interface StrainLite { name: string; aliases: string[] | null; roshi_name?: string | null; active?: boolean }
+export interface StrainLite { name: string; aliases: string[] | null; roshi_name?: string | null; active?: boolean; trial?: boolean }
 
 export interface CultSettings { sampleWeekday: number; labs: string[]; equipment: string[]; readyDays: number; bufferPct: number }
 
