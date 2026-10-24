@@ -488,6 +488,8 @@ body.dragging { user-select: none; -webkit-user-select: none; cursor: grabbing; 
 :root[data-theme="dark"] .app.mod-cult .top .brand .app-name { color: #fbbf24; }
 @media (min-width: 1000px) {
   .app.with-mods .modpick { display: none; }
+  .app.with-mods .top .logo-img { display: none !important; }  /* the rail already shows the logo */
+  .app.with-mods .top .brand .app-name { font-size: 22px; }
   .rail { display: flex; position: fixed; top: 0; bottom: 0; left: 0; z-index: 7; }
   .rail-mods { width: 84px; background: #12301f; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 14px 0; }
   .rail-logo { width: 68px; height: auto; display: block; margin-bottom: 12px; }  /* rail is always dark green: white-lettering logo */
