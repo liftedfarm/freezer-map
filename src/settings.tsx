@@ -312,7 +312,7 @@ function summary(list: ListName, r: ListRow, inv: Map<string, number>) {
   return [s.trial ? 'Trial strain' : '', s.show_on_menu === false ? 'Hidden from menu' : '', n ? `${n} pallet${n === 1 ? "" : "s"} in inventory` : 'none in inventory', s.aliases?.length ? `also: ${s.aliases.join(', ')}` : ''].filter(Boolean).join(' · ')
 }
 
-function EditForm({ list, row, busy, onClose, onSave, extra, terms }: {
+export function EditForm({ list, row, busy, onClose, onSave, extra, terms }: {
   list: ListName; row: Partial<ListRow>; busy: boolean; onClose: () => void; onSave: (r: Partial<ListRow>) => void; extra?: React.ReactNode
   terms?: { code: string; label: string }[]
 }) {

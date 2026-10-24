@@ -1,5 +1,5 @@
 // Accounting actions: { action: 'status' | 'push' | 'sync' | 'check' | 'setup' | 'disconnect', invoice_id? }
-import { ENV, caller, classId, companyName, connection, itemId, missingSetup, pushInvoice, qbo, query, revoke, rpc, send, syncBalances, table } from './_lib.js'
+import { ENV, caller, classId, companyName, connection, itemId, missingSetup, pushInvoice, qbo, query, revoke, rpc, send, syncBalances, syncCustomers, table } from './_lib.js'
 
 export const config = { maxDuration: 60 }
 
@@ -38,7 +38,10 @@ export default async function handler(req, res) {
     }
     if (action === 'sync') {
       const c = await connection()
-      return send(res, 200, { env: ENV, ...(await syncBalances(c)) })
+      const inv = await syncBalances(c)
+      let cust
+      try { cust = await syncCustomers(c) } catch (e) { cust = { customers_error: String(e.message || e).slice(0, 300) } }
+      return send(res, 200, { env: ENV, ...inv, ...cust })
     }
     if (action === 'check') {
       // is every product and class we use in QuickBooks (exactly as named)?

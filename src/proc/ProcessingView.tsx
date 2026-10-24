@@ -1,3 +1,5 @@
+import { StrainLink } from '../strainCard'
+import { useBack } from '../nav'
 import '../cult/cult.css'
 import './proc.css'
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -70,6 +72,7 @@ export default function ProcessingView({ backend, flash, tab, go, isAdmin, canEd
   const [err, setErr] = useState<string | null>(null)
   const [run, setRun] = useState<Run | null>(null)
   const [logDate, setLogDate] = useState<string | null>(null)
+  useBack(!!logDate, () => setLogDate(null))
   const [pkg, setPkg] = useState<Pallet | null>(null)
   const [startKind, setStartKind] = useState<{ kind: Run['kind']; req?: Req; ids?: number[] } | null>(null)
   const [sendIds, setSendIds] = useState<number[] | null>(null)
@@ -675,7 +678,7 @@ function PackageSheet({ c, p, onClose }: { c: Ctx; p: Pallet; onClose: () => voi
   const here = live(p), free = here && !r && !h, can = c.canEdit
   const info = c.inv?.info(p.id)
   const go = (f: () => void) => { onClose(); f() }
-  return <Sheet title={p.code} sub={<>{p.strain} <Prod p={p.product} /></>} onClose={onClose}>
+  return <Sheet title={p.code} sub={<><StrainLink name={p.strain} /> <Prod p={p.product} /></>} onClose={onClose}>
     {r && <div className="infobox">Being {r.kind === 'buck' ? 'bucked' : r.kind === 'sort' ? 'sorted' : r.kind === 'machine' ? 'machine trimmed' : 'trimmed'} in <a onClick={() => c.openRun(r)}>{r.code}</a>. Open the run to finish it.</div>}
     {h && <div className="infobox held">Committed to {h}. Distribution ships it from Fulfillment.</div>}
     {can && <div className="actions">

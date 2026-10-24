@@ -16,6 +16,7 @@ import { Deadlines, dueText, dueTone } from './deadlines'
 import { Ccof } from './ccof'
 import { Metrc } from './metrc'
 import { fmtD } from './files'
+import { CompFleet, FleetCard } from '../fleet/Fleet'
 
 const when = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '')
 const ago = (iso: string | null | undefined) => (iso ? Math.round((Date.now() - new Date(iso).getTime()) / 86400000) : null)
@@ -52,6 +53,7 @@ export default function ComplianceView({ backend, flash, tab, go, isAdmin, canEd
       {tab === 'library' && <Library c={c} />}
       {tab === 'ccof' && <Ccof c={c} />}
       {tab === 'metrc' && <Metrc c={c} />}
+      {tab === 'fleet' && <CompFleet sb={sb} flash={flash} />}
       {tab === 'review' && <Review c={c} />}
       {tab === 'settings' && (isAdmin ? <SettingsTab c={c} /> : <div className="list"><h2>Settings</h2><p className="muted">Only Compliance Admins can change Compliance settings.</p></div>)}
     </div>
@@ -91,6 +93,7 @@ function Dashboard({ c }: { c: Ctx }) {
           return <div key={l} className="drow"><span className="grow mono">{l}</span><span className={`pill ${d == null ? 'cp-warn' : d > 35 ? 'cp-warn' : 'cp-ok'}`}>{at ? `${fmtD(at)}` : 'never'}</span></div> })}</div>
         <p className="muted small">Upload each license's METRC Active Packages export at least monthly.</p>
       </Card>
+      <FleetCard sb={c.api.sb} go={() => c.go('fleet')} />
       <Card title="Library" action="Open" onAction={() => c.go('library')}>
         <div className="dlist">{c.types.filter(t => (ov.docs_by_type[t.key] ?? 0) > 0).map(t => <div key={t.key} className="drow"><span className="grow">{t.label}</span><b>{ov.docs_by_type[t.key]}</b></div>)}</div>
         {!ov.docs && <Empty>No documents yet. Open the Library and drop files in.</Empty>}

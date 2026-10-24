@@ -899,3 +899,129 @@ Not on the product list, so not CCOF approved yet. Check with Compliance before 
 Not allowed by CCOF. Check with Compliance before using it.	No está permitido por CCOF. Consulte con Cumplimiento antes de usarlo.
 Not CCOF approved yet. Check with Compliance before using it.	Todavía no está aprobado por CCOF. Consulte con Cumplimiento antes de usarlo.
 Its CCOF listing had expired on this date. Tell Compliance.	Su registro de CCOF ya había vencido en esta fecha. Avise a Cumplimiento.
+(auto)	(automático)
+Expected %	% esperado
+Leach % = leachate volume ÷ front mL. Expected % = average of front and back mL ÷ water per plant.	% de lixiviado = volumen de lixiviado ÷ mL del frente. % esperado = promedio de mL del frente y de atrás ÷ agua por planta.
+Vehicles: inspections, maintenance, incidents	Vehículos: inspecciones, mantenimiento, incidentes
+Accident, damage, injury, near miss	Accidente, daño, lesión, casi accidente
+Anyone hurt?	¿Alguien se lastimó?
+Closed {d} by {w}	Cerrado {d} por {w}
+Cost ($)	Costo ($)
+Defects found	Se encontraron fallas
+Done by	Hecho por
+Due at (hours)	Toca a las (horas)
+Due at (mi)	Toca a las (millas)
+Due date	Fecha
+File a report from your phone. Photos help.	Haz un reporte desde tu teléfono. Las fotos ayudan.
+Get care first. Tell your supervisor right away.	Primero busca atención. Avisa a tu supervisor de inmediato.
+Incident reported. Compliance will follow up.	Incidente reportado. Cumplimiento le dará seguimiento.
+Inspection	Inspección
+Inspection due	Toca inspección
+Maintenance	Mantenimiento
+Incident	Incidente
+Mark the rest OK	Marcar lo demás OK
+My reports	Mis reportes
+N/A	N/A
+Needs the database (not in the demo).	Necesita la base de datos (no en el demo).
+New inspection	Nueva inspección
+New maintenance	Nuevo mantenimiento
+Next service	Próximo servicio
+No	No
+Yes	Sí
+No checklist set for this one.	No tiene lista de revisión.
+None / other	Ninguno / otro
+Not safe to use. It shows as out of service until Compliance puts it back.	No es seguro usarlo. Sale fuera de servicio hasta que Cumplimiento lo regrese.
+OK	OK
+Odometer (mi)	Odómetro (millas)
+Oil change, new tires, brake pads…	Cambio de aceite, llantas nuevas, balatas…
+One line, e.g. backed into the gate post at GVR	Una línea, p. ej. pegó en reversa con el poste del portón en GVR
+Open items	Pendientes
+Open: Compliance is following up.	Abierto: Cumplimiento le está dando seguimiento.
+Open: defects to fix.	Abierto: fallas por arreglar.
+Other vehicle (plate, driver, insurance)	Otro vehículo (placa, chofer, seguro)
+Out of service	Fuera de servicio
+out of service	fuera de servicio
+Passed	Pasó
+People involved	Personas involucradas
+Photos added	Fotos agregadas
+Photos and files	Fotos y archivos
+Pick one…	Escoge uno…
+Pick the result	Escoge el resultado
+Pick the vehicle or equipment	Escoge el vehículo o equipo
+Pick the vehicle or equipment to see its checklist.	Escoge el vehículo o equipo para ver su lista de revisión.
+Police report #	Núm. de reporte de policía
+Pre-trip or equipment check	Revisión antes de salir o de equipo
+Problem	Problema
+Report an incident	Reportar un incidente
+Report removed	Reporte borrado
+Report saved	Reporte guardado
+Save report	Guardar reporte
+Say what happened	Di qué pasó
+Say what was done	Di qué se hizo
+Send report	Enviar reporte
+Service, repair, oil change	Servicio, reparación, cambio de aceite
+Shop / vendor	Taller / proveedor
+Take photos of the damage, defects or receipts	Toma fotos del daño, las fallas o los recibos
+Time	Hora
+Uploading photos {s}	Subiendo fotos {s}
+Uploading…	Subiendo…
+Vehicle or equipment	Vehículo o equipo
+Vehicle or equipment (if any)	Vehículo o equipo (si hay)
+Vehicles	Vehículos
+Vehicles and equipment	Vehículos y equipo
+View only. Only Compliance can change a report after the day it was filed.	Solo ver. Solo Cumplimiento puede cambiar un reporte después del día en que se hizo.
+What happened	Qué pasó
+What was done	Qué se hizo
+What's wrong?	¿Qué tiene?
+Witnesses	Testigos
+by {w}	por {w}
+last {d}	último {d}
+last {n}	último {n}
+never	nunca
+open	abierto
+our crew or shop name	nuestro equipo o nombre del taller
+photo	foto
+photos	fotos
+{n} checklist items left	Faltan {n} puntos de la lista
+Other notes	Otras notas
+Parts and details	Partes y detalles
+Full description	Descripción completa
+What happened, step by step	Qué pasó, paso por paso
+Who and what kind of injury	Quién y qué tipo de lesión
+Damage	Daño
+Our vehicle or equipment, other vehicles, property	Nuestro vehículo o equipo, otros vehículos, propiedad
+Where	Dónde
+Vehicle (pre-trip)	Vehículo (antes de salir)
+Trailer / reefer	Tráiler / refrigerado
+Equipment	Equipo
+Lights, signals, hazards	Luces, direccionales, intermitentes
+Brakes and parking brake	Frenos y freno de mano
+Tires and wheels	Llantas y rines
+Steering	Dirección
+Horn	Claxon
+Wipers and windshield	Limpiadores y parabrisas
+Mirrors	Espejos
+Seat belts	Cinturones
+Oil, coolant, fluids	Aceite, anticongelante, líquidos
+No leaks	Sin fugas
+Body and doors (no new damage)	Carrocería y puertas (sin daño nuevo)
+Fire extinguisher	Extintor
+First aid kit	Botiquín
+Registration and insurance card in the vehicle	Registro y tarjeta de seguro en el vehículo
+Cargo area clean, locks and seals	Caja limpia, candados y sellos
+Hitch, coupler, safety chains	Enganche, acoplador, cadenas de seguridad
+Lights and signals	Luces y direccionales
+Brakes and breakaway	Frenos y freno de emergencia
+Doors, locks, seals	Puertas, candados, sellos
+Reefer running, temperature OK	Refrigeración prendida, temperatura bien
+Reefer fuel	Combustible del refrigerado
+Floor and walls clean, no damage	Piso y paredes limpios, sin daño
+Registration on file	Registro en archivo
+Oil, hydraulic, coolant levels	Niveles de aceite, hidráulico, anticongelante
+Tires or tracks	Llantas u orugas
+Guards and shields in place	Guardas y protecciones en su lugar
+Belts and chains	Bandas y cadenas
+Hydraulic hoses	Mangueras hidráulicas
+Lights and backup alarm	Luces y alarma de reversa
+Controls and seat	Controles y asiento
+Safety decals readable	Calcomanías de seguridad legibles

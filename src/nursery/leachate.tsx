@@ -18,6 +18,17 @@ const f = (x: number | null | undefined, d = 1) => (x == null ? '' : String(Math
 const avg = (xs: (number | null)[]) => { const v = xs.filter((x): x is number => x != null && Number(x) > 0).map(Number); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null }
 const inEc = (r: Leach) => avg([r.front_ec, r.back_ec]), inPh = (r: Leach) => avg([r.front_ph, r.back_ph])
 
+// Leach % = leachate volume out ÷ front emitter mL (the catch sits at the front). Expected % = average emitter mL ÷ water per plant.
+// Same math as the 2026 Field Leachate sheet; the database (060) recalculates on every save too.
+const r1 = (v: number) => Math.round(v * 10) / 10
+export function leachPct(r: Partial<Leach>): number | null {
+  return r.leach_vol != null && r.front_ml != null && r.front_ml > 0 ? r1(r.leach_vol / r.front_ml * 100) : null
+}
+export function expectPct(r: Partial<Leach>): number | null {
+  const ins = [r.front_ml, r.back_ml].filter((v): v is number => v != null)
+  return ins.length && r.water_ml_plant != null && r.water_ml_plant > 0 ? r1(ins.reduce((a, b) => a + b, 0) / ins.length / r.water_ml_plant * 100) : null
+}
+
 /** Nursery > Logs > Leachate: EC and pH going in vs coming out, per hoop per day */
 export function Leachate({ sb, d, flash }: { sb: SupabaseClient; d: NData; flash: Flash }) {
   const [rows, setRows] = useState<Leach[] | null>(null)
@@ -66,7 +77,7 @@ export function Leachate({ sb, d, flash }: { sb: SupabaseClient; d: NData; flash
           return <tr key={r.id} className="tap" onClick={() => setEd(r)}>
             <td>{where(r) || '—'}</td><td className="num">{f(r.leach_vol, 0)}</td><td className="num">{f(r.leach_ec)}</td><td className="num">{f(r.leach_ph)}</td>
             <td className="num">{f(inEc(r))}</td><td className="num">{f(inPh(r))}</td><td className="num hide-s">{f(r.front_ml, 0)}</td><td className="num hide-s">{f(r.back_ml, 0)}</td>
-            <td className="num hide-s">{r.leach_pct != null ? `${f(r.leach_pct)}%` : ''}</td><td className="hide-s small">{r.notes}</td></tr>
+            <td className="num hide-s">{(r.leach_pct ?? leachPct(r)) != null ? `${f(r.leach_pct ?? leachPct(r))}%` : ''}</td><td className="hide-s small">{r.notes}</td></tr>
         })}
       </Fragment>)}</tbody>
     </table></div>}
@@ -84,6 +95,7 @@ function LeachSheet({ sb, d, x0, can, flash, onClose, onSaved }: { sb: SupabaseC
     setBusy(true)
     const row: Record<string, unknown> = { site: x.site ?? '1PN', room_id: x.room_id ?? null, bed: x.bed || null, taken_on: x.taken_on, notes: x.notes || null }
     for (const k of NUMS) row[k] = x[k] ?? null
+    row.leach_pct = leachPct(x); row.expect_pct = expectPct(x)
     const { error } = x.id ? await sb.from('nursery_leachate').update(row).eq('id', x.id) : await sb.from('nursery_leachate').insert(row)
     setBusy(false)
     if (error) flash(error.message, true); else await onSaved(t('Leachate saved'))
@@ -104,7 +116,10 @@ function LeachSheet({ sb, d, x0, can, flash, onClose, onSaved }: { sb: SupabaseC
     <div className="grid3">{n('leach_vol', 'Leachate volume')}{n('leach_ec', 'EC out')}{n('leach_ph', 'pH out')}</div>
     <h3>{t('Going in')}</h3>
     <div className="grid3">{n('front_ml', 'Front mL')}{n('front_ec', 'Front EC')}{n('front_ph', 'Front pH')}{n('back_ml', 'Back mL')}{n('back_ec', 'Back EC')}{n('back_ph', 'Back pH')}</div>
-    <div className="grid3">{n('minutes', 'Run time (min)')}{n('water_ml_plant', 'Water per plant (mL)')}{n('leach_pct', 'Leach %')}</div>
+    <div className="grid3">{n('minutes', 'Run time (min)')}{n('water_ml_plant', 'Water per plant (mL)')}
+      <F label={t('Leach %')} hint={t('(auto)')}><div className="calcval">{leachPct(x) != null ? `${f(leachPct(x))}%` : '—'}</div></F></div>
+    <div className="grid3"><F label={t('Expected %')} hint={t('(auto)')}><div className="calcval">{expectPct(x) != null ? `${f(expectPct(x))}%` : '—'}</div></F></div>
+    <p className="muted small">{t('Leach % = leachate volume ÷ front mL. Expected % = average of front and back mL ÷ water per plant.')}</p>
     <F label={t('Notes')}><TextIn value={x.notes} onChange={v => set({ notes: v })} /></F>
     {x.source && x.source !== 'app' && <p className="muted small">{t('From the 2026 Field Leachate sheet.')}</p>}
     {can ? <SaveBar busy={busy} disabled={!x.taken_on} onCancel={onClose} onSave={save} onDelete={x.id ? del : undefined} />

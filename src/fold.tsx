@@ -35,3 +35,5 @@ export function can(m: string, action: string, fallback: 'user' | 'admin' = 'adm
   if (p != null) return p
   return fallback === 'user' ? canEditMod(m) : isAdminOf(m)
 }
+/** Admin of any module (or Owner): can change strain names, colors and other names */
+export const isAnyAdmin = () => !!acc && (acc.owner || Object.values(acc.modules as Record<string, string | undefined>).includes('admin'))

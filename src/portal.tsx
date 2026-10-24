@@ -1,3 +1,4 @@
+import { CustomerDashboard } from './statement'
 import { useEffect, useState } from 'react'
 import type { Backend } from './api'
 import type { Balance, LinkInfo, Me, ReserveRequest, ReserveYears, Terms } from './types'
@@ -137,6 +138,7 @@ export function Portal({ backend, me, signOut }: { backend: Backend; me: Me; sig
             <button className="primary" disabled={pw.length < 8 || pw !== pw2}>Change password</button>
           </form>
         )}
+        <CustomerDashboard backend={backend} rev={rev} />
         <div className="portal-soon" key={rev}>
           <h3>Orders</h3><MyOrders backend={backend} onChange={m => { setMsg(m); setRev(r => r + 1) }} />
           {reserves && future.map(y => <div key={y.year}><h3>{y.year} reserves</h3><ReserveTable backend={backend} year={y.year} current={false} deadline={y.deadline} open={y.open} onMsg={setMsg} /></div>)}

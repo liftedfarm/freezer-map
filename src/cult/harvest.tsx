@@ -1,6 +1,8 @@
+import { StrainLink } from '../strainCard'
+import { useBack } from '../nav'
 import { useEffect, useRef, useState } from 'react'
 import type { CultApi } from './api'
-import { calcHarvest, fieldName, fmtD, KIND_LABEL, n0, n1, sum, today } from './calc'
+import { addDays, calcHarvest, fieldName, fmtD, KIND_LABEL, n0, n1, sum, today } from './calc'
 import type { Ctx } from './calc'
 import type { CPallet, CWeight, CultData, Harvest } from './types'
 import { DateIn, errText, F, NumIn, TextIn } from './ui'
@@ -21,12 +23,17 @@ export function HarvestTab({ d, c, site, api, flash, onSaved, openFirst }: { d: 
   const [openId, setOpenId] = useState<number | null>(openFirst ?? null)
   const hs = d.harvests.filter(h => (!site || h.site === site) && h.status !== 'cancelled')
   const open = d.harvests.find(h => h.id === openId && h.status !== 'cancelled')
+  useBack(!!open, () => setOpenId(null))
   if (open) return <LogPage h={open} d={d} c={c} api={api} flash={flash} onSaved={onSaved} back={() => setOpenId(null)} />
 
   const now = today()
   const going = hs.filter(h => h.stage === 'harvesting')
   const drying = hs.filter(h => h.stage === 'drying')
   const planned = hs.filter(h => h.status === 'planned' && !h.stage && h.planned_on === day)
+  // the week after the picked day, grouped by day
+  const weekEnd = addDays(day, 7)
+  const ahead = hs.filter(h => h.status === 'planned' && !h.stage && h.planned_on && h.planned_on > day && h.planned_on <= weekEnd)
+  const aheadDays = [...new Set(ahead.map(h => h.planned_on!))].sort()
   const behind = day === now ? hs.filter(h => h.status === 'planned' && !h.stage && h.planned_on && h.planned_on < now) : []
   const done = hs.filter(h => h.status === 'done' && h.harvested_on === day)
   const card = (h: Harvest, extra?: string) => {
@@ -51,7 +58,10 @@ export function HarvestTab({ d, c, site, api, flash, onSaved, openFirst }: { d: 
       </div>
       {going.length > 0 && <section><h3 className="csec">Harvesting now</h3>{going.map(h => card(h, `Started ${fmtD(h.harvested_on, true)}`))}</section>}
       <section><h3 className="csec">{day === now ? 'On the schedule today' : `Scheduled ${fmtD(day, true)}`}</h3>
-        {planned.length ? planned.map(h => card(h)) : <p className="muted">Nothing scheduled{site ? ` at ${site}` : ''}. Pick another day, or add the harvest on the Schedule.</p>}</section>
+        {planned.length ? planned.map(h => card(h)) : <p className="muted">Nothing scheduled{site ? ` at ${site}` : ''}{aheadDays.length ? '' : ' this week'}. Pick another day, or add the harvest on the Schedule.</p>}</section>
+      <section><h3 className="csec">Next 7 days <span className="muted">through {fmtD(weekEnd, true)}</span></h3>
+        {aheadDays.length ? aheadDays.map(dd => <div key={dd} className="hahead"><div className="hahead-d">{fmtD(dd, true)}</div>{ahead.filter(h => h.planned_on === dd).map(h => card(h))}</div>)
+          : <p className="muted">Nothing else scheduled{site ? ` at ${site}` : ''} in the next 7 days.</p>}</section>
       {drying.length > 0 && <section><h3 className="csec">Drying</h3>{drying.map(h => card(h, `Cut ${fmtD(h.harvested_on, true)} · enter the dry weight when it's out`))}</section>}
       {behind.length > 0 && <section><h3 className="csec">Not logged yet <span className="muted">from earlier days</span></h3>{behind.map(h => card(h, `Scheduled ${fmtD(h.planned_on, true)}`))}</section>}
       {done.length > 0 && <section><h3 className="csec">Finished {day === now ? 'today' : fmtD(day, true)}</h3>{done.map(h => card(h, 'Done'))}</section>}
@@ -86,7 +96,7 @@ function LogPage({ h, d, c, api, flash, onSaved, back }: { h: Harvest; d: CultDa
   return (
     <div className="hlog">
       <button className="ghost small hback" onClick={back}>‹ Harvest</button>
-      <h2>{h.strain} {trial && <span className="kpill k-trial" title="Trial strain">T</span>} {(h.day_no ?? 1) > 1 && <span className="kpill s-planned">Day {h.day_no}</span>} <span className="muted">{h.site} {fieldName(c, h.field_id)}</span></h2>
+      <h2><StrainLink name={h.strain} /> {trial && <span className="kpill k-trial" title="Trial strain">T</span>} {(h.day_no ?? 1) > 1 && <span className="kpill s-planned">Day {h.day_no}</span>} <span className="muted">{h.site} {fieldName(c, h.field_id)}</span></h2>
       {h.planted_strain && h.planted_strain !== h.strain && <p className="muted small">Planted as {h.planted_strain} (renamed at harvest; the planting keeps its name)</p>}
       <div className="row wrap"><span className={`kpill k-${h.kind}`}>{KIND_LABEL[h.kind]}</span>
         <span className="muted">{done ? `Finished · harvested ${fmtD(h.harvested_on, true)}` : h.stage === 'drying' ? `Drying since ${fmtD(h.harvested_on, true)}` : h.stage === 'harvesting' ? `Harvesting · started ${fmtD(h.harvested_on, true)}` : `Scheduled ${fmtD(h.planned_on, true)}`}

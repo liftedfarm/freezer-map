@@ -6,7 +6,7 @@ import { DocList, SITES, fmtD, today } from './files'
 import { DocSheet } from './library'
 import { DateIn, F, NumIn, Pick, SaveBar, Sheet, TextIn, errText } from '../cult/ui'
 
-const KIND_LABEL: Record<Deadline['kind'], string> = { obligation: 'Deadline', doc: 'Document', license: 'License', material: 'Material listing', customer: 'Customer license' }
+const KIND_LABEL: Record<Deadline['kind'], string> = { obligation: 'Deadline', doc: 'Document', license: 'License', material: 'Material listing', customer: 'Customer license', fleet: 'Vehicle' }
 const REPEAT: { v: number; l: string }[] = [{ v: 1, l: 'Every month' }, { v: 3, l: 'Every 3 months' }, { v: 6, l: 'Every 6 months' }, { v: 12, l: 'Every year' }, { v: 24, l: 'Every 2 years' }]
 export const dueText = (d: Deadline) => d.due_on == null ? 'needs a date' : d.days_left! < 0 ? `${-d.days_left!} day${d.days_left === -1 ? '' : 's'} late` : d.days_left === 0 ? 'today' : `in ${d.days_left} day${d.days_left === 1 ? '' : 's'}`
 export const dueTone = (d: Deadline) => d.due_on == null ? 'cp-warn' : d.days_left! < 0 ? 'cp-bad' : d.days_left! <= d.remind_days ? 'cp-warn' : 'cp-mute'
@@ -36,6 +36,7 @@ export function Deadlines({ c }: { c: Ctx }) {
     if (d.kind === 'license') c.go('library', 'licenses')
     else if (d.kind === 'customer') c.go('library', 'customers')
     else if (d.kind === 'material') c.go('ccof', 'materials')
+    else if (d.kind === 'fleet') c.go('fleet')
   }
   const cats = [...new Set((rows ?? []).map(d => d.category))].sort()
   return <div className="list">

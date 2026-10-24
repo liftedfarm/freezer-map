@@ -1,3 +1,4 @@
+import { useBack } from '../nav'
 import { ScanButton } from '../scan'
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -42,6 +43,7 @@ export function BreedingTab({ sb, d, c, flash, me }: { sb: SupabaseClient; d: ND
   const [lot, setLot] = useState<Partial<SeedLot> | null>(null)
   const [hunt, setHunt] = useState<Partial<Hunt> | null>(null)
   const [huntView, setHuntView] = useState<number | null>(null)
+  useBack(huntView != null, () => setHuntView(null))
   const load = useCallback(async () => {
     const r = await Promise.all(['breed_runs', 'breed_receivers', 'seed_lots', 'pheno_hunts', 'phenos', 'pheno_scores'].map(t => sb.from(t).select('*').order('id').limit(10000)))
     const bad = r.find(x => x.error)

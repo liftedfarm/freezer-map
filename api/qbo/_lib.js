@@ -246,4 +246,40 @@ export async function syncBalances(c) {
   return { checked: out.length, ...res }
 }
 
+// ---------- customer balances and open items, for the customer dashboard and statement (060) ----------
+// The QuickBooks customer balance is the headline number (it includes Roshi-era invoices, credit memos and unapplied payments).
+async function queryAll(c, sql, entity) {
+  const out = []
+  for (let start = 1; start < 20000; start += 500) {
+    const r = await query(c, `${sql} startposition ${start} maxresults 500`)
+    const xs = r[entity] || []
+    out.push(...xs)
+    if (xs.length < 500) break
+  }
+  return out
+}
+export async function syncCustomers(c) {
+  const refs = await table(`qbo_refs?env=eq.${ENV}&kind=eq.customer&select=key,qbo_id&limit=5000`)
+  if (!refs || !refs.length) return { customers: 0 }
+  const ours = new Map(refs.map(r => [String(r.qbo_id), Number(r.key)]))
+  const ids = [...ours.keys()]
+  const bal = new Map(), items = new Map(ids.map(id => [id, []]))
+  for (let i = 0; i < ids.length; i += 50) {
+    const r = await query(c, `select Id, Balance from Customer where Id in (${ids.slice(i, i + 50).map(x => `'${esc(x)}'`).join(',')}) maxresults 100`)
+    for (const x of r.Customer || []) bal.set(String(x.Id), Number(x.Balance))
+  }
+  const add = (ref, item) => { const k = String(ref && ref.value); if (items.has(k)) items.get(k).push(item) }
+  for (const x of await queryAll(c, `select Id, DocNumber, TxnDate, DueDate, TotalAmt, Balance, CustomerRef from Invoice where Balance > '0'`, 'Invoice'))
+    add(x.CustomerRef, { type: 'Invoice', doc: x.DocNumber || null, date: x.TxnDate, due: x.DueDate || null, total: Number(x.TotalAmt), balance: Number(x.Balance) })
+  const since = new Date(Date.now() - 730 * 86400000).toISOString().slice(0, 10)
+  for (const x of await queryAll(c, `select Id, DocNumber, TxnDate, TotalAmt, RemainingCredit, CustomerRef from CreditMemo where TxnDate >= '${since}'`, 'CreditMemo'))
+    if (Number(x.RemainingCredit) > 0) add(x.CustomerRef, { type: 'Credit', doc: x.DocNumber || null, date: x.TxnDate, due: null, total: -Number(x.TotalAmt), balance: -Number(x.RemainingCredit) })
+  for (const x of await queryAll(c, `select Id, PaymentRefNum, TxnDate, TotalAmt, UnappliedAmt, CustomerRef from Payment where TxnDate >= '${since}'`, 'Payment'))
+    if (Number(x.UnappliedAmt) > 0) add(x.CustomerRef, { type: 'Payment', doc: x.PaymentRefNum || null, date: x.TxnDate, due: null, total: -Number(x.TotalAmt), balance: -Number(x.UnappliedAmt) })
+  const rows = ids.map(id => ({ customer_id: ours.get(id), qbo_customer_id: id, balance: bal.has(id) ? bal.get(id) : null,
+    open_items: items.get(id).sort((a, b) => String(a.date).localeCompare(String(b.date))) }))
+  const n = await rpc('acct_record_balances', { p_env: ENV, p_rows: rows })
+  return { customers: n }
+}
+
 export function send(res, status, body) { res.status(status).setHeader('Cache-Control', 'no-store'); return res.json(body) }

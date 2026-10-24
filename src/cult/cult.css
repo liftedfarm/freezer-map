@@ -150,3 +150,4 @@
   background: var(--card, var(--bg)); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.15); }
 .combo-list li { padding: 7px 12px; cursor: pointer; font-size: 14px; color: var(--ink); }
 .combo-list li.hi, .combo-list li:hover { background: var(--empty); }
+.hahead-d { font-weight: 600; font-size: 13px; margin: 10px 2px 4px; opacity: .8; }

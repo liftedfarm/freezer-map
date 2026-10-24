@@ -1,3 +1,4 @@
+import { useBack } from './nav'
 import { ScanButton } from './scan'
 import { useMemo, useState } from 'react'
 import type { Backend } from './api'
@@ -26,6 +27,7 @@ export function FulfillView(props: FulfillProps) {
   const { orders } = props
   const [openId, setOpenId] = useState<number | null>(null)
   const [q, setQ] = useState('')
+  useBack(openId != null, () => setOpenId(null))
   if (props.err) return <div className="list fulfill"><h2>Fulfillment</h2><div className="warnbox">{props.err}</div></div>
   if (!orders) return <p className="muted">Loading…</p>
   const cur = orders.find(o => o.id === openId)

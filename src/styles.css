@@ -769,3 +769,18 @@ dd .small { font-size: 12px; margin-top: 2px; word-break: break-all; }
 /* what an action means in METRC (action dialogs) */
 .metrcnote { border: 1px dashed var(--line, #3a4a40); border-radius: 10px; padding: 8px 10px; font-size: 13px; margin: 8px 0; color: var(--muted, #9aa); }
 .metrcnote b { color: var(--ink, inherit); margin-right: 4px; font-size: 12px; letter-spacing: .04em; }
+
+/* Back buttons on detail screens (Sales > Reserves by customer, etc.) */
+.backbtn { margin: 4px 0 10px; padding-left: 4px; font-weight: 600; }
+.custfocus h3 { margin: 18px 0 8px; }
+.setrow.static { cursor: default; }
+.calcval { padding: 9px 10px; border: 1px dashed var(--line, #ccc); border-radius: 8px; font-weight: 600; min-height: 38px; }
+/* strain names that open the strain card */
+a.slink { color: inherit; text-decoration: underline dotted; text-underline-offset: 3px; cursor: pointer; }
+a.slink:hover { text-decoration-style: solid; }
+/* customer dashboard + statement */
+.cdash { margin: 6px 0 14px; }
+.cdash .linkbtn { margin: 4px 0 8px; }
+.stmt h3 { margin: 14px 0 6px; }
+tr.pastdue td { color: var(--bad, #b42318); }
+.cdash .dtile .dt-v { font-size: 24px; }

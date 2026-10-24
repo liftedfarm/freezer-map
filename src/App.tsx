@@ -1,4 +1,7 @@
 import { ScanButton } from './scan'
+import { useScrimBack, useTabHistory } from './nav'
+import { StrainCardHost, StrainLink } from './strainCard'
+import { CrewFleet } from './fleet/Fleet'
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Backend, CONFIG_MISSING, IS_PORTAL, makeBackend, portalUrl } from './api'
@@ -53,7 +56,7 @@ const AccountingView = lazy(() => import('./acct/AccountingView'))
 const ProcessingView = lazy(() => import('./proc/ProcessingView'))
 const ComplianceView = lazy(() => import('./comp/ComplianceView'))
 
-type View = 'dash' | 'inventory' | 'fulfill' | 'map' | 'freezer' | 'transit' | 'load' | 'review' | 'activity' | 'settings' | 'sales' | 'cult' | 'nursery' | 'proc' | 'acct' | 'comp' | 'admin' | 'mine'
+type View = 'dash' | 'inventory' | 'fulfill' | 'map' | 'freezer' | 'transit' | 'load' | 'review' | 'activity' | 'settings' | 'sales' | 'cult' | 'nursery' | 'proc' | 'acct' | 'comp' | 'admin' | 'mine' | 'fleet'
 // modules: each person has a level (User / Admin) per module; Owners have all of them (Admin > Settings > Users)
 type Mod = 'dist' | 'sales' | 'cult' | 'nurs' | 'proc' | 'acct' | 'comp' | 'admin'
 const MOD_KEY: Record<Mod, ModKey> = { dist: 'distribution', sales: 'sales', cult: 'cultivation', nurs: 'nursery', proc: 'processing', acct: 'accounting', comp: 'compliance', admin: 'admin' }
@@ -315,6 +318,12 @@ function describe(ix: Index, e: InvEvent, names?: Map<number, string>) {
     case 'comp_license': { const d = e.details as { expires?: string } | null; return `License ${e.note} expires ${d?.expires ?? '(no date)'}` }
     case 'comp_setting': return `Compliance settings: ${e.note}`
     case 'comp_backup': { const d = e.details as { copied?: number; archived?: number; failed?: number } | null; return `SharePoint backup: ${d?.copied ?? 0} copied, ${d?.archived ?? 0} archived, ${d?.failed ?? 0} failed` }
+    case 'fleet_asset': { const d = e.details as { new?: boolean } | null; return `${d?.new ? 'Vehicle added' : 'Vehicle changed'}: ${e.note}` }
+    case 'fleet_inspection': { const d = e.details as { result?: string } | null; return `Inspection${d?.result ? ` (${d.result === 'pass' ? 'passed' : d.result === 'defects' ? 'defects found' : 'out of service'})` : ''}: ${e.note}` }
+    case 'fleet_maintenance': return `Maintenance: ${e.note}`
+    case 'fleet_incident': return `Incident reported: ${e.note}`
+    case 'fleet_closed': { const d = e.details as { open?: boolean } | null; return `${d?.open ? 'Reopened' : 'Closed'}: ${e.note}` }
+    case 'fleet_deleted': return `Vehicle report removed: ${e.note}`
     case 'invoice_paid': { const d = e.details as { inv?: string; total?: number; via?: string } | null; return `${d?.inv} paid${d?.via ? ` (from ${d.via})` : ''}` }
     default: return `${e.type} ${code}`
   }
@@ -364,7 +373,7 @@ export default function App() {
   const setProcTab = (t: PTab) => { setProcTabS(t); store('proc.tab', t); setView('proc'); top() }
   const setCompTab = (t: CTab) => { setCompTabS(t); store('comp.tab', t); setView('comp'); top() }
   const lastView = useRef<View>('dash')
-  const go = (v: View) => { if (view !== 'mine') lastView.current = view; setView(v); top() }
+  const go = (v: View) => { if (view !== 'mine' && view !== 'fleet') lastView.current = view; setView(v); top() }
   const [freezerId, setFreezerId] = useState<number | null>(null)
   const [palletId, setPalletId] = useState<number | null>(null)
   const [plan, setPlan] = useState<Plan>(EMPTY)
@@ -386,6 +395,13 @@ export default function App() {
   const [pool, setPool] = useState<Pallet[]>([])
   const [loadId, setLoadId] = useState<number | null>(null)
   const [counts, setCounts] = useState({ orders: 0, requests: 0 })
+  // phone / browser Back: steps back through modules, tabs, freezers and loads; pop-up sheets close first
+  useScrimBack()
+  useTabHistory({ view, mod, cultTab, salesTab, adminTab, adminSet, procTab, compTab, acctTab, nurTab, freezerId, loadId }, s => {
+    setModS(s.mod); store('fm.mod', s.mod); setCultTabS(s.cultTab); setSalesTabS(s.salesTab); setAdminTabS(s.adminTab); setAdminSet(s.adminSet)
+    setProcTabS(s.procTab); setCompTabS(s.compTab); setAcctTabS(s.acctTab); setNurTabS(s.nurTab); setFreezerId(s.freezerId); setLoadId(s.loadId)
+    setView(s.view); setMore(false); setModMenu(false)
+  })
   const isSales = !!me?.access?.modules.sales
   const salesAdmin = me?.access?.modules.sales === 'admin'
   const refreshCounts = useCallback(() => { if (isSales) backend.salesCounts().then(setCounts).catch(() => {}) }, [isSales])
@@ -739,7 +755,7 @@ export default function App() {
     if (m === 'dist') go(t as View); else if (m === 'sales') setSalesTab(t as SalesTab); else if (m === 'cult') setCultTab(t as CultTab); else if (m === 'nurs') setNurTab(t as NTab); else if (m === 'acct') setAcctTab(t as ATab); else if (m === 'proc') setProcTab(t as PTab); else if (m === 'comp') setCompTab(t as CTab); else setAdminTab(t === 'users' ? 'settings' : t as AdminTab)
   }
   const appName = ML(cur)
-  document.title = noMods ? 'Lifted Farms' : `${view === 'mine' ? t('My settings') : ML(cur)} · Lifted Farms`
+  document.title = noMods ? 'Lifted Farms' : `${view === 'mine' ? t('My settings') : view === 'fleet' ? t('Vehicles') : ML(cur)} · Lifted Farms`
 
   return (
     <div className={`app ${noMods ? '' : 'with-rail'} ${myMods.length > 1 ? 'with-mods' : ''} ${banner ? 'is-moving' : ''} mod-${cur} ${!noMods && lv[MOD_KEY[cur]] === 'view' ? 'viewonly' : ''}`}
@@ -787,9 +803,10 @@ export default function App() {
           ))}
         </div>}
         {cur === 'dist' && !noMods && <><input className="search" type="search" placeholder="Pallet, strain or tag" value={query}
-          onChange={e => { setQuery(e.target.value); if (view === 'freezer' || view === 'activity' || view === 'dash' || view === 'mine') setView('map') }} />
-          <ScanButton compact onScan={tag => { setQuery(tag); if (view === 'freezer' || view === 'activity' || view === 'dash' || view === 'mine') setView('map') }} /></>}
+          onChange={e => { setQuery(e.target.value); if (view === 'freezer' || view === 'activity' || view === 'dash' || view === 'mine' || view === 'fleet') setView('map') }} />
+          <ScanButton compact onScan={tag => { setQuery(tag); if (view === 'freezer' || view === 'activity' || view === 'dash' || view === 'mine' || view === 'fleet') setView('map') }} /></>}
         {(cur !== 'dist' || noMods) && <span className="grow" />}
+        {staff && <button className={`ghost small ${view === 'fleet' ? 'on-btn' : ''}`} title={t('Vehicles: inspections, maintenance, incidents')} onClick={() => (view === 'fleet' ? go(lastView.current) : go('fleet'))}>🚚<span className="hide-phone"> {t('Vehicles')}</span></button>}
         <button className={`ghost small ${view === 'mine' ? 'on-btn' : ''}`} title={t('Your own settings')} onClick={() => (view === 'mine' ? go(lastView.current) : go('mine'))}>⚙<span className="hide-phone"> {t('My settings')}</span></button>
         <button className="ghost small" title={t('Signed in as {u}. Click to sign out.', { u: user ?? '' })} onClick={() => backend.signOut().then(() => setUser(null))}>{who(user)} ⏏</button>
       </header>
@@ -802,9 +819,10 @@ export default function App() {
       )}
 
       <main>
-        {!noMods && lv[MOD_KEY[cur]] === 'view' && view !== 'mine' && <div className="viewbanner">{t('View only: you can look at everything in {m}, but not change anything.', { m: ML(cur) })}</div>}
+        {!noMods && lv[MOD_KEY[cur]] === 'view' && view !== 'mine' && view !== 'fleet' && <div className="viewbanner">{t('View only: you can look at everything in {m}, but not change anything.', { m: ML(cur) })}</div>}
+        {view === 'fleet' && <CrewFleet sb={backend.client()} flash={flash} />}
         {view === 'mine' && <MySettings backend={backend} me={me!} flash={flash} onSaved={(p, name) => setMe(m => m && ({ ...m, display_name: name ?? m.display_name, access: { ...m.access, prefs: p } }))} />}
-        {noMods && view !== 'mine' && <div className="list"><h2>No modules</h2><p className="muted">No parts of the app are switched on for your account yet. Ask someone with the Admin module to give you access.</p></div>}
+        {noMods && view !== 'mine' && view !== 'fleet' && <div className="list"><h2>No modules</h2><p className="muted">No parts of the app are switched on for your account yet. Ask someone with the Admin module to give you access.</p></div>}
         {view === 'dash' && cur === 'dist' && (
           <DistDashboard staged={{ n: fromHarvest.length, lbs: fromHarvest.reduce((a, p) => a + Number(p.current_weight ?? 0), 0), sites: [...new Set(fromHarvest.map(p => ix.freezer.get(ix.slot.get(p.slot_id!)!.freezer_id)!.site))],
             go: () => { const st = fromHarvest[0] ? ix.freezer.get(ix.slot.get(fromHarvest[0].slot_id!)!.freezer_id) : undefined; if (st) { setSite(st.site); openFreezer(st.id) } } }}
@@ -1100,6 +1118,7 @@ export default function App() {
           </div>
         </div>
       )}
+      {snap && <StrainCardHost backend={backend} strains={snap.strains ?? []} flash={flash} onChanged={() => { reload() }} />}
       {toast && <div className={`toast ${toast.bad ? 'bad' : ''}`}>{toast.text}</div>}
     </div>
   )
@@ -1550,7 +1569,7 @@ function PalletSheet({ ix, p, others, busy, where, flash, onClose, onGo, onMove,
         <div className="sheet-h">
           <div>
             <h2>{p.code}</h2>
-            <div>{isMixed ? `Mixed pallet · ${contents.length} package${contents.length === 1 ? '' : 's'}` : p.strain ?? p.label ?? 'No strain'}{!isMixed && p.product && p.product !== 'fresh_frozen' && <span className="pill prod">{PRODUCT_LABEL[p.product]}</span>}</div>
+            <div>{isMixed ? `Mixed pallet · ${contents.length} package${contents.length === 1 ? '' : 's'}` : p.strain ? <StrainLink name={p.strain} /> : p.label ?? 'No strain'}{!isMixed && p.product && p.product !== 'fresh_frozen' && <span className="pill prod">{PRODUCT_LABEL[p.product]}</span>}</div>
           </div>
           <button className="ghost" onClick={onClose}>✕</button>
         </div>
@@ -1609,7 +1628,7 @@ function PalletSheet({ ix, p, others, busy, where, flash, onClose, onGo, onMove,
             {contents.length === 0 && <div className="muted">Nothing on this pallet.</div>}
             {contents.map(c => (
               <button key={c.id} className="content" onClick={() => onPick(c.id)}>
-                <b>{c.code}</b><span>{c.strain}</span><span>{lbs(c.current_weight)}</span>
+                <b>{c.code}</b><span><StrainLink name={c.strain} /></span><span>{lbs(c.current_weight)}</span>
                 <span className="mono">{c.package_tag ?? (c.tag_pending ? 'tag pending' : 'no tag')}</span>
               </button>
             ))}

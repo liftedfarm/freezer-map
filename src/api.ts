@@ -1,7 +1,7 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { accessFromRole } from './types'
 import type { SalesDoc } from './docs'
-import type { Item, HarvestLot, LotImpact, Invoice, NewOrderLine, PaymentTerm, FOrder, Prefs, ModKey, Level, ReserveYears, CustomerTerms, UnmatchedTag, ShippedCheck, StopManifest, OrderInput, Terms, MenuNumbers, MenuRow, ReserveRequest, Balance, ImportResult, Order, RoshiRow, Reserve, LinkInfo, AppUser, Customer, Me, Role, Freezer, FreezerStatus, InvEvent, ListName, ListRow, Load, LoadItem, LoadStop, MixLine, Pallet, Settings, SingleInput, Slot, Snapshot, StopInput, Strain, Vehicle } from './types'
+import type { Item, HarvestLot, LotImpact, Invoice, NewOrderLine, PaymentTerm, FOrder, Prefs, ModKey, Level, ReserveYears, CustomerTerms, UnmatchedTag, ShippedCheck, StopManifest, OrderInput, Terms, Statement, MenuNumbers, MenuRow, ReserveRequest, Balance, ImportResult, Order, RoshiRow, Reserve, LinkInfo, AppUser, Customer, Me, Role, Freezer, FreezerStatus, InvEvent, ListName, ListRow, Load, LoadItem, LoadStop, MixLine, Pallet, Settings, SingleInput, Slot, Snapshot, StopInput, Strain, Vehicle } from './types'
 
 export interface SaveUser { email: string; name: string; kind: 'staff' | 'customer' | 'none'; customerId: number | null; access: Partial<Record<ModKey, Level>>; owner?: boolean; login?: 'microsoft' | 'email' | null }
 export interface Overview {
@@ -65,6 +65,8 @@ export interface Backend {
   setSpan(palletId: number, toSlot: number | null): Promise<void>
   setOrderLine(orderId: number, lineId: number | null, strain: string, lbs: number, price: number | null): Promise<void>
   myTerms(): Promise<Terms | null>
+  /** customer dashboard + statement (060): customers get their own; Sales / Accounting pass a customer */
+  statement(customerId?: number | null): Promise<Statement | null>
   startViewAs(email: string): Promise<void>
   stopViewAs(): Promise<void>
   importRoshi(rows: RoshiRow[]): Promise<ImportResult>
@@ -464,6 +466,11 @@ class SupaBackend implements Backend {
     const { error } = await this.sb.rpc('set_order_line', { p_order: orderId, p_line: lineId, p_strain: strain, p_lbs: lbs, p_price: price }); fail(error)
   }
   async myTerms() { const { data, error } = await this.sb.rpc('my_terms'); if (error) return null; return data as Terms | null }
+  async statement(customerId?: number | null) {
+    const { data, error } = await this.sb.rpc('customer_statement', customerId ? { p_customer: customerId } : {})
+    if (error) throw new Error(/customer_statement/.test(error.message) ? 'Statements need 060_feedback_1024.sql run in Supabase.' : error.message)
+    return data as Statement | null
+  }
   async startViewAs(email: string) { const { error } = await this.sb.rpc('start_view_as', { p_email: email }); fail(error) }
   async stopViewAs() { const { error } = await this.sb.rpc('stop_view_as'); fail(error) }
   async cancelRequest(id: number) {
@@ -743,6 +750,7 @@ class DemoBackend implements Backend {
   async setSpan() { throw new Error('Not in demo') }
   async setOrderLine() {}
   async myTerms() { return null }
+  async statement() { return null }
   async startViewAs() { throw new Error('Not in demo') }
   async stopViewAs() {}
   async openMenu() { return [] }

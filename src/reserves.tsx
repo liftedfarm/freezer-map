@@ -1,4 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { CustomerDashboard } from './statement'
+import { StrainLink } from './strainCard'
+import { useBack } from './nav'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { PRODUCT_LABEL } from './types'
 import type { Backend } from './api'
 import { readSheet } from 'read-excel-file/browser'
@@ -73,6 +76,12 @@ export function ReservesView({ backend, customers, strains, onHand, flash, isAdm
       setBal(b); setOrders(o); setReqs(r); setNums(m); setErr(null); onCounts?.()
     }).catch(e => setErr(String(e?.message ?? e)))
   useEffect(() => { load() }, [])
+  // By customer: one customer at a time, with a Back button (and the phone's Back) to the full list
+  const listY = useRef(0)
+  const openCust = (id: number) => { listY.current = window.scrollY; setOpen(id); window.scrollTo(0, 0) }
+  const closeCust = () => { setOpen(null); requestAnimationFrame(() => window.scrollTo(0, listY.current)) }
+  useBack(mode === 'customer' && open != null && open > 0, closeCust)
+  useEffect(() => { setOpen(null) }, [mode])
 
   const cust = useMemo(() => new Map(customers.map(c => [c.id, c])), [customers])
   const cname = (id: number) => cust.get(id)?.name ?? `#${id}`
@@ -101,6 +110,7 @@ export function ReservesView({ backend, customers, strains, onHand, flash, isAdm
     .map(([id, rs]) => ({ id, name: cname(id), rs }))
     .filter(c => !ql || c.name.toLowerCase().includes(ql) || c.rs.some(r => r.strain.toLowerCase().includes(ql)))
     .sort((a, b) => sum(b.rs, 'reserved') - sum(a.rs, 'reserved'))
+  const focus = mode === 'customer' && open != null && open > 0 ? [...balY.reduce((m, r) => m.set(r.customer_id, [...(m.get(r.customer_id) ?? []), r]), new Map<number, Balance[]>())].map(([id, rs]) => ({ id, name: cname(id), rs })).find(c => c.id === open) : undefined
   // numbers come from the database (same math as the customer menu); fall back to local math before 011 is run
   const years = [...new Set(nums.map(m => m.crop_year))].sort((a, b) => b - a)
   const yr = year ?? years[0]
@@ -164,28 +174,54 @@ export function ReservesView({ backend, customers, strains, onHand, flash, isAdm
           {future && isAdmin && <DeadlineEdit year={rYear} value={dl} onSave={async v => { try { await backend.setReserveDeadline(rYear, v); setYs(await backend.reserveYears()); flash('Deadline saved') } catch (e) { flash(String((e as Error).message ?? e), true) } }} />}
         </div>
       )}
-      {mode === 'customer' && byCust.length === 0 && <p className="muted">No {rYear} reserves yet.</p>}
-      {mode === 'customer' && byCust.map(c => (
+      {mode === 'customer' && !focus && byCust.length === 0 && <p className="muted">No {rYear} reserves yet.</p>}
+      {mode === 'customer' && focus && (() => {
+        const c = focus
+        const cOrders = orders.filter(o => o.customer_id === c.id && o.status !== 'cancelled').sort((a, b) => (b.order_date ?? '').localeCompare(a.order_date ?? ''))
+        const cReqs = reqs.filter(r => r.customer_id === c.id && r.status === 'pending')
+        return (
+          <div className="custfocus">
+            <button className="ghost backbtn" onClick={closeCust}>‹ All customers</button>
+            <div className="rescard">
+              <div className="li setrow static">
+                <div className="grow"><b>{c.name}</b>
+                  <div className="muted">{c.rs.length} strain{c.rs.length === 1 ? '' : 's'} · {n0(sum(c.rs, 'shipped'))} shipped{sum(c.rs, 'pending') > 0 ? ` · ${n0(sum(c.rs, 'pending'))} pending` : ''}</div></div>
+                <div className="num"><b>{n0(sum(c.rs, 'remaining'))}</b><div className="muted">of {n0(sum(c.rs, 'reserved'))} left</div></div>
+              </div>
+              <table className="restable">
+                <thead><tr><th>Strain</th><th className="num">Reserved</th><th className="num">Shipped</th><th className="num">Pending</th><th className="num">Left</th></tr></thead>
+                <tbody>
+                  {c.rs.map(r => (
+                    <tr key={r.id} className={isAdmin ? 'tap' : ''} onClick={() => isAdmin && setEdit({ customer_id: c.id, strain: r.strain, lbs: String(r.reserved), isNew: false })}>
+                      <td><StrainLink name={r.strain} /></td><td className="num">{n0(Number(r.reserved))}</td><td className="num">{n0(Number(r.shipped))}</td>
+                      <td className="num">{n0(Number(r.pending))}</td><td className="num"><b>{n0(Number(r.remaining))}</b></td>
+                    </tr>
+                  ))}
+                </tbody>
+                {isAdmin && <tfoot><tr><td colSpan={5}><span className="muted">Tap a strain to change it. </span><button className="ghost small" onClick={() => setEdit({ customer_id: c.id, strain: '', lbs: '', isNew: true })}>+ Add strain for {c.name}</button></td></tr></tfoot>}
+              </table>
+            </div>
+            <h3>Account</h3>
+            <CustomerDashboard backend={backend} customerId={c.id} staff />
+            {cReqs.length > 0 && <><h3>Reserve requests waiting</h3>
+              <table className="restable wide"><thead><tr><th>Strain</th><th className="num">Now</th><th className="num">Asked for</th><th>Crop</th></tr></thead>
+                <tbody>{cReqs.map(r => <tr key={r.id}><td>{r.strain}</td><td className="num">{n0(Number(r.current_lbs))}</td><td className="num"><b>{n0(Number(r.requested_lbs))}</b></td><td>{r.crop_year ?? cur}</td></tr>)}</tbody></table></>}
+            <h3>Orders</h3>
+            {cOrders.length === 0 ? <p className="muted">No orders yet.</p> : (
+              <table className="restable wide"><thead><tr><th>Order</th><th>Date</th><th>Status</th><th className="num">Lbs</th></tr></thead>
+                <tbody>{cOrders.slice(0, 25).map(o => <tr key={o.id}><td>{o.so_number ?? `#${o.id}`}</td><td>{fmtDate(o.order_date)}</td>
+                  <td><span className={`pill o-${o.status}`}>{STATUS_LABEL[o.status]}</span></td><td className="num">{n0(orderLbs(o))}</td></tr>)}</tbody></table>)}
+            <button className="ghost backbtn" onClick={closeCust}>‹ All customers</button>
+          </div>
+        )
+      })()}
+      {mode === 'customer' && !focus && byCust.map(c => (
         <div key={c.id} className="rescard">
-          <button className="li setrow" onClick={() => setOpen(open === c.id ? null : c.id)}>
+          <button className="li setrow" onClick={() => openCust(c.id)}>
             <div className="grow"><b>{c.name}</b>
               <div className="muted">{c.rs.length} strain{c.rs.length === 1 ? '' : 's'} · {n0(sum(c.rs, 'shipped'))} shipped{sum(c.rs, 'pending') > 0 ? ` · ${n0(sum(c.rs, 'pending'))} pending` : ''}</div></div>
-            <div className="num"><b>{n0(sum(c.rs, 'remaining'))}</b><div className="muted">of {n0(sum(c.rs, 'reserved'))} left</div></div>
+            <div className="num"><b>{n0(sum(c.rs, 'remaining'))}</b><div className="muted">of {n0(sum(c.rs, 'reserved'))} left ›</div></div>
           </button>
-          {open === c.id && (
-            <table className="restable">
-              <thead><tr><th>Strain</th><th className="num">Reserved</th><th className="num">Shipped</th><th className="num">Pending</th><th className="num">Left</th></tr></thead>
-              <tbody>
-                {c.rs.map(r => (
-                  <tr key={r.id} className={isAdmin ? 'tap' : ''} onClick={() => isAdmin && setEdit({ customer_id: c.id, strain: r.strain, lbs: String(r.reserved), isNew: false })}>
-                    <td>{r.strain}</td><td className="num">{n0(Number(r.reserved))}</td><td className="num">{n0(Number(r.shipped))}</td>
-                    <td className="num">{n0(Number(r.pending))}</td><td className="num"><b>{n0(Number(r.remaining))}</b></td>
-                  </tr>
-                ))}
-              </tbody>
-              {isAdmin && <tfoot><tr><td colSpan={5}><span className="muted">Tap a strain to change it. </span><button className="ghost small" onClick={() => setEdit({ customer_id: c.id, strain: '', lbs: '', isNew: true })}>+ Add strain for {c.name}</button></td></tr></tfoot>}
-            </table>
-          )}
         </div>
       ))}
 
@@ -208,7 +244,7 @@ export function ReservesView({ backend, customers, strains, onHand, flash, isAdm
             <tbody>
               {byStrain.map(x => (
                 <tr key={x.s} title={x.rs.map(r => `${cname(r.customer_id)}: ${n0(Number(r.remaining))} left`).join('\n')}>
-                  <td>{x.s}{x.hidden && <span className="pill old">hidden</span>}{x.rs.length > 0 && <div className="muted small">{x.rs.length} customer{x.rs.length === 1 ? '' : 's'}</div>}</td>
+                  <td><StrainLink name={x.s} />{x.hidden && <span className="pill old">hidden</span>}{x.rs.length > 0 && <div className="muted small">{x.rs.length} customer{x.rs.length === 1 ? '' : 's'}</div>}</td>
                   <td className="num">{n0(x.have)}</td><td className="num">{n0(x.pend)}</td><td className="num">{n0(x.left)}</td>
                   <td className={`num ${x.free < 0 ? 'warn-t' : ''}`}><b>{n0(x.free)}</b>{x.held > 0 && <div className="muted small">{n0(x.held)} held</div>}</td>
                 </tr>

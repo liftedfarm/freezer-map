@@ -200,3 +200,14 @@ export interface StopManifest {
   load: string; load_date: string; status: string; driver: string | null; vehicle: string | null; plate: string | null; stop: number; stop_status: string; manifest: string | null
   transfer: boolean; from: ManifestLicense[]; to: ManifestLicense; transporter: ManifestLicense | null; orders: string[]; packages: ManifestPackage[]
 }
+/** customer dashboard + statement (060 customer_statement) */
+export interface StatementInvoice { id: number; inv_number: string; invoice_date: string; due_date: string | null; total: number; status: 'open' | 'paid' | 'void'; terms_label: string | null; po_number: string | null; share_token: string; so_number: string | null; balance: number; past_due: boolean }
+export interface StatementItem { type: 'Invoice' | 'Credit' | 'Payment'; doc: string | null; date: string; due: string | null; total: number; balance: number }
+export interface Statement {
+  customer: { id: number; name: string; terms: string | null }
+  balance: { amount: number; past_due: number; source: 'quickbooks' | 'app'; synced_at: string | null }
+  open_items: StatementItem[]; invoices: StatementInvoice[]
+  month: { start: string; shipped: number; min: number | null; left: number | null }
+  pending_lbs: number; reserves: { year: number; reserved: number; shipped: number; pending: number; remaining: number; strains: number }
+  contract_lbs: number | null; price_per_lb: number | null; from: string
+}

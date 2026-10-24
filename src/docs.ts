@@ -21,7 +21,7 @@ export const docTitle = (d: SalesDoc) => d.kind === 'invoice' ? 'Sales Invoice' 
 export const docFile = (d: SalesDoc) => `${d.kind === 'invoice' ? 'Invoice' : 'Sales Order'} ${d.number} - ${d.customer.name}.pdf`.replace(/[\\/:*?"<>|]/g, '')
 export const shareUrl = (d: SalesDoc) => `${location.origin}/?doc=${d.token}`
 
-async function logoData(): Promise<{ data: string; w: number; h: number } | null> {
+export async function logoData(): Promise<{ data: string; w: number; h: number } | null> {
   try {
     const img = await new Promise<HTMLImageElement>((ok, bad) => { const i = new Image(); i.onload = () => ok(i); i.onerror = bad; i.src = '/logo-big.png' })
     const c = document.createElement('canvas'); c.width = img.naturalWidth; c.height = img.naturalHeight

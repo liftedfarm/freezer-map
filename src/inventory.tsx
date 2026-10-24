@@ -1,3 +1,4 @@
+import { StrainLink } from './strainCard'
 // Inventory tabs for Distribution and Sales, built on the shared InvTable (Processing has its own in proc/).
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
@@ -126,7 +127,7 @@ export function SalesInventory({ c, strains, sb, onNewOrder }: { c: InvCtx; stra
   }
   const rows = [...m.values()]
   const cols: Col<PRow>[] = [
-    { k: 'strain', l: 'Strain', phone: true, get: r => <b>{r.strain}</b>, val: r => r.strain },
+    { k: 'strain', l: 'Strain', phone: true, get: r => <b><StrainLink name={r.strain} /></b>, val: r => r.strain },
     { k: 'form', l: 'Form', phone: true, get: r => PRODUCT_LABEL[r.form], val: r => PRODUCT_LABEL[r.form] },
     { k: 'grade', l: 'Grade', phone: true, get: r => <GradeChip g={r.grade} />, val: r => r.grade },
     { k: 'year', l: 'Crop', get: r => r.year ?? '', val: r => r.year ?? 0 },

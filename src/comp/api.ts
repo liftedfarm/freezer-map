@@ -21,12 +21,12 @@ export interface Doc {
   created_by: string | null; created_at: string; updated_at: string
   links?: Link[]
 }
-export type RefKind = 'test' | 'pallet' | 'lot' | 'harvest' | 'material' | 'license' | 'customer' | 'metrc_error' | 'obligation' | 'processor'
+export type RefKind = 'test' | 'pallet' | 'lot' | 'harvest' | 'material' | 'license' | 'customer' | 'metrc_error' | 'obligation' | 'processor' | 'asset' | 'fleet_log'
 export interface Link { doc_id: number; ref_kind: RefKind; ref_id: string }
 export interface FileRef { id: number; title: string; file_name: string | null; file_path: string | null; link_url: string | null; mime: string | null }
 
 export interface Deadline {
-  kind: 'obligation' | 'doc' | 'license' | 'material' | 'customer'; ref: string; title: string; category: string; site: string | null
+  kind: 'obligation' | 'doc' | 'license' | 'material' | 'customer' | 'fleet'; ref: string; title: string; category: string; site: string | null
   due_on: string | null; days_left: number | null; remind_days: number; owner_email: string | null; repeat_months: number | null; notes: string | null; doc_type: string | null
 }
 export interface Obligation {
@@ -87,7 +87,7 @@ export interface Trace {
 }
 
 export const STATUS_LABEL: Record<Material['ccof_status'], string> = { approved: 'Approved', pending: 'Pending', not_allowed: 'Not allowed', unknown: 'Not reviewed' }
-export const CATEGORY_LABEL: Record<string, string> = { license: 'License', ccof: 'CCOF', metrc: 'METRC', testing: 'Testing', report: 'Report', sop: 'SOP', tax: 'Tax', insurance: 'Insurance', other: 'Other' }
+export const CATEGORY_LABEL: Record<string, string> = { license: 'License', ccof: 'CCOF', metrc: 'METRC', testing: 'Testing', report: 'Report', sop: 'SOP', tax: 'Tax', insurance: 'Insurance', vehicles: 'Vehicles', other: 'Other' }
 
 const safeName = (n: string) => n.normalize('NFKD').replace(/[^\w.\- ]+/g, '').replace(/\s+/g, '-').slice(-80) || 'file'
 const uuid = () => (crypto as Crypto & { randomUUID?: () => string }).randomUUID?.() ?? `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`
