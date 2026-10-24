@@ -12,7 +12,7 @@ function Shell({ children }: { children: React.ReactNode }) {
   useEffect(() => { document.title = 'Lifted Farms Orders' }, [])
   return (
     <div className="center login portal-auth">
-      <img className="logo-login" src="/logo-big.png" alt="Lifted Farms" />
+      <img className="logo-login logo-l" src="/logo-light.svg" alt="Lifted Farms" /><img className="logo-login logo-d" src="/logo-dark.svg" alt="Lifted Farms" />
       {children}
     </div>
   )
@@ -119,7 +119,7 @@ export function Portal({ backend, me, signOut }: { backend: Backend; me: Me; sig
   return (
     <div className="app portal">
       <header className="top">
-        <div className="brand"><img className="logo-img" src="/logo.png" alt="Lifted Farms" /> <span className="app-name">Orders</span></div>
+        <div className="brand"><img className="logo-img logo-l" src="/logo-light.svg" alt="Lifted Farms" /><img className="logo-img logo-d" src="/logo-dark.svg" alt="Lifted Farms" /> <span className="app-name">Orders</span></div>
         <span className="grow" />
         {!me.viewing_as && <button className="ghost small" onClick={() => setPwOpen(!pwOpen)}>Password</button>}
         {!me.viewing_as && <button className="ghost small" onClick={signOut}>Sign out</button>}

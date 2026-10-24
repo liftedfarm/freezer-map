@@ -301,10 +301,10 @@ export function SharedDocPage({ backend, token }: { backend: Backend; token: str
   useEffect(() => { backend.sharedDoc(token).then(async doc => { setD(doc); if (doc) setUrl(URL.createObjectURL(await makePdf(doc))) }).catch(() => setD(null)) }, [token])
   useEffect(() => { if (d) document.title = `${docTitle(d)} ${d.number} · Lifted Farms` }, [d])
   if (d === undefined) return <div className="center muted">Loading…</div>
-  if (!d) return <div className="center"><img className="logo-login" src="/logo.png" alt="Lifted Farms" /><h2>This link doesn't work</h2><p className="muted">It may have been replaced. Ask Lifted Farms for a new one.</p></div>
+  if (!d) return <div className="center"><img className="logo-login logo-l" src="/logo-light.svg" alt="Lifted Farms" /><img className="logo-login logo-d" src="/logo-dark.svg" alt="Lifted Farms" /><h2>This link doesn't work</h2><p className="muted">It may have been replaced. Ask Lifted Farms for a new one.</p></div>
   return (
     <div className="shareddoc">
-      <div className="row between wrap"><div><img className="logo-img" src="/logo.png" alt="Lifted Farms" /></div>
+      <div className="row between wrap"><div><img className="logo-img logo-l" src="/logo-light.svg" alt="Lifted Farms" /><img className="logo-img logo-d" src="/logo-dark.svg" alt="Lifted Farms" /></div>
         <div className="row"><button className="primary" onClick={() => downloadPdf(d)}>Download PDF</button></div></div>
       <h2>{docTitle(d)} {d.number}</h2>
       <p className="muted">{d.customer.name} · {money(d.total)} · {d.terms}{d.kind === 'invoice' && d.due ? ` · due ${dfmt(d.due)}` : ''}{d.kind === 'invoice' && d.status === 'paid' ? ' · paid, thank you' : ''}</p>

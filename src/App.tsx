@@ -715,7 +715,7 @@ export default function App() {
       {!noMods && (
         <aside className="rail" aria-label="Navigation">
           {myMods.length > 1 && <div className="rail-mods">
-            <div className="rail-logo">Lifted</div>
+            <img className="rail-logo" src="/logo-dark.svg" alt="Lifted Farms" />
             {myMods.map(x => (
               <button key={x.m} className={`rail-mod ${cur === x.m ? 'on' : ''}`} onClick={() => goMod(x.m)}>
                 {MOD_ICON[x.m]}<span>{x.l}</span>
@@ -732,7 +732,7 @@ export default function App() {
       )}
       <header className="top">
         <div className="brand" onClick={() => nav.main[0]?.go()}>
-          <img className="logo-img" src="/logo.png" alt="Lifted Farms" /> <span className="app-name">{appName}</span> {backend.demo && <span className="demo">DEMO</span>}
+          <img className="logo-img logo-l" src="/logo-light.svg" alt="Lifted Farms" /><img className="logo-img logo-d" src="/logo-dark.svg" alt="Lifted Farms" /> <span className="app-name">{appName}</span> {backend.demo && <span className="demo">DEMO</span>}
         </div>
         {myMods.length > 1 && (
           <div className="modpick">
@@ -1085,7 +1085,7 @@ function ViewAsBar({ me, stop }: { me: Me; stop: () => void }) {
 function NoAccess({ me, signOut }: { me: Me; signOut: () => void }) {
   return (
     <div className="center login">
-      <img className="logo-login" src="/logo-big.png" alt="Lifted Farms" />
+      <img className="logo-login logo-l" src="/logo-light.svg" alt="Lifted Farms" /><img className="logo-login logo-d" src="/logo-dark.svg" alt="Lifted Farms" />
       {me.role === 'customer'
         ? <><h2>Hi{me.display_name ? ` ${me.display_name}` : ''}</h2><p className="muted">Your login is set up for {me.customer_name ?? 'your company'}. The order portal is coming soon.</p></>
         : IS_PORTAL
@@ -1099,7 +1099,7 @@ function NoAccess({ me, signOut }: { me: Me; signOut: () => void }) {
 function Login() {
   return (
     <div className="center login">
-      <img className="logo-login" src="/logo-big.png" alt="Lifted Farms" />
+      <img className="logo-login logo-l" src="/logo-light.svg" alt="Lifted Farms" /><img className="logo-login logo-d" src="/logo-dark.svg" alt="Lifted Farms" />
       <h1>Lifted Farms</h1>
       <p className="muted">Distribution, sales and production</p>
       <button className="primary big" onClick={() => backend.signIn()}>Sign in with Microsoft</button>
@@ -1394,7 +1394,7 @@ interface Line { id: string; at: string; who: string | null; text: ReactNode; no
 /** Activity: each module shows its own; Admin shows everything with a filter */
 /** loading screen: the logo and a quiet spinner, same for every module */
 function Splash() {
-  return <div className="center splash"><img className="logo-login" src="/logo.png" alt="Lifted Farms" /><div className="spin" aria-label="Loading" /></div>
+  return <div className="center splash"><img className="logo-login logo-l" src="/logo-light.svg" alt="Lifted Farms" /><img className="logo-login logo-d" src="/logo-dark.svg" alt="Lifted Farms" /><div className="spin" aria-label="Loading" /></div>
 }
 
 function ActivityView({ ix, module }: { ix: Index; module: 'distribution' | 'sales' | 'processing' | 'accounting' | 'compliance' | 'all' }) {

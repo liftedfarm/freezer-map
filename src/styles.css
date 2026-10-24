@@ -78,12 +78,14 @@ p.small, span.small, div.small, em.small { padding: 0; font-size: 12px; }
 .logo-img { height: 30px; width: auto; display: block; }
 .app-name { font-weight: 700; }
 .logo-login { width: 220px; max-width: 70vw; height: auto; margin: 0 auto 8px; display: block; }
+/* two logo files: dark lettering for light mode, white lettering for dark mode (no box behind it) */
+.logo-d { display: none !important; }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .logo-img, :root:not([data-theme="light"]) .logo-login { background: #f1f4f0; border-radius: 8px; padding: 3px 6px; }
-  :root:not([data-theme="light"]) .logo-login { padding: 10px 14px; border-radius: 14px; }
+  :root:not([data-theme="light"]) .logo-l { display: none !important; }
+  :root:not([data-theme="light"]) .logo-d { display: block !important; }
 }
-:root[data-theme="dark"] .logo-img, :root[data-theme="dark"] .logo-login { background: #f1f4f0; border-radius: 8px; padding: 3px 6px; }
-:root[data-theme="dark"] .logo-login { padding: 10px 14px; border-radius: 14px; }
+:root[data-theme="dark"] .logo-l { display: none !important; }
+:root[data-theme="dark"] .logo-d { display: block !important; }
 
 .app { padding-bottom: 76px; }
 .top { position: sticky; top: 0; z-index: 5; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
@@ -488,7 +490,7 @@ body.dragging { user-select: none; -webkit-user-select: none; cursor: grabbing; 
   .app.with-mods .modpick { display: none; }
   .rail { display: flex; position: fixed; top: 0; bottom: 0; left: 0; z-index: 7; }
   .rail-mods { width: 84px; background: #12301f; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 14px 0; }
-  .rail-logo { font-weight: 800; font-size: 15px; color: #bfe3cc; margin-bottom: 12px; }
+  .rail-logo { width: 68px; height: auto; display: block; margin-bottom: 12px; }  /* rail is always dark green: white-lettering logo */
   .rail-mod { width: 70px; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 0; border-radius: 12px; border: 0;
     background: transparent; color: #c9d6cd; font-size: 11px; }
   .rail-mod.on { background: #2b5a3d; color: #fff; font-weight: 700; }
