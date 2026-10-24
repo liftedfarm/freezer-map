@@ -54,6 +54,9 @@ jobs:
       - name: Dump the database
         run: |
           set -uo pipefail
+          # Drop any spaces or line breaks that came along with a pasted password
+          export PGPASSWORD="$(printf '%s' "$PGPASSWORD" | tr -d '[:space:]')"
+          echo "Signing in as $PGUSER to $PGHOST (password: ${#PGPASSWORD} characters)"
           if [ -z "$PGHOST" ] || [ -z "$PGPASSWORD" ]; then echo "::error::Set SUPABASE_DB_HOST (variable) and SUPABASE_DB_PASSWORD (secret)"; exit 1; fi
           SERVER=$(psql -tAc 'show server_version') || { echo "::error::Couldn't connect to Supabase. Check SUPABASE_DB_HOST and SUPABASE_DB_PASSWORD"; exit 1; }
           echo "pg_dump $(pg_dump --version | awk '{print $3}'), server $SERVER"
