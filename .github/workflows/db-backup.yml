@@ -4,8 +4,10 @@
 # GitHub emails whoever last edited this file if a run fails.
 #
 # Needs in GitHub > freezer-map > Settings > Secrets and variables > Actions:
-#   Secrets:   SUPABASE_DB_PASSWORD, MS_TENANT_ID, MS_CLIENT_ID, MS_CLIENT_SECRET
+#   Secrets:   SUPABASE_DB_PASSWORD (password of the read-only backup_reader login, see supabase/backup_reader.sql),
+#              MS_TENANT_ID, MS_CLIENT_ID, MS_CLIENT_SECRET
 #   Variables: SUPABASE_DB_HOST (Session pooler host, e.g. aws-0-us-west-1.pooler.supabase.com),
+#              SUPABASE_DB_USER (optional, default backup_reader.gxxxhaozizjctywayhau),
 #              SP_SITE (SharePoint site link), SP_FOLDER (optional, default "Database Backups")
 #
 # Restore: pg_restore -d <connection string> --no-owner --no-privileges lifted-db_<date>.dump
@@ -33,7 +35,7 @@ jobs:
       PG_MAJOR: '17'
       PGHOST: ${{ vars.SUPABASE_DB_HOST }}
       PGPORT: '5432'
-      PGUSER: postgres.gxxxhaozizjctywayhau
+      PGUSER: ${{ vars.SUPABASE_DB_USER || 'backup_reader.gxxxhaozizjctywayhau' }}
       PGDATABASE: postgres
       PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
       PGSSLMODE: require
@@ -56,12 +58,13 @@ jobs:
           SERVER=$(psql -tAc 'show server_version') || { echo "::error::Couldn't connect to Supabase. Check SUPABASE_DB_HOST and SUPABASE_DB_PASSWORD"; exit 1; }
           echo "pg_dump $(pg_dump --version | awk '{print $3}'), server $SERVER"
           FILE="lifted-db_$(TZ=America/Los_Angeles date +%Y-%m-%d_%H%M).dump"
-          # App tables + logins (auth) + file list (storage). Files themselves are copied by the compliance backup.
-          if ! pg_dump -Fc -Z 6 -n public -n auth -n storage -f "$FILE"; then
-            echo "::warning::Full dump failed, falling back to the app tables only (public)"
-            echo "PARTIAL=1" >> "$GITHUB_ENV"
-            pg_dump -Fc -Z 6 -n public -f "$FILE" || { echo "::error::pg_dump failed"; exit 1; }
-          fi
+          # App tables + logins (auth) + file list (storage), as far as the backup login can read them.
+          # The files themselves are copied by the compliance backup.
+          SCHEMAS="-n public"; SKIPPED=""
+          [ "$(psql -tAc "select case when has_schema_privilege('auth','usage') then has_table_privilege('auth.users','select') else false end")" = "t" ] && SCHEMAS="$SCHEMAS -n auth" || SKIPPED="logins (auth)"
+          [ "$(psql -tAc "select case when has_schema_privilege('storage','usage') then has_table_privilege('storage.objects','select') else false end")" = "t" ] && SCHEMAS="$SCHEMAS -n storage" || SKIPPED="$SKIPPED file list (storage)"
+          [ -n "$SKIPPED" ] && echo "::warning::Backup login can't read: $SKIPPED. App tables are still backed up."
+          pg_dump -Fc -Z 6 $SCHEMAS -f "$FILE" || { echo "::error::pg_dump failed"; exit 1; }
           # Check the file reads back and has the main tables in it
           pg_restore --list "$FILE" > contents.txt || { echo "::error::Dump file doesn't read back"; exit 1; }
           TABLES=$(grep -c ' TABLE DATA ' contents.txt || true)
@@ -81,9 +84,3 @@ jobs:
           SP_SITE: ${{ vars.SP_SITE }}
           SP_FOLDER: ${{ vars.SP_FOLDER }}
         run: node tools/db_backup.mjs "$FILE"
-
-      - name: Flag a partial backup
-        if: env.PARTIAL == '1'
-        run: |
-          echo "::error::Tonight's backup has the app tables only (logins and file list were skipped). Check the 'Dump the database' step."
-          exit 1
