@@ -21,6 +21,8 @@ import { EMPTY, active, addMoves, addToTray, backToTray, dropFromPlan, fillStagi
 import type { Layout, Plan, PlanMove, PlaceMode } from './plan'
 import { DragGhost, draggable, onDrop } from './drag'
 import { ChooseDialog, PlanBar, RemoveForm, SelectBar, UndoPill } from './planui'
+import { isDry, WEIGHT_REASONS } from './metrc'
+import type { InvAction } from './metrc'
 import { ReservesView, SALES_TITLES } from './reserves'
 import type { SalesMode } from './reserves'
 import { Portal, PortalLink, PortalLogin } from './portal'
@@ -199,8 +201,9 @@ function describe(ix: Index, e: InvEvent, names?: Map<number, string>) {
       return `${code} merged into ${d?.into} (${lbs(e.lbs)})` }
     case 'tag_set': { const d = e.details as { from?: string | null; to?: string } | null
       return `${code} METRC tag ${d?.from ? `changed from ${d.from} ` : ''}set to ${d?.to}` }
-    case 'weight_adjust': { const d = e.details as { from?: number | null; to?: number } | null
-      return `${code} weight adjusted ${d?.from != null ? `from ${lbs(d.from)} ` : ''}to ${lbs(d?.to)}` }
+    case 'weight_adjust': { const d = e.details as { from?: number | null; to?: number; reason?: string } | null
+      const r = WEIGHT_REASONS.find(x => x.k === d?.reason)
+      return `${code} weight adjusted ${d?.from != null ? `from ${lbs(d.from)} ` : ''}to ${lbs(d?.to)}${r ? ` (${r.l})` : ''}` }
     case 'freezer_status': {
       const f = e.freezer_id != null ? ix.freezer.get(e.freezer_id) : undefined
       const d = e.details as { from?: string; to?: string } | null
@@ -390,6 +393,7 @@ export default function App() {
   const salesBadge = counts.orders + (salesAdmin ? counts.requests : 0)
   const [loadForm, setLoadForm] = useState<{ load?: Load } | null>(null)
   const [pickLoad, setPickLoad] = useState<Pallet | null>(null)
+  const [invTick, setInvTick] = useState(0)   // bumps after a pallet action so Processing reloads its own data
 
   const reload = useCallback(async () => { const s = await backend.load(); setStrainColors(s); setSnap(s) }, [])
   const flash = (text: string, bad = false) => { setToast({ text, bad }); setTimeout(() => setToast(null), bad ? 5000 : 2500) }
@@ -510,11 +514,11 @@ export default function App() {
 
   async function act(fn: () => Promise<unknown>, ok: string) {
     setBusy(true)
-    try { await fn(); await reload(); flash(ok) } catch (e) { flash((e as Error).message, true) } finally { setBusy(false) }
+    try { await fn(); await reload(); setInvTick(t => t + 1); flash(ok) } catch (e) { flash((e as Error).message, true) } finally { setBusy(false) }
   }
   async function submit<T>(fn: () => Promise<T>, ok: (r: T) => string, after?: (r: T) => void) {
     setBusy(true)
-    try { const r = await fn(); await reload(); setForm(null); flash(ok(r)); after?.(r) }
+    try { const r = await fn(); await reload(); setInvTick(t => t + 1); setForm(null); flash(ok(r)); after?.(r) }
     catch (e) { flash((e as Error).message, true) } finally { setBusy(false) }
   }
 
@@ -604,7 +608,7 @@ export default function App() {
     siteOf,
     held: id => { const o = heldBy.get(id); return o ? `${o.customer} · ${o.so ?? 'order'}` : undefined },
     busy,
-    run: async (fn, ok) => { setBusy(true); try { await fn(); await reload(); flash(ok); return true } catch (e) { flash((e as Error).message, true); await reload().catch(() => {}); return false } finally { setBusy(false) } },
+    run: async (fn, ok) => { setBusy(true); try { await fn(); await reload(); setInvTick(t => t + 1); flash(ok); return true } catch (e) { flash((e as Error).message, true); await reload().catch(() => {}); return false } finally { setBusy(false) } },
     confirm: (text, ok, fn) => setConfirm({ text, ok, run: fn }),
     openPallet: id => setPalletId(id),
     putBack: (item, p) => { setView('map'); startPlacing({ title: `Putting ${p.code} back in a freezer`, sub: 'Open a freezer and tap the slot.', run: slot => act(() => backend.unloadPallet(item.id, slot.id), `${p.code} back in ${slot.code}`) }) },
@@ -623,7 +627,9 @@ export default function App() {
       || where(a).localeCompare(where(b), undefined, { numeric: true })
   }
   const mergeCandidates = (p: Pallet) => looseList
-    .filter(x => x.id !== p.id && x.strain && p.strain && x.strain.toLowerCase() === p.strain.toLowerCase())
+    .filter(x => x.id !== p.id && x.kind !== 'mixed' && x.pushed !== false && !!x.strain && !!p.strain && x.strain.toLowerCase() === p.strain.toLowerCase()
+      && (x.product ?? 'fresh_frozen') === (p.product ?? 'fresh_frozen')
+      && (!isDry(p) || (x.crop_year ?? null) === (p.crop_year ?? null)))   // METRC merges one item: dry needs the same product and crop
     .sort(byNearness(p))
   const mixedList = snap.pallets.filter(p => p.kind === 'mixed' && p.status === 'in_freezer')
     .map(p => ({ p, n: ix.contentsOf.get(p.id)?.length ?? 0, w: weightOf(ix, p) }))
@@ -636,6 +642,18 @@ export default function App() {
   const startPlacing = (pl: Placing, from?: Pallet) => {
     setPlacing(pl); setPalletId(null); setForm(null)
     if (from) goTo(from.container_id ? ix.pallet.get(from.container_id)?.slot_id ?? null : from.slot_id)
+  }
+  // pallet actions started outside the freezer map (Processing package sheet); the dialogs are the same ones the map uses
+  const invAct = (pp: Pallet, kind: InvAction) => {
+    const p = ix.pallet.get(pp.id) ?? pp
+    if (kind === 'split' || kind === 'merge' || kind === 'tag' || kind === 'weight') setForm({ kind, p })
+    else if (kind === 'addto') setForm({ kind: 'pickmixed', p })
+    else if (kind === 'load') setPickLoad(p)
+    else if (kind === 'remove') setRemoveP(p)
+  }
+  const invInfo = (id: number) => {
+    const p = ix.pallet.get(id), m = p?.container_id ? ix.pallet.get(p.container_id) : undefined
+    return { load: ix.loadOf.get(id)?.load.code, mixed: m?.code, inSnap: !!p }
   }
   const banner = placing ? { title: placing.title, sub: placing.sub, cancel: () => setPlacing(null) } : null
   const stagingOf = (st: Site) => snap.freezers.find(f => f.site === st && f.kind === 'staging')
@@ -885,7 +903,8 @@ export default function App() {
         {view === 'nursery' && cur === 'nurs' && <Suspense fallback={<p className="muted">Loading…</p>}><NurseryView backend={backend} flash={flash} tab={nurTab} go={setNurTab} customers={snap.customers ?? []} isAdmin={isAdminOf('nurs')} sender={me?.display_name} me={me?.email} /></Suspense>}
         {view === 'proc' && cur === 'proc' && procTab === 'activity' && <ActivityView ix={ix} module="processing" />}
         {view === 'proc' && cur === 'proc' && procTab !== 'activity' && <Suspense fallback={<p className="muted">Loading…</p>}><ProcessingView backend={backend} flash={flash} tab={procTab} go={setProcTab}
-          isAdmin={isAdminOf('proc')} canEdit={lv.processing === 'user' || lv.processing === 'admin'} customers={snap.customers ?? []} strains={snap.strains ?? []} onChanged={() => { reload() }} /></Suspense>}
+          isAdmin={isAdminOf('proc')} canEdit={lv.processing === 'user' || lv.processing === 'admin'} customers={snap.customers ?? []} strains={snap.strains ?? []} onChanged={() => { reload() }}
+          inv={{ act: invAct, info: invInfo, tick: invTick }} /></Suspense>}
         {view === 'acct' && cur === 'acct' && acctTab === 'activity' && <ActivityView ix={ix} module="accounting" />}
         {view === 'acct' && cur === 'acct' && acctTab !== 'activity' && <Suspense fallback={<p className="muted">Loading…</p>}><AccountingView backend={backend} flash={flash} tab={acctTab} go={setAcctTab}
           isAdmin={isAdminOf('acct')} canEdit={lv.accounting === 'user' || lv.accounting === 'admin'} notice={GO_ACCT ? QBO_BACK : null} /></Suspense>}
@@ -1031,7 +1050,7 @@ export default function App() {
         <MergeForm p={form.p} candidates={mergeCandidates(form.p)} whereOf={where} busy={busy} onClose={() => setForm(null)}
           onSubmit={(ids, tag, pending, dest, note) => {
             const p = form.p
-            const run = (slot: number | null) => submit(() => backend.mergePallets(ids, tag, pending, slot ?? p.slot_id, note), m => `${m.code} created from ${ids.length} pallets`, m => setPalletId(m.id))
+            const run = (slot: number | null) => submit(() => backend.mergePallets(ids, tag, pending, slot ?? p.slot_id, note), m => `${m.code} created from ${ids.length} pallets`, m => { if (view !== 'proc') setPalletId(m.id) })
             if (dest === 'same') run(null)
             else startPlacing({ title: `Merging ${ids.length} pallets`, sub: 'Tap the slot for the merged pallet.', run: slot => run(slot.id) }, p)
           }} />
@@ -1042,7 +1061,7 @@ export default function App() {
       )}
       {form?.kind === 'weight' && (
         <WeightForm p={form.p} busy={busy} onClose={() => setForm(null)}
-          onSubmit={(w, note) => submit(() => backend.adjustWeight(form.p.id, w, note), () => 'Weight updated')} />
+          onSubmit={(w, note, reason) => submit(() => backend.adjustWeight(form.p.id, w, note, reason), () => 'Weight updated')} />
       )}
       {form?.kind === 'newchoice' && (
         <NewPalletChooser where={slotLabel(form.slot)} onClose={() => setForm(null)}

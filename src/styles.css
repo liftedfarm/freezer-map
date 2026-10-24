@@ -764,3 +764,6 @@ dd .small { font-size: 12px; margin-top: 2px; word-break: break-all; }
 .login .codebox { display: grid; gap: 10px; width: min(340px, 100%); margin: 0 auto; }
 .login .codebox input { padding: 12px; font-size: 17px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); text-align: center; }
 .login a { cursor: pointer; }
+/* what an action means in METRC (action dialogs) */
+.metrcnote { border: 1px dashed var(--line, #3a4a40); border-radius: 10px; padding: 8px 10px; font-size: 13px; margin: 8px 0; color: var(--muted, #9aa); }
+.metrcnote b { color: var(--ink, inherit); margin-right: 4px; font-size: 12px; letter-spacing: .04em; }

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { Pallet } from './types'
 import type { Lane, Plan } from './plan'
+import { MetrcNote } from './metrc'
 
 const lbs = (n: number) => `${Math.round(n).toLocaleString()} lbs`
 
@@ -115,6 +116,7 @@ export function RemoveForm({ p, busy, onClose, onSubmit }: {
         </div>
         <div className="field"><label>Note {reason === 'mistake' ? <span className="warn-t">(required)</span> : <span className="muted">(optional)</span>}</label>
           <input value={note} onChange={e => setNote(e.target.value)} placeholder={reason === 'mistake' ? 'What happened?' : ''} /></div>
+        <MetrcNote kind="remove" p={p} removeReason={reason ?? undefined} />
         <div className="row end">
           <button className="ghost" onClick={onClose}>Cancel</button>
           <button className="primary danger-bg" disabled={busy || !ok} onClick={() => reason && onSubmit(reason, note.trim())}>Remove</button>

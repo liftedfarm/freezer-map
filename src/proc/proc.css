@@ -33,3 +33,5 @@
 .proc .backrun { margin-bottom: 12px; }
 .proc .crewdays tfoot td { border-top: 2px solid var(--line); font-weight: 600; }
 .proc .crewdays th, .proc .crewdays td { padding-left: 8px; padding-right: 8px; }
+.putspot.here { outline: 2px solid var(--brand); }
+.proc .invacts, .sheet .invacts { flex-wrap: wrap; gap: 6px; margin-top: 8px; }

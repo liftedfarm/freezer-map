@@ -438,6 +438,7 @@ export function PickLoad({ ctx, ps, onClose }: { ctx: LoadCtx; ps: Pallet[]; onC
             </div>
           )
         })}
+        <div className="metrcnote"><b>METRC</b> When the stop is delivered it goes on the METRC to-do list: a transfer manifest to the customer or the other license.</div>
       </div>
     </div>
   )

@@ -19,6 +19,11 @@ import type { RunLite } from '../pay/CrewView'
 import { InvTable } from '../invtable'
 import { ItemLotRows, TestRows } from '../comp/trace'
 import type { Col, GroupBy, Chip } from '../invtable'
+import { MetrcNote } from '../metrc'
+import type { InvAction } from '../metrc'
+
+/** the freezer map's pallet actions, handed down from App (same dialogs, same METRC queue) */
+export interface InvBridge { act: (p: Pallet, kind: InvAction) => void; info: (id: number) => { load?: string; mixed?: string; inSnap: boolean }; tick: number }
 
 // ---------- small helpers ----------
 const n0 = (x: number | null | undefined) => (x == null || !isFinite(x) ? '' : Math.round(x).toLocaleString())
@@ -52,10 +57,12 @@ interface Ctx {
   start: (kind: Run['kind'], ids?: number[]) => void; send: (ids: number[]) => void; back: (ids: number[]) => void; putAway: (p: Pallet) => void
   manifest: (ids: number[]) => Promise<void>; dried: (ids: number[]) => Promise<void>
   sb: ReturnType<Backend['client']>
+  inv?: InvBridge
 }
 
-export default function ProcessingView({ backend, flash, tab, go, isAdmin, canEdit, strains, onChanged }: {
+export default function ProcessingView({ backend, flash, tab, go, isAdmin, canEdit, strains, onChanged, inv }: {
   backend: Backend; flash: Flash; tab: PTab; go: (t: PTab) => void; isAdmin: boolean; canEdit: boolean; customers: Customer[]; strains: Strain[]; onChanged: () => void
+  inv?: InvBridge
 }) {
   const sb = useMemo(() => backend.client(), [backend])
   const api = useMemo(() => (sb ? new ProcApi(sb) : null), [sb])
@@ -73,6 +80,7 @@ export default function ProcessingView({ backend, flash, tab, go, isAdmin, canEd
     try { setD(await api.load()); setErr(null) } catch (e) { setErr(errText(e)) }
   }, [api])
   useEffect(() => { load() }, [load])
+  useEffect(() => { if (inv?.tick) load() }, [inv?.tick])   // a map action (split, merge, weight...) finished
 
   if (!api) return <div className="list"><h2>Processing</h2><p className="muted">Processing needs the database (not available in the demo).</p></div>
   if (err) return <div className="list"><h2>Processing</h2><div className="warnbox">Couldn't load Processing. If this is the first time, run 047_processing.sql in Supabase. ({err})</div></div>
@@ -96,7 +104,7 @@ export default function ProcessingView({ backend, flash, tab, go, isAdmin, canEd
     procName: id => d.processors.find(x => x.id === id)?.name ?? '',
     heldFor: id => held.get(id) ?? null, runOf: id => openRuns.get(id),
     openRun: (r, date) => { setRun(r); setLogDate(date ?? null) }, openPkg: p => setPkg(p),
-    sb,
+    sb, inv,
     start: (kind, ids) => setStartKind({ kind, ids }), send: ids => setSendIds(ids), back: ids => setBackIds(ids), putAway: p => setAway(p),
     manifest: async ids => {
       try { const m = await api.manifest(ids); const { manifestPdf, manifestFile } = await import('../manifest'); const b = await manifestPdf(m)
@@ -369,17 +377,28 @@ function BackSheet({ c, ids, onClose }: { c: Ctx; ids: number[]; onClose: () => 
 }
 
 /** put a package in a reefer trailer: first open spot, or pick one; pumpkin boxes stack 2 high */
+/** Put away (no spot yet) or Move (has a spot): reefer trailers first, then freezers and staging at the same site.
+ *  Same move_pallet the freezer map uses. Going to the other farm is a load (transfer manifest), not a move. */
 function PutAwaySheet({ c, p, sb, onClose }: { c: Ctx; p: Pallet; sb: ReturnType<Backend['client']>; onClose: () => void }) {
-  const site = p.received_site ?? (p.slot_id != null ? c.d.freezers.get(c.d.slots.get(p.slot_id)?.freezer_id ?? -1)?.site : null) ?? 'GVR'
-  const trailers = [...c.d.freezers.values()].filter(f => f.kind === 'trailer' && f.site === site).sort((a, b) => a.number - b.number)
-  const [tr, setTr] = useState<number | null>(trailers[0]?.id ?? null)
+  const moving = p.slot_id != null
+  const site = (p.slot_id != null ? c.d.freezers.get(c.d.slots.get(p.slot_id)?.freezer_id ?? -1)?.site : null) ?? p.received_site ?? 'GVR'
+  const KO: Record<string, number> = { trailer: 0, freezer: 1, staging: 2 }
+  const boxes = [...c.d.freezers.values()].filter(f => f.site === site && (moving || f.kind === 'trailer'))
+    .sort((a, b) => (KO[a.kind] ?? 3) - (KO[b.kind] ?? 3) || a.number - b.number)
+  const trailers = boxes.filter(f => f.kind === 'trailer')
+  const curBox = p.slot_id != null ? c.d.slots.get(p.slot_id)?.freezer_id : undefined
+  const [tr, setTr] = useState<number | null>(curBox ?? boxes[0]?.id ?? null)
   const [occ, setOcc] = useState<Map<number, { code: string; strain: string | null }[]> | null>(null)
   const [busy, setBusy] = useState(false)
-  const spots = [...c.d.slots.values()].filter(s => s.freezer_id === tr).sort((a, b) => a.code.localeCompare(b.code))
+  const box = boxes.find(f => f.id === tr)
+  const cap = box?.kind === 'trailer' ? 2 : 3   // pumpkin boxes go 2 high; freezer pallets get stacked too
+  const spots = [...c.d.slots.values()].filter(s => s.freezer_id === tr).sort((a, b) => box?.kind === 'staging' ? a.row - b.row : a.code.localeCompare(b.code, undefined, { numeric: true }))
+  const spotName = (s: { code: string; row: number }) => box?.kind === 'trailer' ? s.code.slice(2) : box?.kind === 'staging' ? String(s.row) : s.code
+  const boxName = (f: { kind: string; number: number }) => f.kind === 'trailer' ? `Reefer ${f.number - 100}` : f.kind === 'staging' ? 'Staging' : `F${f.number}`
   useEffect(() => {
-    if (!sb || !trailers.length) return
-    const ids = [...c.d.slots.values()].filter(s => trailers.some(f => f.id === s.freezer_id)).map(s => s.id)
-    sb.from('pallets').select('code,strain,slot_id').in('slot_id', ids).eq('status', 'in_freezer').is('container_id', null).then(({ data }) => {
+    if (!sb || !boxes.length) return
+    const ids = [...c.d.slots.values()].filter(s => boxes.some(f => f.id === s.freezer_id)).map(s => s.id)
+    sb.from('pallets').select('code,strain,slot_id').in('slot_id', ids).eq('status', 'in_freezer').is('container_id', null).neq('id', p.id).then(({ data }) => {
       const m = new Map<number, { code: string; strain: string | null }[]>()
       for (const x of (data ?? []) as { code: string; strain: string | null; slot_id: number }[]) m.set(x.slot_id, [...(m.get(x.slot_id) ?? []), x])
       setOcc(m)
@@ -395,15 +414,17 @@ function PutAwaySheet({ c, p, sb, onClose }: { c: Ctx; p: Pallet; sb: ReturnType
       c.flash(`${p.code} in ${c.where({ ...p, slot_id: slot, status: 'in_freezer' })}`); await c.reload(); onClose()
     } catch (e) { c.flash(errText(e), true) } finally { setBusy(false) }
   }
-  const first = spots.find(s => !(occ?.get(s.id)?.length))
-  return <Sheet title={`Put ${p.code} in a trailer`} sub={`${p.strain} · ${PL(p.product)} · ${n0(w(p))} lbs`} onClose={onClose}>
-    {!trailers.length ? <p className="muted">No reefer trailers at {site}.</p> : <>
-      <div className="seg wrap">{trailers.map(f => <button key={f.id} className={tr === f.id ? 'on' : ''} onClick={() => setTr(f.id)}>Reefer {f.number - 100} <span className="muted">{occ ? `${free(f.id)} open` : ''}</span></button>)}</div>
-      {first && <div className="row csave"><button className="primary" disabled={busy} onClick={() => put(first.id, false)}>First open spot ({first.code.slice(2)})</button></div>}
-      <p className="muted small-note">Or tap a spot. A full spot stacks it on top (pumpkin boxes go 2 high). Back of the trailer at the top, door at the bottom.</p>
-      <div className="putgrid">{spots.map(s => { const o = occ?.get(s.id) ?? []
-        return <button key={s.id} className={`putspot ${o.length ? 'full' : ''}`} disabled={busy || o.length >= 2} onClick={() => put(s.id, o.length > 0)}>
-          <b>{s.code.slice(2)}</b><span>{o.length ? o.map(x => x.code).join(' + ') : 'open'}</span></button> })}</div>
+  const first = spots.find(s => s.id !== p.slot_id && !(occ?.get(s.id)?.length))
+  return <Sheet title={moving ? `Move ${p.code}` : `Put ${p.code} in a trailer`} sub={`${p.strain} · ${PL(p.product)} · ${n0(w(p))} lbs${moving ? ` · now ${c.where(p)}` : ''}`} onClose={onClose}>
+    {!boxes.length ? <p className="muted">No {moving ? 'freezers or trailers' : 'reefer trailers'} at {site}.</p> : <>
+      <div className="seg wrap">{boxes.map(f => <button key={f.id} className={tr === f.id ? 'on' : ''} onClick={() => setTr(f.id)}>{boxName(f)} <span className="muted">{occ && f.kind !== 'staging' ? `${free(f.id)} open` : ''}</span></button>)}</div>
+      {first && <div className="row csave"><button className="primary" disabled={busy} onClick={() => put(first.id, false)}>First open spot ({spotName(first)})</button></div>}
+      <p className="muted small-note">Or tap a spot. A full spot stacks it on top{box?.kind === 'trailer' ? ' (pumpkin boxes go 2 high). Back of the trailer at the top, door at the bottom' : ''}.</p>
+      <div className="putgrid">{spots.map(s => { const o = occ?.get(s.id) ?? [], here = s.id === p.slot_id
+        return <button key={s.id} className={`putspot ${o.length ? 'full' : ''} ${here ? 'here' : ''}`} disabled={busy || here || o.length >= cap} onClick={() => put(s.id, o.length > 0)}>
+          <b>{spotName(s)}</b><span>{here ? 'here now' : o.length ? o.map(x => x.code).join(' + ') : 'open'}</span></button> })}</div>
+      {!trailers.length && !moving && <p className="muted">No reefer trailers at {site}.</p>}
+      {moving && <MetrcNote kind="move" p={p} />}
     </>}
   </Sheet>
 }
@@ -652,6 +673,7 @@ function PackageSheet({ c, p, onClose }: { c: Ctx; p: Pallet; onClose: () => voi
   const made = p.run_id ? d.runs.find(x => x.id === p.run_id) : undefined
   const usedIn = d.inputs.filter(i => i.pallet_id === p.id).map(i => d.runs.find(x => x.id === i.run_id)).filter((x): x is Run => !!x && x.status !== 'cancelled')
   const here = live(p), free = here && !r && !h, can = c.canEdit
+  const info = c.inv?.info(p.id)
   const go = (f: () => void) => { onClose(); f() }
   return <Sheet title={p.code} sub={<>{p.strain} <Prod p={p.product} /></>} onClose={onClose}>
     {r && <div className="infobox">Being {r.kind === 'buck' ? 'bucked' : r.kind === 'sort' ? 'sorted' : r.kind === 'machine' ? 'machine trimmed' : 'trimmed'} in <a onClick={() => c.openRun(r)}>{r.code}</a>. Open the run to finish it.</div>}
@@ -667,6 +689,21 @@ function PackageSheet({ c, p, onClose }: { c: Ctx; p: Pallet; onClose: () => voi
       {free && takes('trim', p) && <button className="primary" onClick={() => go(() => c.start('trim', [p.id]))}>Trim</button>}
       {free && takes('machine', p) && p.product !== 'bucked' && <button className="ghost" onClick={() => go(() => c.start('machine', [p.id]))}>Machine trim</button>}
     </div>}
+    {can && here && c.inv && info?.inSnap && <>
+      {info.mixed && <div className="infobox">On mixed pallet {info.mixed}. It moves with it; take it off on the freezer map to split or merge it.</div>}
+      {info.load && <div className="infobox">Planned on load {info.load}. Take it off the load in Transit to split, merge or remove it.</div>}
+      <div className="row invacts">
+        {p.slot_id != null && !info.mixed && <button className="ghost small" onClick={() => go(() => c.putAway(p))}>Move</button>}
+        <button className="ghost small" disabled={!!r || !!info.mixed || !w(p)} onClick={() => go(() => c.inv!.act(p, 'split'))}>Split</button>
+        <button className="ghost small" disabled={!!r || !!info.mixed || !p.strain} onClick={() => go(() => c.inv!.act(p, 'merge'))}>Merge</button>
+        <button className="ghost small" disabled={!!r || !!info.mixed || !!info.load} onClick={() => go(() => c.inv!.act(p, 'addto'))}>Pull for mixed pallet</button>
+        {p.status === 'in_freezer' && !info.load && !info.mixed && <button className="ghost small" disabled={!!r} onClick={() => go(() => c.inv!.act(p, 'load'))}>Put on a load</button>}
+        <button className="ghost small" onClick={() => go(() => c.inv!.act(p, 'weight'))}>Adjust weight</button>
+        <button className="ghost small" onClick={() => go(() => c.inv!.act(p, 'tag'))}>{p.package_tag ? 'Edit tag' : 'Enter tag'}</button>
+        {!info.load && <button className="ghost small danger" disabled={!!r || !!h} onClick={() => go(() => c.inv!.act(p, 'remove'))}>Remove</button>}
+      </div>
+      <p className="muted small-note">Each of these shows what to do in METRC and puts it on the Compliance METRC to-do list.</p>
+    </>}
     <Forecast c={c} p={p} />
     <dl>
       <dt>Where</dt><dd>{c.where(p)}</dd>

@@ -2,8 +2,11 @@ import { TextIn } from './cult/ui'
 import { useMemo, useState } from 'react'
 import { ScanButton } from './scan'
 import type { MixLine, Pallet, SingleInput } from './types'
+import { MetrcNote, WEIGHT_REASONS, defaultReason } from './metrc'
 
 // Small shared pieces for the action dialogs (split, merge, tag, weight).
+
+const PL = (p: Pallet) => ({ wet: 'Wet', unbucked: 'Unbucked', bucked: 'Bucked', bucked_standards: 'Bucked Standards', standards: 'Standards', smalls: 'Smalls', trim: 'Trim' } as Record<string, string>)[p.product ?? ''] ?? ''
 
 export const lbs = (n: number | null | undefined) => n == null ? '' : `${(Math.round(n * 100) / 100).toLocaleString()} lbs`
 
@@ -74,6 +77,7 @@ export function SplitForm({ p, where, busy, onClose, onSubmit }: {
       <TagField tag={tag} setTag={setTag} pending={pending} setPending={setPending} />
       <DestField dest={dest} setDest={setDest} sameLabel={where ? `Same slot (${where})` : null} />
       <div className="field"><label>Note (optional)</label><input value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. pulled for Acquamarcia order" /></div>
+      <MetrcNote kind="split" p={p} />
       <div className="row end">
         <button className="ghost" onClick={onClose}>Cancel</button>
         <button className="primary" disabled={!ok || busy} onClick={() => onSubmit(n, pending ? null : tag, pending, dest, note)}>Split</button>
@@ -96,9 +100,9 @@ export function MergeForm({ p, candidates, whereOf, busy, onClose, onSubmit }: {
   const ok = picked.size > 0 && (pending || tag.trim().length > 0)
   return (
     <Dialog title={`Merge ${p.code}`} onClose={onClose}>
-      <p className="muted">Combine {p.strain} pallets into one new C pallet with a new METRC tag. The originals are closed out and linked in history.</p>
+      <p className="muted">Combine {p.strain}{p.product && p.product !== 'fresh_frozen' ? ` ${PL(p)}` : ''} pallets into one new C pallet with a new METRC tag. The originals are closed out and linked in history.</p>
       <div className="field">
-        <label>Merge with ({candidates.length} other {p.strain} pallets)</label>
+        <label>Merge with ({candidates.length} other {p.strain}{p.product && p.product !== 'fresh_frozen' ? ` ${PL(p)}` : ''} pallets)</label>
         <div className="picklist">
           {candidates.length === 0 && <div className="muted">No other {p.strain} pallets in inventory.</div>}
           {candidates.map(c => (
@@ -113,6 +117,7 @@ export function MergeForm({ p, candidates, whereOf, busy, onClose, onSubmit }: {
       <TagField tag={tag} setTag={setTag} pending={pending} setPending={setPending} />
       <DestField dest={dest} setDest={setDest} sameLabel={p.slot_id != null ? `${p.code}'s slot (${whereOf(p)})` : null} />
       <div className="field"><label>Note (optional)</label><input value={note} onChange={e => setNote(e.target.value)} /></div>
+      <MetrcNote kind="merge" p={p} n={picked.size + 1} />
       <div className="row end">
         <button className="ghost" onClick={onClose}>Cancel</button>
         <button className="primary" disabled={!ok || busy} onClick={() => onSubmit([p.id, ...picked], pending ? null : tag, pending, dest, note)}>Merge {picked.size + 1} pallets</button>
@@ -132,6 +137,7 @@ export function TagForm({ p, busy, onClose, onSubmit }: { p: Pallet; busy: boole
           <ScanButton onScan={setTag} />
         </div>
       </div>
+      <MetrcNote kind="tag" p={p} />
       <div className="row end">
         <button className="ghost" onClick={onClose}>Cancel</button>
         <button className="primary" disabled={!tag.trim() || busy} onClick={() => onSubmit(tag)}>Save tag</button>
@@ -140,19 +146,25 @@ export function TagForm({ p, busy, onClose, onSubmit }: { p: Pallet; busy: boole
   )
 }
 
-export function WeightForm({ p, busy, onClose, onSubmit }: { p: Pallet; busy: boolean; onClose: () => void; onSubmit: (w: number, note: string) => void }) {
+export function WeightForm({ p, busy, onClose, onSubmit }: { p: Pallet; busy: boolean; onClose: () => void; onSubmit: (w: number, note: string, reason: string) => void }) {
   const [w, setW] = useState(p.current_weight != null ? String(p.current_weight) : '')
   const [note, setNote] = useState('')
+  const [reason, setReason] = useState(defaultReason(p))
   const n = parseFloat(w)
+  const diff = n >= 0 && p.current_weight != null ? Math.round((n - p.current_weight) * 100) / 100 : null
   return (
     <Dialog title={`Adjust weight · ${p.code}`} onClose={onClose}>
       <p className="muted">Currently {lbs(p.current_weight) || 'unknown'}. Use this for a reweigh or to fix a wrong number.</p>
       <div className="field"><label>New weight (lbs)</label>
-        <input type="number" inputMode="decimal" min="0" step="0.01" value={w} autoFocus onChange={e => setW(e.target.value)} /></div>
-      <div className="field"><label>Reason</label><input value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. reweighed on scale 2" /></div>
+        <input type="number" inputMode="decimal" min="0" step="0.01" value={w} autoFocus onChange={e => setW(e.target.value)} />
+        {diff != null && diff !== 0 && <div className="muted">{diff > 0 ? '+' : ''}{lbs(diff)}</div>}</div>
+      <div className="field"><label>Reason</label>
+        <div className="choices col">{WEIGHT_REASONS.map(r => <button key={r.k} className={reason === r.k ? 'on' : ''} onClick={() => setReason(r.k)}><b>{r.l}</b> <span className="muted">{r.hint}</span></button>)}</div></div>
+      <div className="field"><label>Note (optional)</label><input value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. reweighed on scale 2" /></div>
+      <MetrcNote kind="weight" p={p} reason={reason} />
       <div className="row end">
         <button className="ghost" onClick={onClose}>Cancel</button>
-        <button className="primary" disabled={!(n >= 0) || busy} onClick={() => onSubmit(n, note)}>Save</button>
+        <button className="primary" disabled={!(n >= 0) || busy} onClick={() => onSubmit(n, note, reason)}>Save</button>
       </div>
     </Dialog>
   )
@@ -254,6 +266,7 @@ export function MixedBuilder({ title, target, candidates, initial, whereOf, busy
       ))}
       {lines.length > 0 && <div className="muted">{lines.length} package{lines.length > 1 ? 's' : ''} · {lbs(total)}</div>}
       <div className="field"><label>Note (optional)</label><input value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. Acquamarcia order" /></div>
+      <div className="metrcnote"><b>METRC</b> Whole packages keep their tags: nothing to do in METRC. A partial amount is split into a new package with its own tag (it goes on the METRC to-do list).</div>
       <div className="row end">
         <button className="ghost" onClick={onClose}>Cancel</button>
         <button className="primary" disabled={!ok || busy} onClick={() => onSubmit(lines.map(l => l.whole

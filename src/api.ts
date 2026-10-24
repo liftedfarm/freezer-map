@@ -93,7 +93,7 @@ export interface Backend {
   cancelLoad(loadId: number): Promise<void>
   mergePallets(ids: number[], tag: string | null, tagPending: boolean, destSlot: number | null, note?: string): Promise<Pallet>
   setTag(palletId: number, tag: string, note?: string): Promise<void>
-  adjustWeight(palletId: number, weight: number, note?: string): Promise<void>
+  adjustWeight(palletId: number, weight: number, note?: string, reason?: string): Promise<void>
   applyMoves(moves: { pallet_id: number; from_slot: number | null; to_slot: number; kind: string }[], note?: string): Promise<string>
   undoBatch(batch: string): Promise<number>
   removePallet(id: number, reason: string, note: string): Promise<void>
@@ -639,8 +639,11 @@ class SupaBackend implements Backend {
   async nextTags(site: string, purpose: string, n: number) { const { data, error } = await this.sb.rpc('next_tags', { p_site: site, p_purpose: purpose, p_count: n }); return error ? [] : (data as string[]) }
   async dismissTag(tag: string) { const { error } = await this.sb.rpc('dismiss_unmatched_tag', { p_tag: tag }); fail(error) }
   async ackShipped(tag: string) { const { error } = await this.sb.rpc('ack_shipped_tag', { p_tag: tag }); fail(error) }
-  async adjustWeight(palletId: number, weight: number, note?: string) {
-    const { error } = await this.sb.rpc('adjust_weight', { p_pallet_id: palletId, p_weight: weight, p_note: note || null })
+  async adjustWeight(palletId: number, weight: number, note?: string, reason?: string) {
+    const base = { p_pallet_id: palletId, p_weight: weight, p_note: note || null }
+    let { error } = await this.sb.rpc('adjust_weight', reason ? { ...base, p_reason: reason } : base)
+    // 059 not run yet: save without the METRC reason, keep it in the note
+    if (error && reason && /p_reason|function .*adjust_weight|schema cache/i.test(error.message)) ({ error } = await this.sb.rpc('adjust_weight', { ...base, p_note: [reason, note].filter(Boolean).join(': ') }))
     fail(error)
   }
   async lineage(p: Pallet) {
@@ -954,10 +957,10 @@ class DemoBackend implements Backend {
   async ackShipped() {}
   async dismissTag() {}
   async nextTags() { return [] as string[] }
-  async adjustWeight(palletId: number, weight: number, note?: string) {
+  async adjustWeight(palletId: number, weight: number, note?: string, reason?: string) {
     const p = this.snap!.pallets.find(x => x.id === palletId)!
     if (!(weight >= 0)) throw new Error('Enter a weight of 0 or more')
-    this.log({ type: 'weight_adjust', pallet_id: p.id, lbs: weight, note: note || null, details: { from: p.current_weight, to: weight } })
+    this.log({ type: 'weight_adjust', pallet_id: p.id, lbs: weight, note: note || null, details: { from: p.current_weight, to: weight, reason } })
     p.current_weight = weight
   }
   async lineage(p: Pallet) {
