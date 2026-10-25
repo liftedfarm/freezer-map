@@ -35,6 +35,10 @@
       "schedule": "7 0-3 * * 0,2-6"
     },
     {
+      "path": "/api/weather/refresh",
+      "schedule": "13 * * * *"
+    },
+    {
       "path": "/api/compliance/backup",
       "schedule": "17 10 * * *"
     }

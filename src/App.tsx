@@ -48,6 +48,7 @@ import { LoadForm, LoadView, PickLoad, TransitView, stopColor } from './loads'
 import type { LoadCtx } from './loads'
 import { lang, setLang, t } from './i18n'
 import { setMyAccess } from './fold'
+import { WeatherBar } from './weather'
 import type { Grade, Item, HarvestLot, FOrder, ModKey, UnmatchedTag, ShippedCheck, Freezer, Me, FreezerStatus, InvEvent, Load, LoadItem, LoadStop, Pallet, Site, Slot, Snapshot } from './types'
 
 const backend: Backend = makeBackend()
@@ -852,6 +853,7 @@ export default function App() {
           onChange={e => { setQuery(e.target.value); if (view === 'freezer' || view === 'activity' || view === 'dash' || view === 'mine' || view === 'fleet') setView('map') }} />
           <button type="button" className="ghost small scanbtn desk-only" title={t('Scan a METRC tag')} onClick={() => setScanning(true)}>📷</button></>}
         {(cur !== 'dist' || noMods) && <span className="grow" />}
+        {staff && <WeatherBar sb={backend.client()} canEdit={!!me?.access?.owner || lv.cultivation === 'admin'} flash={flash} />}
         {staff && <button className={`ghost small desk-only ${view === 'fleet' ? 'on-btn' : ''}`} title={t('Vehicles: inspections, maintenance, incidents')} onClick={() => (view === 'fleet' ? go(lastView.current) : go('fleet'))}>🚚<span className="hide-phone"> {t('Vehicles')}</span></button>}
         <button className={`ghost small ${view === 'mine' ? 'on-btn' : ''}`} title={t('Your own settings')} onClick={() => (view === 'mine' ? go(lastView.current) : go('mine'))}>⚙<span className="hide-phone"> {t('My settings')}</span></button>
         <button className="ghost small" title={t('Signed in as {u}. Click to sign out.', { u: user ?? '' })} onClick={() => backend.signOut().then(() => setUser(null))}>{who(user)} ⏏</button>

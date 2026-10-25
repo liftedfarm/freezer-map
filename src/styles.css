@@ -914,3 +914,92 @@ html:has(.app.shell), html:has(.app.shell) body { height: 100%; overflow: hidden
 .scanmiss .warnbox { margin-bottom: 12px; }
 .scanpick .warnbox, .scanpick .okbox { margin: 8px 0 12px; padding: 10px 12px; border-radius: 10px; }
 @media (min-width: 1000px) { .app.shell.with-rail { padding-bottom: 20px; } }
+
+/* ---------- weather (067) ---------- */
+.wxbar { display: flex; align-items: center; gap: 6px; background: transparent; border: 1px solid var(--line); border-radius: 10px; padding: 3px 8px; color: var(--ink); cursor: pointer; font: inherit; min-height: 34px; }
+.wxbar:hover { border-color: var(--muted); }
+.wx-site { font-size: 10px; font-weight: 700; letter-spacing: .06em; color: var(--muted); }
+.wx-alert { font-size: 12px; font-weight: 700; color: #fff; background: var(--bad); border-radius: 8px; padding: 0 5px; }
+.wx-ic { font-size: 15px; line-height: 1; }
+.wx-ic.big { font-size: 20px; text-align: center; }
+.wx-today { display: none; align-items: center; gap: 5px; font-size: 14px; position: relative; }
+.wx-hl { color: var(--muted); font-size: 12px; }
+.wx-pop { color: #2563eb; font-size: 11px; font-weight: 600; }
+.wx-pop.none { color: var(--muted); font-weight: 400; }
+.wx-days { display: flex; gap: 2px; }
+.wx-day { position: relative; display: grid; grid-template-columns: auto auto; grid-template-rows: auto auto; column-gap: 4px; align-items: center; padding: 0 5px; min-width: 52px; border-left: 1px solid var(--line); }
+.wx-day:first-child { border-left: 0; }
+.wx-dn { grid-column: 1 / 3; font-size: 10px; color: var(--muted); text-align: center; line-height: 1.2; }
+.wx-day .wx-ic { grid-row: 2; }
+.wx-t { grid-row: 2; font-size: 12px; white-space: nowrap; }
+.wx-t .wx-lo { color: var(--muted); margin-left: 2px; font-size: 11px; }
+.wx-day .wx-pop { position: absolute; right: 2px; top: 0; font-size: 9px; }
+.wx-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--warn); }
+.wx-dot.warning { background: var(--bad); }
+.wx-day .wx-dot { position: absolute; left: 3px; top: 3px; }
+@media (max-width: 1199px) { .wx-day.i3, .wx-day.i4 { display: none; } }
+@media (max-width: 600px) {
+  .wx-days { display: none; }
+  .wx-today { display: inline-flex; }
+  .wxbar { padding: 3px 6px; gap: 4px; }
+  .wx-site { display: none; }
+  .wx-today .wx-dot { position: absolute; top: -3px; right: -5px; }
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .wx-pop { color: #93c5fd; } }
+:root[data-theme="dark"] .wx-pop { color: #93c5fd; }
+
+.wxscrim { align-items: center; }
+.sheet.wxpanel { max-width: 760px; border-radius: 16px; }
+@media (max-width: 600px) { .wxscrim { align-items: flex-end; } .sheet.wxpanel { border-radius: 16px 16px 0 0; max-height: 92vh; } }
+.wx-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 4px 0 10px; }
+.wx-addr { font-size: 12px; }
+.wx-alerts { display: grid; gap: 6px; margin-bottom: 10px; }
+.wx-alertbox { cursor: pointer; }
+.wx-alertbox.bad { border-color: var(--bad); background: color-mix(in srgb, var(--bad) 12%, var(--panel)); }
+.wx-alerttext p { margin: 6px 0; white-space: pre-wrap; font-size: 13px; }
+.wx-hhead { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 6px 0; }
+.small-seg button { padding: 5px 10px; font-size: 13px; }
+.wx-hours { display: flex; overflow-x: auto; gap: 2px; padding-bottom: 6px; scroll-snap-type: x proximity; }
+.wx-h { flex: 0 0 46px; text-align: center; font-size: 12px; border-radius: 8px; padding: 4px 0; border-top: 3px solid transparent; scroll-snap-align: start; }
+.wx-h.spray { border-top-color: #16a34a; background: color-mix(in srgb, #16a34a 10%, transparent); }
+.wx-hh { color: var(--muted); font-size: 11px; }
+.wx-ht { font-weight: 700; font-size: 14px; }
+.wx-hp { color: #2563eb; min-height: 15px; }
+.wx-hw, .wx-hr { color: var(--muted); }
+.wx-hv { margin: 2px 4px 0; border-radius: 5px; font-weight: 600; }
+.wx-hlegend { font-size: 11px; margin-bottom: 8px; }
+.wx-list { border-top: 1px solid var(--line); }
+.wx-row { border-bottom: 1px solid var(--line); padding: 7px 2px; cursor: pointer; }
+.wx-row.far { opacity: .55; }
+.wx-r1 { display: grid; grid-template-columns: 82px 36px 70px 74px 64px 70px 1fr; align-items: center; gap: 6px; font-size: 14px; }
+.wx-rv { display: flex; gap: 3px; }
+.vpdchip { display: inline-block; border-radius: 5px; padding: 0 5px; font-size: 12px; font-weight: 600; }
+.vpd-wet { background: #1d4ed8; color: #fff; }
+.vpd-low { background: #bfdbfe; color: #1e3a8a; }
+.vpd-good { background: #bbf7d0; color: #14532d; }
+.vpd-high { background: #fde68a; color: #78350f; }
+.vpd-stress { background: #dc2626; color: #fff; }
+.wx-conf { display: block; height: 6px; border-radius: 3px; background: var(--empty); overflow: hidden; max-width: 90px; }
+.wx-conf span { display: block; height: 100%; }
+.wx-conf .hi { background: #16a34a; } .wx-conf .mid { background: #d97706; } .wx-conf .lo { background: #dc2626; }
+.wx-flags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; padding-left: 2px; }
+.wx-flag { font-size: 12px; border-radius: 10px; padding: 1px 8px; border: 1px solid var(--line); }
+.wx-flag.watch { border-color: var(--warn); color: var(--warn); }
+.wx-flag.warning { border-color: var(--bad); background: var(--bad); color: #fff; }
+.wx-flag.good { border-color: #16a34a; color: #16a34a; }
+.wx-more { margin-top: 6px; display: grid; gap: 4px; font-size: 13px; }
+.wx-why { padding: 4px 8px; border-radius: 8px; background: var(--empty); }
+.wx-why.warning { background: color-mix(in srgb, var(--bad) 14%, var(--panel)); }
+.wx-why.watch { background: color-mix(in srgb, var(--warn) 14%, var(--panel)); }
+.wx-foot { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; margin-top: 10px; font-size: 12px; }
+.wxrules fieldset { border: 1px solid var(--line); border-radius: 10px; margin: 0 0 10px; padding: 6px 10px 10px; }
+.wxrules fieldset.off { opacity: .6; }
+.wxrules legend { padding: 0 4px; font-weight: 600; }
+.wx-rgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.wx-rgrid label { display: grid; gap: 2px; font-size: 13px; }
+.wx-rgrid input[type=number] { width: 100%; }
+@media (max-width: 600px) {
+  .wx-r1 { grid-template-columns: 74px 30px 60px 1fr 64px; font-size: 13px; }
+  .wx-rd .muted { font-size: 11px; }
+  .wx-rw, .wx-rc { display: none; }
+}
