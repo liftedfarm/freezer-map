@@ -334,15 +334,17 @@ function RulesEditor({ sb, site, flash, onClose, onSaved }: { sb: SupabaseClient
   const save = async () => {
     setBusy(true)
     const { error } = await sb.rpc('weather_save_rules', { p_site: site.id, p_rules: r })
+    if (error) { setBusy(false); flash(error.message, true); return }
+    flash(t('Saved. Updating the flags…'))
+    // recompute the flags now with the new settings, then reload
+    try { await fetch('/api/weather/refresh') } catch { /* next hourly run picks it up */ }
     setBusy(false)
-    if (error) { flash(error.message, true); return }
-    flash(t('Saved. Flags update on the next hourly refresh.'))
     onSaved()
   }
   return (
     <div className="scrim" onClick={e => { e.stopPropagation(); onClose() }}>
       <div className="sheet form wide wxrules" onClick={e => e.stopPropagation()}>
-        <div className="sheet-h"><div><h2 style={{ margin: 0 }}>{t('Flag settings: {s}', { s: site.name })}</h2><div className="muted">{t('Each site has its own. Changes apply on the next hourly refresh.')}</div></div>
+        <div className="sheet-h"><div><h2 style={{ margin: 0 }}>{t('Flag settings: {s}', { s: site.name })}</h2><div className="muted">{t('Each site has its own. Flags update as soon as you save.')}</div></div>
           <button className="ghost" onClick={onClose}>✕</button></div>
         {Object.keys(FIELDS).map(k => (
           <fieldset key={k} className={`wx-rule ${k !== 'vpd' && !r[k].on ? 'off' : ''}`}>

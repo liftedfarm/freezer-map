@@ -117,7 +117,10 @@ export default async function handler(req, res) {
   try {
     const last = await db('weather_runs?select=ran_at,ok&order=ran_at.desc&limit=1')
     const lastAt = last?.[0] ? Date.parse(last[0].ran_at) : 0
-    if (!isCron && Date.now() - lastAt < 20 * 60 * 1000) return send(res, 200, { skipped: 'fresh', last: last[0]?.ran_at })
+    // flag settings saved since the last run: recompute right away (the app calls this after a save)
+    const edited = await db('weather_sites?select=updated_at&order=updated_at.desc&limit=1').catch(() => [])
+    const rulesChanged = edited?.[0] && Date.parse(edited[0].updated_at) > lastAt
+    if (!isCron && !rulesChanged && Date.now() - lastAt < 20 * 60 * 1000) return send(res, 200, { skipped: 'fresh', last: last[0]?.ran_at })
     if (isCron && Date.now() - lastAt < 4 * 60 * 1000) return send(res, 200, { skipped: 'just ran', last: last[0]?.ran_at })
 
     const nowSec = Math.floor(Date.now() / 1000)
