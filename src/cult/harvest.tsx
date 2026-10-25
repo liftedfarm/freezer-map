@@ -374,11 +374,14 @@ function Finish({ h, busy, run, api, back, ready, raw, pallets }: { h: Harvest; 
   const waste = Math.max(wet - packed, 0)
   const blocked = h.kind === 'ff' && waiting.length > 0
   const flower = h.kind === 'ff' || h.kind === 'dry'
+  // opened by mistake: nothing logged yet, so it can go back on the schedule
+  const nothing = h.stage === 'harvesting' && raw.length === 0 && h.raw_bins.length === 0 && pallets.length === 0 && !(Number(h.metrc_plants ?? 0) > 0) && !(Number(h.metrc_wet_lbs ?? 0) > 0)
   if (!open) return (
     <div className="row wrap hfin">
       <button className="ghost" disabled={busy || !ready || blocked} onClick={() => setOpen('finish')}>Finish harvest…</button>
       {flower && <button className="ghost" disabled={busy || !ready || blocked} onClick={() => setOpen('continue')}>Continue tomorrow…</button>}
       {!ready ? <span className="muted">Log something first.</span> : blocked ? <span className="muted">Push every pallet first ({waiting.length} not pushed).</span> : null}
+      {nothing && <button className="ghost" disabled={busy} onClick={() => run(() => api.unstart(h.id), `${h.strain} is back on the schedule${h.planned_on ? ` for ${fmtD(h.planned_on, true)}` : ''}`).then(back)}>Didn't start: back on the schedule</button>}
     </div>
   )
   const cont = open === 'continue'
