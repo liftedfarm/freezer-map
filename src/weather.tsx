@@ -278,7 +278,7 @@ function WeatherPanel({ sb, w, siteId, setSiteId, canEdit, flash, onClose }: {
               <div key={d.day} className={`wx-row ${i >= 7 ? 'far' : ''} ${isOpen ? 'open' : ''}`} onClick={() => setOpenDay(isOpen ? null : d.day)}>
                 <div className="wx-r1">
                   <div className="wx-rd"><b>{dn(d.day, today)}</b><span className="muted"> {dateFmt.format(new Date(d.day + 'T12:00:00Z'))}</span></div>
-                  <div className="wx-ic big">{wxIcon(d.icon)}</div>
+                  <div className="wx-ic wx-icbig">{wxIcon(d.icon)}</div>
                   <div className="wx-rt"><b>{r0(d.hi_f)}°</b> <span className="muted">{r0(d.lo_f)}°</span></div>
                   <div className="wx-rp">{(d.pop ?? 0) >= 10 ? <>{r0(d.pop)}%{(d.precip_in ?? 0) >= 0.01 && <span className="muted"> {d.precip_in!.toFixed(2)}"</span>}</> : <span className="muted">–</span>}</div>
                   <div className="wx-rw">💨 {r0(d.wind_mph)}{d.gust_mph != null ? <span className="muted">/{r0(d.gust_mph)}</span> : null}</div>

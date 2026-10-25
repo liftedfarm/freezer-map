@@ -921,7 +921,7 @@ html:has(.app.shell), html:has(.app.shell) body { height: 100%; overflow: hidden
 .wx-site { font-size: 10px; font-weight: 700; letter-spacing: .06em; color: var(--muted); }
 .wx-alert { font-size: 12px; font-weight: 700; color: #fff; background: var(--bad); border-radius: 8px; padding: 0 5px; }
 .wx-ic { font-size: 15px; line-height: 1; }
-.wx-ic.big { font-size: 20px; text-align: center; }
+.wx-ic.wx-icbig { font-size: 20px; text-align: center; }
 .wx-today { display: none; align-items: center; gap: 5px; font-size: 14px; position: relative; }
 .wx-hl { color: var(--muted); font-size: 12px; }
 .wx-pop { color: #2563eb; font-size: 11px; font-weight: 600; }
