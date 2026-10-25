@@ -568,7 +568,10 @@ class SupaBackend implements Backend {
       return out
     }
     const [skus, lots] = await Promise.all([byIds<Item>('items', ids('item_id')), byIds<HarvestLot>('harvest_lots', ids('lot_id'))]).catch(() => [[], []] as [Item[], HarvestLot[]])
-    return { freezers, slots, pallets, strains, vehicles, customers, loads, stops, items, shipped, unmatched, inRun, skus, lots }
+    const { data: drv } = await this.sb.from('fleet_drivers').select('id, name, carrier_id, active, fleet_driver_assets(asset_id)').order('name')
+    const drivers = ((drv ?? []) as { id: number; name: string; carrier_id: number | null; active: boolean; fleet_driver_assets: { asset_id: number }[] }[])
+      .map(x => ({ id: x.id, name: x.name, carrier_id: x.carrier_id, active: x.active, asset_ids: (x.fleet_driver_assets ?? []).map(y => y.asset_id) }))
+    return { freezers, slots, pallets, strains, vehicles, drivers, customers, loads, stops, items, shipped, unmatched, inRun, skus, lots }
   }
   async movePallet(palletId: number, toSlot: number | null, combine: boolean, note?: string) {
     const { error } = await this.sb.rpc('move_pallet', {

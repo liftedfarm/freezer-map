@@ -5,7 +5,7 @@ import { AddDocsSheet, DocList, DropZone, Expiry, FileChip, SITES, daysTo, fmtD 
 import { DateIn, F, Pick, SaveBar, Sheet, TextIn, errText } from '../cult/ui'
 
 const REF_LABEL: Record<RefKind, string> = { test: 'Pre-harvest test', pallet: 'Package', lot: 'Harvest lot', harvest: 'Harvest', material: 'Material', license: 'License',
-  customer: 'Customer', metrc_error: 'METRC error', obligation: 'Deadline', processor: 'Processor', asset: 'Vehicle', fleet_log: 'Vehicle report' }
+  customer: 'Customer', metrc_error: 'METRC error', obligation: 'Deadline', processor: 'Processor', asset: 'Vehicle', fleet_log: 'Vehicle report', carrier: 'Carrier', driver: 'Driver' }
 const who = (e: string | null | undefined) => (e ?? '').split('@')[0]
 
 export function Library({ c }: { c: Ctx }) {

@@ -1,3 +1,4 @@
+import { CompFleet } from '../fleet/Fleet'
 import { useState } from 'react'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { NurseryApi } from './api'
@@ -79,6 +80,7 @@ export function SetupTab({ d, sb, api, terms, flash, onSaved }: { d: NData; sb: 
         <TagRanges sb={sb} license={l.license_no} kind="nursery" ranges={d.ranges} used={used} canEdit flash={flash} onChanged={() => onSaved(t('Tags updated'))} />
       </Fold>)}
 
+      <Fold id="nset.vehicles" title={t('Vehicles and equipment')}><CompFleet sb={sb} flash={flash} dept="nursery" /></Fold>
       <Fold id="nset.people" title={t('People')}><ModulePeople sb={sb} module="nursery" flash={flash} /></Fold>
 
       {room && <RoomSheet d={d} r={room} api={api} busy={busy} run={run} onClose={() => setRoom(null)} />}

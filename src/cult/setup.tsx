@@ -1,3 +1,4 @@
+import { CompFleet } from '../fleet/Fleet'
 import { useEffect, useState } from 'react'
 import type { CultApi, TagRule } from './api'
 import { n0, n2, pct } from './calc'
@@ -68,6 +69,7 @@ export function SetupTab({ d, api, sb, flash, onSaved }: { d: CultData; api: Cul
       <button className="primary" onClick={saveSettings}>Save lists</button>
       </Fold>
       <Fold id="cset.tags" title="METRC tags from pallet numbers"><TagRules api={api} flash={flash} /></Fold>
+      <Fold id="cset.vehicles" title="Vehicles and equipment"><CompFleet sb={sb} flash={flash} dept="cultivation" /></Fold>
       <Fold id="cset.people" title="People"><ModulePeople sb={sb} module="cultivation" flash={flash} /></Fold>
 
       <p className="cnote">Every change in Production is listed under Activity.</p>

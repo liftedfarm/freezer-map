@@ -1,7 +1,7 @@
 import { ScanButton } from './scan'
 import { useScrimBack, useTabHistory } from './nav'
 import { StrainCardHost, StrainLink } from './strainCard'
-import { CrewFleet } from './fleet/Fleet'
+import { CompFleet, CrewFleet } from './fleet/Fleet'
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Backend, CONFIG_MISSING, IS_PORTAL, makeBackend, portalUrl } from './api'
@@ -320,6 +320,8 @@ function describe(ix: Index, e: InvEvent, names?: Map<number, string>) {
     case 'comp_backup': { const d = e.details as { copied?: number; archived?: number; failed?: number } | null; return `SharePoint backup: ${d?.copied ?? 0} copied, ${d?.archived ?? 0} archived, ${d?.failed ?? 0} failed` }
     case 'sample_set': { const d = e.details as { sample?: boolean; customer?: string } | null; return `${e.note ?? 'Order'} ${d?.sample ? 'marked as a sample' : 'no longer a sample'}${d?.customer ? ` (${d.customer})` : ''}` }
     case 'sample_hold': { const d = e.details as { release?: boolean; until?: string; customer?: string } | null; return `Sample hold ${e.note}${d?.customer ? ` for ${d.customer}` : ''}: ${d?.release ? 'released' : `until ${d?.until}`}` }
+    case 'fleet_driver': { const d = e.details as { new?: boolean; carrier?: number | null } | null; return `${d?.new ? 'Driver added' : 'Driver changed'}: ${e.note}${d?.carrier ? ' (carrier)' : ''}` }
+    case 'fleet_carrier': { const d = e.details as { new?: boolean } | null; return `${d?.new ? 'Carrier added' : 'Carrier changed'}: ${e.note}` }
     case 'fleet_asset': { const d = e.details as { new?: boolean } | null; return `${d?.new ? 'Vehicle added' : 'Vehicle changed'}: ${e.note}` }
     case 'fleet_inspection': { const d = e.details as { result?: string } | null; return `Inspection${d?.result ? ` (${d.result === 'pass' ? 'passed' : d.result === 'defects' ? 'defects found' : 'out of service'})` : ''}: ${e.note}` }
     case 'fleet_maintenance': return `Maintenance: ${e.note}`
@@ -619,7 +621,7 @@ export default function App() {
   const canonOf = (() => { const m = new Map<string, string>(); for (const st of snap.strains ?? []) for (const n of [st.name, ...(st.aliases ?? [])]) m.set(n.toLowerCase(), st.name.toLowerCase()); return (x: string | null | undefined) => { const k = (x ?? '').trim().toLowerCase(); return m.get(k) ?? k } })()
   const ctx: LoadCtx = {
     loads: snap.loads ?? [], stops: snap.stops ?? [], items: snap.items ?? [],
-    vehicles: snap.vehicles ?? [], customers: snap.customers ?? [],
+    vehicles: snap.vehicles ?? [], customers: snap.customers ?? [], drivers: snap.drivers ?? [],
     pallet: id => ix.pallet.get(id), contents: id => ix.contentsOf.get(id) ?? [], weight: p => weightOf(ix, p), where,
     freezerSpot: id => whereIs(ix, id),
     available: snap.pallets.filter(p => !p.container_id && (p.status === 'in_freezer' || (p.status === 'unslotted' && !!p.received_site)) && !ix.loadOf.has(p.id)),
@@ -694,8 +696,8 @@ export default function App() {
   }
   const invStrains = snap.pallets.reduce((m, p) => p.strain ? m.set(p.strain, (m.get(p.strain) ?? 0) + 1) : m, new Map<string, number>())
   // each module's settings, used in the module and again in Admin > Settings
-  const distSettings = <SettingsView key="dist-set" backend={backend} flash={flash} onChanged={() => { reload() }} inventoryStrains={invStrains} title="Distribution settings" lists={['vehicles', 'strains']}
-    extra={[{ k: 'people', l: 'People', node: <ModulePeople sb={backend.client()} module="distribution" flash={flash} /> }]} />
+  const distSettings = <SettingsView key="dist-set" backend={backend} flash={flash} onChanged={() => { reload() }} inventoryStrains={invStrains} title="Distribution settings" lists={['strains']}
+    extra={[{ k: 'vehicles', l: 'Vehicles', node: <CompFleet sb={backend.client()} flash={flash} dept="distribution" /> }, { k: 'people', l: 'People', node: <ModulePeople sb={backend.client()} module="distribution" flash={flash} /> }]} />
   const salesSettings = <SettingsView key="sales-set" backend={backend} flash={flash} onChanged={() => { reload() }} inventoryStrains={invStrains} title="Sales settings"
     lists={['customers', 'strains']} canTerms={salesAdmin} extra={[{ k: 'terms', l: 'Payment terms', node: <TermsPanel backend={backend} flash={flash} canEdit={salesAdmin} /> },
       { k: 'deadlines', l: 'Reserve deadlines', node: <DeadlinesPanel backend={backend} flash={flash} /> },

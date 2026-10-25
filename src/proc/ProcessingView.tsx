@@ -1,3 +1,4 @@
+import { CompFleet } from '../fleet/Fleet'
 import { StrainLink } from '../strainCard'
 import { useBack } from '../nav'
 import '../cult/cult.css'
@@ -840,6 +841,7 @@ function SettingsTab({ c, sb }: { c: Ctx; sb: ReturnType<Backend['client']> }) {
       <Fold id="proc.set.tags" title="METRC tags">
         <p className="muted">"Fill next tags" on a run uses the "Processing packages" tag range for the site (Admin › Settings › Licenses, on the GVR processor license). Without one, scan or type the tags, or leave them pending.</p>
       </Fold>
+      <Fold id="proc.set.vehicles" title="Vehicles and equipment"><CompFleet sb={sb} flash={c.flash} dept="processing" /></Fold>
       <Fold id="proc.set.people" title="People"><ModulePeople sb={sb} module="processing" flash={c.flash} /></Fold>
       {ed && <Sheet title={ed.id ? ed.name : 'New processor'} onClose={() => setEd(null)}>
         <F label="Name"><TextIn value={ed.name} onChange={v => setEd({ ...ed, name: v ?? '' })} /></F>

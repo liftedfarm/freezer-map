@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { FleetApi } from './api'
-import type { Asset, AssetKind, Checklist, FleetData, InspResult, Log, LogKind } from './api'
+import type { Asset, AssetKind, Carrier, Checklist, Dept, Driver, FleetData, InspResult, Log, LogKind } from './api'
 import type { Doc, DocType } from '../comp/api'
 import { AddDocsSheet, DropZone, Expiry, FileChip, SITES, daysTo, fmtD, today } from '../comp/files'
 import { Choices, DateIn, F, NumIn, Pick, SaveBar, Sheet, TextIn, errText } from '../cult/ui'
@@ -60,7 +60,8 @@ export function CrewFleet({ sb, flash }: { sb: SupabaseClient | null; flash: Fla
   if (!d) return <div className="list"><h2>{t('Vehicles')}</h2><p className="muted">{t('Loading…')}</p></div>
   const mine = d.logs.filter(l => l.created_by === d.me).slice(0, 20)
   const open = d.logs.filter(l => l.status === 'open')
-  const dueNow = d.assets.filter(a => a.status === 'active' && (inspDue(a) ?? 99) <= 0)
+  const mineIds = new Set(d.drivers.filter(x => x.email && x.email === d.me).flatMap(x => x.asset_ids))
+  const dueNow = d.assets.filter(a => a.carrier_id == null && a.status === 'active' && (inspDue(a) ?? 99) <= 0).sort((a, b) => Number(mineIds.has(b.id)) - Number(mineIds.has(a.id)))
   return <div className="list fleet comp">
     <h2>{t('Vehicles and equipment')}</h2>
     <p className="muted">{t('File a report from your phone. Photos help.')}</p>
@@ -81,57 +82,84 @@ export function CrewFleet({ sb, flash }: { sb: SupabaseClient | null; flash: Fla
 // =====================================================================================================
 // Compliance › Vehicles
 // =====================================================================================================
-export function CompFleet({ sb, flash }: { sb: SupabaseClient | null; flash: Flash }) {
+export const DEPT_L: Record<Dept, string> = { distribution: 'Distribution', cultivation: 'Production', nursery: 'Nursery', processing: 'Processing', company: 'Company-wide' }
+const DEPTS: Dept[] = ['distribution', 'cultivation', 'nursery', 'processing', 'company']
+type FTab = 'assets' | 'drivers' | 'carriers' | 'reports'
+
+/** Compliance › Vehicles (everything), or one department's Settings › Vehicles (dept set: only theirs, no paperwork) */
+export function CompFleet({ sb, flash, dept }: { sb: SupabaseClient | null; flash: Flash; dept?: Dept }) {
   const { api, d, err, load } = useFleet(sb)
-  const [tab, setTab] = useState<'assets' | 'reports'>('assets')
+  const [tab, setTab] = useState<FTab>('assets')
   const [asset, setAsset] = useState<Partial<Asset> | null>(null)
+  const [driver, setDriver] = useState<Partial<Driver> | null>(null)
+  const [carrier, setCarrier] = useState<Partial<Carrier> | null>(null)
   const [rep, setRep] = useState<Partial<Log> | null>(null)
   const [kind, setKind] = useState<'all' | LogKind>('all')
+  const [depF, setDepF] = useState<'all' | Dept>('all')
   const [openOnly, setOpenOnly] = useState(false)
   const [q, setQ] = useState('')
   const [retired, setRetired] = useState(false)
-  if (!api) return <div className="list"><h2>Vehicles</h2><p className="muted">Needs the database (not in the demo).</p></div>
-  if (err) return <div className="list"><h2>Vehicles</h2><div className="warnbox">{err}</div></div>
-  if (!d) return <div className="list"><h2>Vehicles</h2><p className="muted">Loading…</p></div>
+  const title = dept ? `${DEPT_L[dept]} vehicles` : 'Vehicles'
+  if (!api) return <div className="list"><h2>{title}</h2><p className="muted">Needs the database (not in the demo).</p></div>
+  if (err) return <div className="list"><h2>{title}</h2><div className="warnbox">{err}</div></div>
+  if (!d) return <div className="list"><h2>{title}</h2><p className="muted">Loading…</p></div>
   const ql = q.trim().toLowerCase()
-  const live = d.assets.filter(a => a.status !== 'retired')
+  const has = (xs: (string | number | null | undefined)[]) => !ql || xs.some(x => String(x ?? '').toLowerCase().includes(ql))
+  const ours = d.assets.filter(a => a.carrier_id == null && (!dept || a.department === dept))
+  const live = ours.filter(a => a.status !== 'retired')
   const paperIssues = live.filter(a => a.kind !== 'equipment' && DOC_KINDS.some(k => paperOf(a, k.key).tone !== 'cp-ok'))
   const openDef = d.logs.filter(l => l.status === 'open' && l.kind === 'inspection')
   const openInc = d.logs.filter(l => l.status === 'open' && l.kind === 'incident')
   const out = live.filter(a => a.status === 'out_of_service')
   const due = live.filter(a => (inspDue(a) ?? 99) <= 0)
-  const assets = d.assets.filter(a => (retired || a.status !== 'retired') && (!ql || [a.name, a.unit_no, a.plate, a.vin, a.make, a.model, a.site, a.assigned_to].some(x => (x ?? '').toLowerCase().includes(ql))))
+  const assets = ours.filter(a => (retired || a.status !== 'retired') && (dept || depF === 'all' || a.department === depF)
+    && has([a.name, a.unit_no, a.plate, a.vin, a.make, a.model, a.site, a.body_type, ...d.drivers.filter(x => a.driver_ids.includes(x.id)).map(x => x.name)]))
+  const drivers = d.drivers.filter(x => x.carrier_id == null && (!dept || x.department === dept) && (retired || x.active) && has([x.name, x.phone, x.email]))
+  const carriers = d.carriers.filter(c => (retired || c.active) && has([c.name, c.contact_name, c.phone, c.license_no]))
   const logs = d.logs.filter(l => (kind === 'all' || l.kind === kind) && (!openOnly || l.status === 'open')
-    && (!ql || [l.summary, assetName(d.assets.find(a => a.id === l.asset_id)), l.created_by, l.vendor].some(x => (x ?? '').toLowerCase().includes(ql))))
-  return <div className="list fleet">
-    <DashHead title="Vehicles and equipment" sub="Insurance, registrations, maintenance, inspections and incidents" />
-    <Tiles>
-      <Tile value={live.length} label="Vehicles and equipment" sub={`${live.filter(a => a.kind === 'vehicle').length} vehicles · ${live.filter(a => a.kind === 'trailer').length} trailers · ${live.filter(a => a.kind === 'equipment').length} equipment`} onClick={() => { setTab('assets'); setQ('') }} />
+    && (!dept || ours.some(a => a.id === l.asset_id))
+    && has([l.summary, assetName(d.assets.find(a => a.id === l.asset_id)), l.created_by, l.vendor]))
+  const myDepts = d.my_depts
+  const canAdd = dept ? myDepts.includes(dept) : myDepts.length > 0
+  const showCarriers = !dept || dept === 'distribution'
+  const tabs: [FTab, string][] = [['assets', 'Vehicles & equipment'], ['drivers', 'Drivers'], ...(showCarriers ? [['carriers', 'Outside carriers']] as [FTab, string][] : []), ['reports', 'Reports']]
+  return <div className={`list fleet comp ${dept ? 'deptfleet' : ''}`}>
+    {dept ? <><h2>{title}</h2><p className="muted">{DEPT_L[dept]}'s vehicles, equipment and drivers. Same list as Compliance › Vehicles, where Compliance keeps the insurance and registrations.</p></>
+      : <DashHead title="Vehicles and equipment" sub="Every company vehicle and piece of equipment by department, our drivers, outside carriers, and reports" />}
+    {!dept && <Tiles>
+      <Tile value={live.length} label="Vehicles and equipment" sub={DEPTS.map(x => [x, live.filter(a => a.department === x).length] as const).filter(([, n]) => n).map(([x, n]) => `${n} ${DEPT_L[x].toLowerCase()}`).join(' · ') || 'none yet'} onClick={() => { setTab('assets'); setQ('') }} />
       <Tile value={out.length} label="Out of service" tone={out.length ? 'bad' : 'ok'} sub={out.map(a => a.unit_no ?? a.name).join(', ') || 'none'} onClick={() => setTab('assets')} />
       <Tile value={openDef.length} label="Open defects" sub="from inspections" tone={openDef.length ? 'warn' : 'ok'} onClick={() => { setTab('reports'); setKind('inspection'); setOpenOnly(true) }} />
       <Tile value={openInc.length} label="Open incidents" sub="to follow up" tone={openInc.length ? 'bad' : 'ok'} onClick={() => { setTab('reports'); setKind('incident'); setOpenOnly(true) }} />
       <Tile value={paperIssues.length} label="Insurance / registration" sub="missing, expiring or expired" tone={paperIssues.length ? 'warn' : 'ok'} onClick={() => setTab('assets')} />
+      <Tile value={d.drivers.filter(x => x.active && x.carrier_id == null).length} label="Our drivers" sub={`${d.drivers.filter(x => x.active && x.carrier_id == null && !x.has_login).length} not on the app yet`} onClick={() => setTab('drivers')} />
+      <Tile value={d.carriers.filter(c => c.active).length} label="Outside carriers" sub={`${d.carriers.filter(c => c.active && (!c.license_expires || (daysTo(c.license_expires) ?? 0) < 30)).length} license missing or expiring`} onClick={() => setTab('carriers')} />
       <Tile value={due.length} label="Inspection due" sub="by each one's schedule" tone={due.length ? 'warn' : 'ok'} onClick={() => setTab('assets')} />
-    </Tiles>
+    </Tiles>}
     <div className="row toolbar wrap">
-      <div className="seg"><button className={tab === 'assets' ? 'on' : ''} onClick={() => setTab('assets')}>Vehicles and equipment</button><button className={tab === 'reports' ? 'on' : ''} onClick={() => setTab('reports')}>Reports</button></div>
+      <div className="seg">{tabs.map(([k, l]) => <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{l}</button>)}</div>
       <input className="search" type="search" placeholder="Search" value={q} onChange={e => setQ(e.target.value)} />
-      {tab === 'assets' && d.can_edit && <button className="primary" onClick={() => setAsset({ kind: 'vehicle', status: 'active', checklist: 'vehicle' })}>+ Add</button>}
+      {tab === 'assets' && canAdd && <button className="primary" onClick={() => setAsset({ kind: 'vehicle', status: 'active', checklist: 'vehicle', department: dept ?? (depF !== 'all' ? depF : myDepts[0]) })}>+ Add</button>}
+      {tab === 'drivers' && canAdd && <button className="primary" onClick={() => setDriver({ active: true, department: dept ?? (myDepts.includes('distribution') ? 'distribution' : myDepts[0]) })}>+ Driver</button>}
+      {tab === 'carriers' && d.carrier_admin && <button className="primary" onClick={() => setCarrier({ active: true })}>+ Carrier</button>}
       {tab === 'reports' && <span className="row wrap">
         <button className="ghost small" onClick={() => setRep({ kind: 'inspection' })}>+ Inspection</button>
         <button className="ghost small" onClick={() => setRep({ kind: 'maintenance' })}>+ Maintenance</button>
         <button className="ghost small" onClick={() => setRep({ kind: 'incident' })}>+ Incident</button></span>}
     </div>
     {tab === 'assets' && <>
-      {!assets.length ? <Empty>{d.assets.length ? 'Nothing matches.' : d.can_edit ? 'No vehicles or equipment yet. Add the trucks, trailers and equipment, then attach each one\'s insurance and registration.' : 'No vehicles or equipment yet.'}</Empty>
+      {!dept && <div className="row wrap"><Choices value={depF} options={[{ v: 'all', l: 'All' }, ...DEPTS.map(x => ({ v: x, l: DEPT_L[x] }))]} onChange={setDepF} /></div>}
+      {!assets.length ? <Empty>{ours.length ? 'Nothing matches.' : canAdd ? 'Nothing here yet. Add the trucks, trailers, pickups, tractors and other equipment.' : 'Nothing here yet.'}</Empty>
         : <div className="clist">{assets.map(a => {
           const di = inspDue(a)
+          const dn = d.drivers.filter(x => a.driver_ids.includes(x.id)).map(x => x.name)
           return <button key={a.id} className={`crow fasset ${a.status === 'retired' ? 'retired' : ''}`} onClick={() => setAsset(a)}>
-            <span className="grow"><span className="kind">{KIND_L[a.kind]}{a.site ? ` · ${a.site}` : ''}{a.plate ? ` · ${a.plate}` : ''}</span>
-              <b>{assetName(a)}</b> <span className="muted">{[a.year, a.make, a.model].filter(Boolean).join(' ')}</span>
+            <span className="grow"><span className="kind">{dept ? '' : `${DEPT_L[a.department]} · `}{a.body_type ?? KIND_L[a.kind]}{a.site ? ` · ${a.site}` : ''}{a.plate ? ` · ${a.plate}` : ''}</span>
+              <b>{assetName(a)}</b> <span className="muted">{[a.year, a.make, a.model].filter(Boolean).join(' ')}{a.pallet_spaces ? ` · ${a.pallet_spaces} pallet spaces` : ''}</span>
+              {dn.length > 0 && <div className="muted small">Drivers: {dn.join(', ')}</div>}
               <div className="row wrap fpills">
                 {a.status !== 'active' && <span className={`pill ${a.status === 'out_of_service' ? 'cp-bad' : 'cp-mute'}`}>{STATUS_L[a.status]}</span>}
-                {a.kind !== 'equipment' && DOC_KINDS.map(k => { const p = paperOf(a, k.key); return <span key={k.key} className={`pill ${p.tone}`}>{k.l}: {p.text}</span> })}
+                {!dept && a.kind !== 'equipment' && DOC_KINDS.map(k => { const p = paperOf(a, k.key); return <span key={k.key} className={`pill ${p.tone}`}>{k.l}: {p.text}</span> })}
                 {di != null && <span className={`pill ${di <= 0 ? 'cp-warn' : 'cp-ok'}`}>{di <= 0 ? 'inspection due' : `inspect in ${di}d`}</span>}
                 {a.open > 0 && <span className="pill cp-bad">{a.open} open</span>}
               </div></span>
@@ -140,13 +168,43 @@ export function CompFleet({ sb, flash }: { sb: SupabaseClient | null; flash: Fla
         })}</div>}
       <label className="check small-check"><input type="checkbox" checked={retired} onChange={e => setRetired(e.target.checked)} /> Show retired</label>
     </>}
+    {tab === 'drivers' && <>
+      {!drivers.length ? <Empty>No drivers yet. Add your drivers, with or without an app login, and the vehicles each one drives.</Empty>
+        : <div className="clist">{drivers.map(x => <button key={x.id} className={`crow ${x.active ? '' : 'retired'}`} onClick={() => setDriver(x)}>
+          <span className="grow"><span className="kind">{x.department ? DEPT_L[x.department] : ''}{x.phone ? ` · ${x.phone}` : ''}</span>
+            <b>{x.name}</b> <span className="muted">{d.assets.filter(a => x.asset_ids.includes(a.id)).map(a => assetName(a)).join(', ')}</span>
+            <div className="row wrap fpills">
+              <span className={`pill ${x.has_login ? 'cp-ok' : 'cp-mute'}`}>{x.has_login ? 'on the app' : 'no app login'}</span>
+              {x.license_expires ? <Expiry d={x.license_expires} warn={30} /> : <span className="pill cp-warn">no license date</span>}
+            </div></span>
+        </button>)}</div>}
+      <label className="check small-check"><input type="checkbox" checked={retired} onChange={e => setRetired(e.target.checked)} /> Show inactive</label>
+    </>}
+    {tab === 'carriers' && <>
+      {!carriers.length ? <Empty>No outside carriers yet.</Empty>
+        : <div className="clist">{carriers.map(c => {
+          const trucks = d.assets.filter(a => a.carrier_id === c.id && a.status !== 'retired'), ds = d.drivers.filter(x => x.carrier_id === c.id && x.active)
+          const coi = c.docs.filter(x => x.doc_type === 'insurance').map(x => x.expires_on).filter((x): x is string => !!x).sort().pop() ?? null
+          return <button key={c.id} className={`crow ${c.active ? '' : 'retired'}`} onClick={() => setCarrier(c)}>
+            <span className="grow"><span className="kind">{[c.contact_name, c.phone].filter(Boolean).join(' · ') || 'no contact yet'}</span>
+              <b>{c.name}</b> <span className="muted">{trucks.length} truck{trucks.length === 1 ? '' : 's'} · {ds.length} driver{ds.length === 1 ? '' : 's'}</span>
+              <div className="row wrap fpills">
+                {c.license_expires ? <span className="pill cp-mute">License</span> : <span className="pill cp-warn">no license on file</span>}{c.license_expires && <Expiry d={c.license_expires} warn={30} />}
+                {coi ? <><span className="pill cp-mute">Insurance</span><Expiry d={coi} warn={30} /></> : <span className="pill cp-warn">no insurance certificate</span>}
+              </div></span>
+          </button>
+        })}</div>}
+      <label className="check small-check"><input type="checkbox" checked={retired} onChange={e => setRetired(e.target.checked)} /> Show inactive</label>
+    </>}
     {tab === 'reports' && <>
       <div className="row wrap"><Choices value={kind} options={[{ v: 'all', l: 'All' }, { v: 'inspection', l: 'Inspections' }, { v: 'maintenance', l: 'Maintenance' }, { v: 'incident', l: 'Incidents' }]} onChange={setKind} />
         <label className="check small-check"><input type="checkbox" checked={openOnly} onChange={e => setOpenOnly(e.target.checked)} /> Open only</label></div>
       {logs.length ? <LogList d={d} logs={logs} onOpen={l => setRep(l)} showAsset /> : <Empty>No reports{openOnly ? ' open' : ''}.</Empty>}
     </>}
-    {asset && <AssetSheet api={api} d={d} a0={asset} flash={flash} onClose={() => setAsset(null)} onSaved={async (m, keep) => { await load(); flash(m); if (!keep) setAsset(null) }}
+    {asset && <AssetSheet api={api} d={d} a0={asset} flash={flash} paperwork={!dept} onClose={() => setAsset(null)} onSaved={async (m, keep) => { await load(); flash(m); if (!keep) setAsset(null) }}
       onReport={x => setRep(x)} />}
+    {driver && <DriverSheet api={api} d={d} x0={driver} flash={flash} onClose={() => setDriver(null)} onSaved={async (m, keep) => { await load(); flash(m); if (!keep) setDriver(null) }} />}
+    {carrier && <CarrierSheet api={api} d={d} x0={carrier} flash={flash} onClose={() => setCarrier(null)} onSaved={async (m, keep) => { await load(); flash(m); if (!keep) setCarrier(null) }} />}
     {rep && <ReportSheet api={api} d={d} x0={rep} flash={flash} onClose={() => setRep(null)} onSaved={async m => { setRep(null); await load(); flash(m) }} />}
   </div>
 }
@@ -155,7 +213,7 @@ export function CompFleet({ sb, flash }: { sb: SupabaseClient | null; flash: Fla
 export function FleetCard({ sb, go }: { sb: SupabaseClient | null; go: () => void }) {
   const { d } = useFleet(sb)
   if (!d || !d.assets.length) return null
-  const live = d.assets.filter(a => a.status !== 'retired')
+  const live = d.assets.filter(a => a.status !== 'retired' && a.carrier_id == null)
   const rows: [string, number, string][] = [
     ['Out of service', live.filter(a => a.status === 'out_of_service').length, 'cp-bad'],
     ['Open defects', d.logs.filter(l => l.status === 'open' && l.kind === 'inspection').length, 'cp-warn'],
@@ -184,74 +242,190 @@ function LogList({ d, logs, onOpen, showAsset = true }: { d: FleetData; logs: Lo
 // =====================================================================================================
 // One vehicle / piece of equipment
 // =====================================================================================================
-function AssetSheet({ api, d, a0, flash, onClose, onSaved, onReport }: {
-  api: FleetApi; d: FleetData; a0: Partial<Asset>; flash: Flash; onClose: () => void; onSaved: (m: string, keep?: boolean) => Promise<void>; onReport: (x: Partial<Log>) => void
+function AssetSheet({ api, d, a0, flash, paperwork = true, onClose, onSaved, onReport }: {
+  api: FleetApi; d: FleetData; a0: Partial<Asset>; flash: Flash; paperwork?: boolean; onClose: () => void; onSaved: (m: string, keep?: boolean) => Promise<void>; onReport: (x: Partial<Log>) => void
 }) {
-  const [x, setX] = useState<Partial<Asset>>(a0)
+  const [x, setX] = useState<Partial<Asset>>(() => ({ driver_ids: [], ...a0 }))
   const [busy, setBusy] = useState(false)
   const set = (v: Partial<Asset>) => setX(s => ({ ...s, ...v }))
-  const can = d.can_edit
+  const carrierTruck = x.carrier_id != null
+  const can = carrierTruck ? d.carrier_admin : d.my_depts.includes((a0.department ?? x.department ?? 'company') as Dept)
   const a = d.assets.find(y => y.id === a0.id)
   const logs = d.logs.filter(l => l.asset_id === a0.id)
+  const transport = x.kind !== 'equipment'
+  const ourDrivers = d.drivers.filter(r => r.carrier_id == null && (r.active || (x.driver_ids ?? []).includes(r.id)))
   async function save() {
     setBusy(true)
     try {
       const { docs: _docs, open: _open, last_inspection: _li, last_service: _ls, ...p } = x as Asset
       const id = await api.saveAsset(p)
       if (!x.id) set({ id })
-      await onSaved(x.id ? 'Saved' : `${x.name} added. Now attach its insurance and registration.`, !x.id)
+      await onSaved(x.id ? 'Saved' : `${x.name} added.${paperwork && !carrierTruck ? ' Now attach its insurance and registration.' : ''}`, !x.id && paperwork && !carrierTruck)
     } catch (e) { flash(errText(e), true) } finally { setBusy(false) }
   }
   const txt = (k: keyof Asset, l: string, hint?: string) => <F label={l} hint={hint}><TextIn value={x[k] as string | null} onChange={v => set({ [k]: v } as Partial<Asset>)} /></F>
   const num = (k: keyof Asset, l: string, hint?: string) => <F label={l} hint={hint}><NumIn value={x[k] as number | null} onChange={v => set({ [k]: v } as Partial<Asset>)} /></F>
-  return <Sheet wide title={x.id ? assetName(a ?? (x as Asset)) : 'Add vehicle or equipment'} sub={x.id ? `${KIND_L[x.kind ?? 'vehicle']}${x.site ? ` · ${x.site}` : ''}` : undefined} onClose={onClose}>
-    {x.id && <div className="row wrap freps">
+  const carrier = d.carriers.find(c => c.id === x.carrier_id)
+  return <Sheet wide title={x.id ? assetName(a ?? (x as Asset)) : carrierTruck ? `Add a ${carrier?.name ?? 'carrier'} truck` : 'Add vehicle or equipment'}
+    sub={x.id ? `${carrierTruck ? carrier?.name ?? 'Outside carrier' : DEPT_L[(x.department ?? 'company') as Dept]} · ${x.body_type ?? KIND_L[x.kind ?? 'vehicle']}${x.site ? ` · ${x.site}` : ''}` : undefined} onClose={onClose}>
+    {x.id && !carrierTruck && <div className="row wrap freps">
       <button className="ghost small" onClick={() => onReport({ kind: 'inspection', asset_id: x.id })}>+ Inspection</button>
       <button className="ghost small" onClick={() => onReport({ kind: 'maintenance', asset_id: x.id })}>+ Maintenance</button>
       <button className="ghost small" onClick={() => onReport({ kind: 'incident', asset_id: x.id })}>+ Incident</button>
     </div>}
     <fieldset disabled={!can} className="fset">
       <div className="grid3">
+        {!carrierTruck && <F label="Department"><Pick value={(x.department ?? 'company') as Dept} options={DEPTS.filter(k => d.my_depts.includes(k) || k === x.department).map(k => ({ v: k, l: DEPT_L[k] }))}
+          onChange={v => set({ department: v ?? 'company' })} /></F>}
         <F label="Type"><Pick value={x.kind ?? 'vehicle'} options={(['vehicle', 'trailer', 'equipment'] as AssetKind[]).map(k => ({ v: k, l: KIND_L[k] }))}
           onChange={v => set({ kind: v ?? 'vehicle', checklist: x.checklist && x.checklist !== x.kind ? x.checklist : v ?? 'vehicle' })} /></F>
-        {txt('name', 'Name', 'e.g. Ford F-250 white')}
-        {txt('unit_no', 'Unit #', 'our number, e.g. T3 or R1')}
-        <F label="Home site"><Pick value={x.site ?? null} blank="—" options={SITES.map(s => ({ v: s, l: s }))} onChange={v => set({ site: v })} /></F>
+        {txt('body_type', 'What it is', x.kind === 'equipment' ? 'Tractor, Combine, Forklift…' : 'Reefer truck, Box truck, Pickup…')}
+        {txt('name', 'Name', 'e.g. 20\' Freezer Truck')}
+        {!carrierTruck && txt('unit_no', 'Unit #', 'our number, e.g. T3')}
+        {!carrierTruck && <F label="Home site"><Pick value={x.site ?? null} blank="—" options={SITES.map(s => ({ v: s, l: s }))} onChange={v => set({ site: v })} /></F>}
         {txt('make', 'Make')}{txt('model', 'Model')}
-        {num('year', 'Year')}{txt('vin', x.kind === 'equipment' ? 'Serial #' : 'VIN')}{x.kind !== 'equipment' && txt('plate', 'Plate')}
-        {txt('assigned_to', 'Assigned to', 'driver or crew')}
+        {num('year', 'Year')}{txt('vin', x.kind === 'equipment' ? 'Serial #' : 'VIN')}{transport && txt('plate', 'Plate')}
+        {transport && num('pallet_spaces', 'Pallet spaces', 'for loads')}
+        {transport && num('pallets_across', 'Pallets across', 'usually 2')}
         <F label="Status"><Pick value={x.status ?? 'active'} options={(['active', 'out_of_service', 'retired'] as Asset['status'][]).map(s => ({ v: s, l: STATUS_L[s] }))} onChange={v => set({ status: v ?? 'active' })} /></F>
-        <F label="Inspection checklist"><Pick value={x.checklist ?? null} blank="—" options={d.checklists.map(c => ({ v: c.key, l: c.label }))} onChange={v => set({ checklist: v })} /></F>
+        {!carrierTruck && <F label="Inspection checklist"><Pick value={x.checklist ?? null} blank="—" options={d.checklists.map(c => ({ v: c.key, l: c.label }))} onChange={v => set({ checklist: v })} /></F>}
       </div>
-      <h3>Schedule</h3>
-      <div className="grid3">
-        {num('inspect_every_days', 'Inspect every (days)', 'blank = no schedule')}
-        {num('service_every_days', 'Service every (days)')}
-        {x.kind === 'vehicle' ? num('service_every_miles', 'Service every (miles)') : num('service_every_hours', 'Service every (hours)')}
-        {x.kind === 'vehicle' ? num('odometer', 'Odometer (mi)', 'updates from reports') : num('hours', 'Hours', 'updates from reports')}
-      </div>
+      {!carrierTruck && <>
+        <F label="Drivers" hint="who drives it (they see it first when filing an inspection)">
+          <div className="row wrap fchips">{ourDrivers.map(r => { const on = (x.driver_ids ?? []).includes(r.id)
+            return <button type="button" key={r.id} className={`chip ${on ? 'on' : ''}`} onClick={() => set({ driver_ids: on ? (x.driver_ids ?? []).filter(i => i !== r.id) : [...(x.driver_ids ?? []), r.id] })}>{r.name}</button> })}
+            {!ourDrivers.length && <span className="muted small">No drivers yet. Add them on the Drivers tab.</span>}</div></F>
+        <h3>Schedule</h3>
+        <div className="grid3">
+          {num('inspect_every_days', 'Inspect every (days)', 'blank = no schedule')}
+          {num('service_every_days', 'Service every (days)')}
+          {x.kind === 'vehicle' ? num('service_every_miles', 'Service every (miles)') : num('service_every_hours', 'Service every (hours)')}
+          {x.kind === 'vehicle' ? num('odometer', 'Odometer (mi)', 'updates from reports') : num('hours', 'Hours', 'updates from reports')}
+        </div>
+      </>}
       <F label="Notes"><textarea value={x.notes ?? ''} onChange={e => set({ notes: e.target.value || null })} /></F>
     </fieldset>
     {can ? <SaveBar busy={busy} onSave={save} onCancel={onClose} disabled={!x.name?.trim()} saveLabel={x.id ? 'Save' : 'Add'} />
-      : <p className="muted small">Only Compliance can change the vehicle list. Anyone can file reports.</p>}
-    {x.id && <AssetDocs api={api} assetId={x.id} name={x.name ?? ''} site={x.site ?? null} can={can} flash={flash} onChanged={() => onSaved('Saved', true)} />}
-    {x.id && <><h3>History</h3>{logs.length ? <LogList d={d} logs={logs} onOpen={l => onReport(l)} showAsset={false} /> : <p className="muted">No reports yet.</p>}</>}
+      : <p className="muted small">Only Compliance or this department's Admins can change it. Anyone can file reports.</p>}
+    {x.id && paperwork && !carrierTruck && <AssetDocs api={api} refKind="asset" refId={x.id} name={x.name ?? ''} site={x.site ?? null} can={d.can_edit} flash={flash} onChanged={() => onSaved('Saved', true)} />}
+    {x.id && !carrierTruck && <><h3>History</h3>{logs.length ? <LogList d={d} logs={logs} onOpen={l => onReport(l)} showAsset={false} /> : <p className="muted">No reports yet.</p>}</>}
   </Sheet>
 }
 
-function AssetDocs({ api, assetId, name, site, can, flash, onChanged }: { api: FleetApi; assetId: number; name: string; site: string | null; can: boolean; flash: Flash; onChanged: () => void }) {
+// =====================================================================================================
+// One driver (ours, with or without an app login; or a carrier's)
+// =====================================================================================================
+function DriverSheet({ api, d, x0, flash, onClose, onSaved }: { api: FleetApi; d: FleetData; x0: Partial<Driver>; flash: Flash; onClose: () => void; onSaved: (m: string, keep?: boolean) => Promise<void> }) {
+  const [x, setX] = useState<Partial<Driver>>(() => ({ asset_ids: [], active: true, ...x0 }))
+  const [busy, setBusy] = useState(false)
+  const set = (v: Partial<Driver>) => setX(s => ({ ...s, ...v }))
+  const isCarrier = x.carrier_id != null
+  const can = isCarrier ? d.carrier_admin : d.my_depts.includes((x0.department ?? x.department ?? 'distribution') as Dept)
+  const carrier = d.carriers.find(c => c.id === x.carrier_id)
+  const ours = d.assets.filter(a => a.carrier_id == null && a.status !== 'retired' && a.kind !== 'equipment' || (x.asset_ids ?? []).includes(a.id))
+  const live = d.drivers.find(r => r.id === x.id)
+  async function save() {
+    setBusy(true)
+    try { const { has_login: _h, ...p } = x as Driver; const id = await api.saveDriver(isCarrier ? { ...p, asset_ids: undefined } : p); if (!x.id) set({ id }); await onSaved(x.id ? 'Saved' : `${x.name} added`) }
+    catch (e) { flash(errText(e), true) } finally { setBusy(false) }
+  }
+  async function invite() {
+    if (!x.email?.trim()) { flash('Add their email first', true); return }
+    setBusy(true)
+    try {
+      if (x.id) await api.saveDriver({ id: x.id, name: x.name, email: x.email })
+      await api.addToApp(x.name ?? '', x.email, (x.department && x.department !== 'company' ? x.department : 'distribution'))
+      await onSaved(`${x.name} is on the app. They sign in with their email${/@lifted-organics\.com$/i.test(x.email) ? ' (Microsoft)' : ' and a code'}.`, true)
+    } catch (e) { flash(errText(e), true) } finally { setBusy(false) }
+  }
+  const txt = (k: keyof Driver, l: string, hint?: string, ph?: string) => <F label={l} hint={hint}><TextIn value={x[k] as string | null} placeholder={ph} onChange={v => set({ [k]: v } as Partial<Driver>)} /></F>
+  return <Sheet title={x.id ? x.name : isCarrier ? `New ${carrier?.name ?? 'carrier'} driver` : 'New driver'} sub={isCarrier ? carrier?.name : x.department ? DEPT_L[x.department] : undefined} onClose={onClose}>
+    <fieldset disabled={!can} className="fset">
+      <div className="grid2">
+        {txt('name', 'Name')}
+        {!isCarrier && <F label="Department"><Pick value={(x.department ?? 'distribution') as Dept} options={DEPTS.filter(k => d.my_depts.includes(k) || k === x.department).map(k => ({ v: k, l: DEPT_L[k] }))} onChange={v => set({ department: v })} /></F>}
+        {txt('phone', 'Phone')}
+        {!isCarrier && txt('email', 'Email', 'their app login', 'name@…')}
+        {txt('license_no', "Driver's license #")}
+        {txt('license_class', 'Class', 'C, B, A…')}
+        <F label="License expires" hint="shows on Deadlines"><DateIn value={x.license_expires} onChange={v => set({ license_expires: v })} /></F>
+        <F label="Status"><Pick value={x.active === false ? 'off' : 'on'} options={[{ v: 'on', l: 'Active' }, { v: 'off', l: 'Inactive' }]} onChange={v => set({ active: v !== 'off' })} /></F>
+      </div>
+      {!isCarrier && <F label="Drives" hint="vehicles they drive">
+        <div className="row wrap fchips">{ours.map(a => { const on = (x.asset_ids ?? []).includes(a.id)
+          return <button type="button" key={a.id} className={`chip ${on ? 'on' : ''}`} onClick={() => set({ asset_ids: on ? (x.asset_ids ?? []).filter(i => i !== a.id) : [...(x.asset_ids ?? []), a.id] })}>{assetName(a)}</button> })}
+          {!ours.length && <span className="muted small">No vehicles yet.</span>}</div></F>}
+      <F label="Notes"><textarea value={x.notes ?? ''} onChange={e => set({ notes: e.target.value || null })} /></F>
+    </fieldset>
+    {!isCarrier && x.id && (live?.has_login ? <p className="okbox">On the app as {live.email}.</p>
+      : can && <div className="infobox">Not on the app yet. {x.email ? <><button className="ghost small" disabled={busy} onClick={invite}>Add {x.name?.split(' ')[0]} to the app</button> as a {DEPT_L[(x.department && x.department !== 'company' ? x.department : 'distribution') as Dept]} User, so they can file vehicle reports.</> : 'Add their email to put them on the app.'}</div>)}
+    {can ? <SaveBar busy={busy} onSave={save} onCancel={onClose} disabled={!x.name?.trim()} saveLabel={x.id ? 'Save' : 'Add'} /> : <p className="muted small">Only Compliance or this department's Admins can change drivers.</p>}
+  </Sheet>
+}
+
+// =====================================================================================================
+// One outside carrier: contact, license, insurance certificate, their trucks and drivers
+// =====================================================================================================
+function CarrierSheet({ api, d, x0, flash, onClose, onSaved }: { api: FleetApi; d: FleetData; x0: Partial<Carrier>; flash: Flash; onClose: () => void; onSaved: (m: string, keep?: boolean) => Promise<void> }) {
+  const [x, setX] = useState<Partial<Carrier>>(() => ({ active: true, ...x0 }))
+  const [busy, setBusy] = useState(false)
+  const [truck, setTruck] = useState<Partial<Asset> | null>(null)
+  const [drv, setDrv] = useState<Partial<Driver> | null>(null)
+  const set = (v: Partial<Carrier>) => setX(s => ({ ...s, ...v }))
+  const can = d.carrier_admin
+  const trucks = d.assets.filter(a => a.carrier_id === x.id), drivers = d.drivers.filter(r => r.carrier_id === x.id)
+  async function save() {
+    setBusy(true)
+    try { const { docs: _d, ...p } = x as Carrier; const id = await api.saveCarrier(p); if (!x.id) set({ id }); await onSaved(x.id ? 'Saved' : `${x.name} added. Add their trucks, drivers and insurance certificate below.`, true) }
+    catch (e) { flash(errText(e), true) } finally { setBusy(false) }
+  }
+  const txt = (k: keyof Carrier, l: string, hint?: string) => <F label={l} hint={hint}><TextIn value={x[k] as string | null} onChange={v => set({ [k]: v } as Partial<Carrier>)} /></F>
+  return <Sheet wide title={x.id ? x.name : 'New outside carrier'} sub="Outside carrier" onClose={onClose}>
+    <fieldset disabled={!can} className="fset">
+      <div className="grid3">
+        {txt('name', 'Company')}
+        {txt('license_no', 'License #', 'their DCC distributor / transport license')}
+        <F label="License expires" hint="shows on Deadlines"><DateIn value={x.license_expires} onChange={v => set({ license_expires: v })} /></F>
+        {txt('contact_name', 'Contact')}{txt('phone', 'Phone')}{txt('email', 'Email')}
+      </div>
+      {txt('address', 'Address')}
+      <F label="Notes"><textarea value={x.notes ?? ''} onChange={e => set({ notes: e.target.value || null })} /></F>
+      {x.id && <label className="check"><input type="checkbox" checked={x.active !== false} onChange={e => set({ active: e.target.checked })} /> Active (off takes their trucks off the load list)</label>}
+    </fieldset>
+    {can ? <SaveBar busy={busy} onSave={save} onCancel={onClose} disabled={!x.name?.trim()} saveLabel={x.id ? 'Save' : 'Add'} /> : <p className="muted small">Only Compliance or a Distribution Admin can change carriers.</p>}
+    {x.id && <>
+      <AssetDocs api={api} refKind="carrier" refId={x.id} name={x.name ?? ''} site={null} can={can} flash={flash} onChanged={() => onSaved('Saved', true)}
+        kinds={[{ key: 'insurance', l: 'Insurance certificate (COI)', add: 'Add insurance certificate' }, { key: 'partners', l: 'License', add: 'Add license copy' }]} />
+      <div className="row between"><h3>Trucks</h3>{can && <button className="ghost small" onClick={() => setTruck({ kind: 'trailer', status: 'active', carrier_id: x.id, department: 'company', pallet_spaces: 24, pallets_across: 2 })}>+ Truck</button>}</div>
+      {trucks.length ? <div className="clist">{trucks.map(a => <button key={a.id} className={`crow ${a.status === 'retired' ? 'retired' : ''}`} onClick={() => setTruck(a)}>
+        <span className="grow"><b>{a.name}</b> <span className="muted">{[a.body_type, a.plate, a.pallet_spaces ? `${a.pallet_spaces} pallet spaces` : ''].filter(Boolean).join(' · ')}</span></span></button>)}</div>
+        : <p className="muted">No trucks yet. Their trucks show up when you build a load.</p>}
+      <div className="row between"><h3>Drivers</h3>{can && <button className="ghost small" onClick={() => setDrv({ carrier_id: x.id, active: true })}>+ Driver</button>}</div>
+      {drivers.length ? <div className="clist">{drivers.map(r => <button key={r.id} className={`crow ${r.active ? '' : 'retired'}`} onClick={() => setDrv(r)}>
+        <span className="grow"><b>{r.name}</b> <span className="muted">{[r.phone, r.license_no].filter(Boolean).join(' · ')}</span></span>{r.license_expires && <Expiry d={r.license_expires} warn={30} />}</button>)}</div>
+        : <p className="muted">No drivers yet. They're only names here, never app users.</p>}
+    </>}
+    {truck && <AssetSheet api={api} d={d} a0={truck} flash={flash} paperwork={false} onClose={() => setTruck(null)} onSaved={async (m, keep) => { await onSaved(m, true); if (!keep) setTruck(null) }} onReport={() => {}} />}
+    {drv && <DriverSheet api={api} d={d} x0={drv} flash={flash} onClose={() => setDrv(null)} onSaved={async (m, keep) => { await onSaved(m, true); if (!keep) setDrv(null) }} />}
+  </Sheet>
+}
+
+function AssetDocs({ api, refKind, refId, name, site, can, flash, onChanged, kinds = DOC_KINDS }: {
+  api: FleetApi; refKind: 'asset' | 'carrier'; refId: number; name: string; site: string | null; can: boolean; flash: Flash; onChanged: () => void; kinds?: { key: string; l: string; add: string }[]
+}) {
+  const assetId = refId
   const [docs, setDocs] = useState<Doc[] | null>(null)
   const [types, setTypes] = useState<DocType[]>([])
   const [adding, setAdding] = useState<{ key: string; files: File[] } | null>(null)
   const [linking, setLinking] = useState<{ key: string; all: Doc[] } | null>(null)
-  const load = async () => { try { setDocs((await api.comp.docsFor('asset', assetId)).filter(x => x.doc_type !== 'fleet')) } catch (e) { setDocs([]); flash(errText(e), true) } }
+  const load = async () => { try { setDocs((await api.comp.docsFor(refKind, assetId)).filter(x => x.doc_type !== 'fleet')) } catch (e) { setDocs([]); flash(errText(e), true) } }
   useEffect(() => { load(); api.comp.docTypes().then(setTypes).catch(() => {}) }, [assetId])
   async function unlink(doc: Doc) {
     if (!confirm(`Take "${doc.title}" off ${name}? The document stays in the Library.`)) return
-    try { await api.comp.link(doc.id, 'asset', String(assetId), false); await load(); onChanged() } catch (e) { flash(errText(e), true) }
+    try { await api.comp.link(doc.id, refKind, String(assetId), false); await load(); onChanged() } catch (e) { flash(errText(e), true) }
   }
   return <div className="fdocs">
-    {DOC_KINDS.map(k => {
+    {kinds.map(k => {
       const ds = (docs ?? []).filter(x => x.doc_type === k.key)
       return <div key={k.key} className="cdoclist">
         <div className="cdl-h">{k.l}</div>
@@ -262,16 +436,16 @@ function AssetDocs({ api, assetId, name, site, can, flash, onChanged }: { api: F
         {can && <div className="row wrap">
           <DropZone compact onFiles={fs => setAdding({ key: k.key, files: fs })} label={k.add} />
           <button className="linkbtn small" onClick={async () => { try { setLinking({ key: k.key, all: (await api.comp.docs()).filter(x => x.doc_type === k.key && x.current) }) } catch (e) { flash(errText(e), true) } }}>
-            {k.key === 'insurance' ? 'Already uploaded? Add this vehicle to a policy' : 'Pick one already in the Library'}</button></div>}
+            {refKind === 'carrier' ? 'Pick one already in the Library' : k.key === 'insurance' ? 'Already uploaded? Add this vehicle to a policy' : 'Pick one already in the Library'}</button></div>}
       </div>
     })}
     {adding && <AddDocsSheet api={api.comp} files={adding.files} types={types} flash={flash} lockType
-      preset={{ doc_type: adding.key, site, title: `${name} ${adding.key === 'insurance' ? 'insurance' : 'registration'}`, links: [{ kind: 'asset', id: String(assetId) }] }}
+      preset={{ doc_type: adding.key, site, title: `${name} ${adding.key === 'insurance' ? (refKind === 'carrier' ? 'insurance certificate' : 'insurance') : refKind === 'carrier' ? 'license' : 'registration'}`, links: [{ kind: refKind, id: String(assetId) }] }}
       onClose={() => setAdding(null)} onDone={async () => { setAdding(null); await load(); onChanged() }} />}
     {linking && <Sheet title={linking.key === 'insurance' ? 'Add to a policy' : 'Pick a registration'} onClose={() => setLinking(null)}>
       {!linking.all.length ? <p className="muted">None in the Library yet.</p>
         : <div className="clist">{linking.all.map(doc => <button key={doc.id} className="crow" disabled={(docs ?? []).some(x => x.id === doc.id)} onClick={async () => {
-          try { await api.comp.link(doc.id, 'asset', String(assetId)); setLinking(null); await load(); onChanged(); flash(`${name} added to ${doc.title}`) } catch (e) { flash(errText(e), true) }
+          try { await api.comp.link(doc.id, refKind, String(assetId)); setLinking(null); await load(); onChanged(); flash(`${name} added to ${doc.title}`) } catch (e) { flash(errText(e), true) }
         }}><span className="grow"><b>{doc.title}</b> <span className="muted">{doc.site ?? ''}</span></span>{doc.expires_on && <Expiry d={doc.expires_on} />}</button>)}</div>}
     </Sheet>}
   </div>
@@ -309,7 +483,11 @@ export function ReportSheet({ api, d, x0, flash, onClose, onSaved }: { api: Flee
   // the result follows the checklist until someone picks one
   useEffect(() => { if (kind === 'inspection' && isNew && x.result !== 'out_of_service') set({ result: defects.length ? 'defects' : unanswered.length ? undefined : 'pass' }) }, [defects.length, unanswered.length])
 
-  const assetOpts = d.assets.filter(y => y.status !== 'retired' || y.id === x.asset_id).map(y => ({ v: y.id, l: `${assetName(y)}${y.status === 'out_of_service' ? ` (${t('out of service')})` : ''}` }))
+  // the vehicles this person drives come first
+  const mine = new Set(d.drivers.filter(r => r.email && r.email === d.me).flatMap(r => r.asset_ids))
+  const assetOpts = d.assets.filter(y => (y.carrier_id == null && y.status !== 'retired') || y.id === x.asset_id)
+    .sort((p, q) => Number(mine.has(q.id)) - Number(mine.has(p.id)) || assetName(p).localeCompare(assetName(q)))
+    .map(y => ({ v: y.id, l: `${mine.has(y.id) ? '★ ' : ''}${assetName(y)}${y.status === 'out_of_service' ? ` (${t('out of service')})` : ''}` }))
   const missing = kind !== 'incident' && !x.asset_id ? t('Pick the vehicle or equipment')
     : kind === 'inspection' && !x.result ? (unanswered.length ? t('{n} checklist items left', { n: unanswered.length }) : t('Pick the result'))
     : kind !== 'inspection' && !x.summary?.trim() ? (kind === 'incident' ? t('Say what happened') : t('Say what was done')) : null

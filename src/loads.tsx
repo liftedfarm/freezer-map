@@ -2,12 +2,12 @@ import { ScanButton } from './scan'
 import { useEffect, useMemo, useState } from 'react'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { lbs } from './forms'
-import type { Customer, Load, LoadItem, LoadStop, Pallet, StopInput, StopManifest, Vehicle } from './types'
+import type { Customer, Load, LoadDriver, LoadItem, LoadStop, Pallet, StopInput, StopManifest, Vehicle } from './types'
 
 // Everything the transit screens need from the app, passed in to avoid circular imports.
 export interface LoadCtx {
   loads: Load[]; stops: LoadStop[]; items: LoadItem[]
-  vehicles: Vehicle[]; customers: Customer[]
+  vehicles: Vehicle[]; customers: Customer[]; drivers?: LoadDriver[]
   pallet: (id: number) => Pallet | undefined
   contents: (id: number) => Pallet[]
   weight: (p: Pallet) => number
@@ -124,7 +124,7 @@ export function LoadForm({ ctx, load, onClose, onSaved }: { ctx: LoadCtx; load?:
                 <b>{v.name}</b> <span className="muted">· {v.spaces} spaces{v.owner && v.owner !== 'Lifted' ? ` · ${v.owner}` : ''}</span>
               </button>
             ))}
-            {vehicles.length === 0 && <span className="muted">Add vehicles in Settings first.</span>}
+            {vehicles.length === 0 && <span className="muted">Add vehicles in Distribution › Settings › Vehicles first.</span>}
           </div>
         </div>
         <div className="field"><label>Date</label><input type="date" value={date} onChange={e => setDate(e.target.value)} /></div>
@@ -150,7 +150,13 @@ export function LoadForm({ ctx, load, onClose, onSaved }: { ctx: LoadCtx; load?:
           </select>
           {customers.filter(c => c.kind === 'external').length === 0 && <div className="muted small-note">No customers yet. Add them in Settings, Customers.</div>}
         </div>
-        <div className="field"><label>Driver (optional)</label><input value={driver} onChange={e => setDriver(e.target.value)} /></div>
+        <div className="field"><label>Driver (optional)</label><input list="load-drivers" value={driver} onChange={e => setDriver(e.target.value)} placeholder="Pick or type a name" />
+          <datalist id="load-drivers">{(() => {
+            const v = ctx.vehicles.find(x => x.id === vehicle)
+            const ds = (ctx.drivers ?? []).filter(x => x.active && (v?.carrier_id != null ? x.carrier_id === v.carrier_id : x.carrier_id == null))
+            return [...ds.filter(x => vehicle != null && x.asset_ids.includes(vehicle)), ...ds.filter(x => vehicle == null || !x.asset_ids.includes(vehicle))].map(x => <option key={x.id} value={x.name} />)
+          })()}</datalist>
+          <span className="muted small">Drivers are kept in Distribution › Settings › Vehicles.</span></div>
         <div className="field"><label>Notes (optional)</label><input value={notes} onChange={e => setNotes(e.target.value)} /></div>
         <div className="row end">
           <button className="ghost" onClick={onClose}>Cancel</button>

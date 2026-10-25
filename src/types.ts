@@ -85,7 +85,7 @@ export interface InvEvent {
   details: Record<string, unknown> | null
 }
 
-export interface Vehicle { id: number; name: string; plate: string | null; kind: string | null; notes: string | null; active: boolean; spaces: number; across: number; owner: string | null }
+export interface Vehicle { id: number; name: string; plate: string | null; kind: string | null; notes: string | null; active: boolean; spaces: number; across: number; owner: string | null; department?: string | null; carrier_id?: number | null }
 export interface Customer { id: number; name: string; kind: 'internal' | 'external'; license: string | null; address: string | null; contact: string | null; notes: string | null; active: boolean; price_per_lb?: number | null; contract_lbs?: number | null; monthly_min_lbs?: number | null; deposit_usd?: number | null; storage_fee?: number | null; reserves_enabled?: boolean; legal_name?: string | null; payment_terms?: string | null; billing_address?: string | null; billing_contact?: string | null; billing_email?: string | null; billing_phone?: string | null; ship_to_name?: string | null; ship_to_address?: string | null; receiving_contact?: string | null; license_expires?: string | null; sample_hold_days?: number | null }
 export interface Strain { id: number; name: string; aliases: string[]; color: string | null; notes: string | null; active: boolean; show_on_menu?: boolean; strain_no?: number | null; default_grade?: Grade; trial?: boolean }
 export type Grade = 'SHO' | 'BHO'
@@ -112,6 +112,8 @@ export interface Snapshot {
   pallets: Pallet[]
   strains?: Strain[]
   vehicles?: Vehicle[]
+  /** drivers (063): ours and carriers', with the vehicles they drive */
+  drivers?: LoadDriver[]
   customers?: Customer[]
   loads?: Load[]
   stops?: LoadStop[]
@@ -215,3 +217,4 @@ export interface Statement {
 export interface SampleHold { line_id: number; order_id: number; so_number: string | null; customer_id: number; customer: string; strain: string; crop_year: number
   hold_lbs: number; used_lbs: number; remaining: number; placed_on: string | null; shipped_on: string | null; until: string | null
   state: 'submitted' | 'waiting' | 'active' | 'expired' | 'used' | 'released' | 'cancelled' }
+export interface LoadDriver { id: number; name: string; carrier_id: number | null; active: boolean; asset_ids: number[] }

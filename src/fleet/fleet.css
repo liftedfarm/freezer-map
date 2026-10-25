@@ -25,3 +25,7 @@
 .fclose input { flex: 1; min-width: 180px; }
 p.right { text-align: right; }
 .fleet .crow .kind { display: block; margin-bottom: 1px; }
+.fchips { gap: 6px; }
+.fchips .chip { border: 1px solid var(--line); cursor: pointer; font-size: 13px; padding: 5px 10px; color: var(--ink); }
+.fchips .chip.on { background: color-mix(in srgb, var(--brand) 22%, var(--panel)); border-color: var(--brand); }
+.deptfleet { padding: 0; }

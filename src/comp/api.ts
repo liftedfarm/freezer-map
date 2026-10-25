@@ -21,7 +21,7 @@ export interface Doc {
   created_by: string | null; created_at: string; updated_at: string
   links?: Link[]
 }
-export type RefKind = 'test' | 'pallet' | 'lot' | 'harvest' | 'material' | 'license' | 'customer' | 'metrc_error' | 'obligation' | 'processor' | 'asset' | 'fleet_log'
+export type RefKind = 'test' | 'pallet' | 'lot' | 'harvest' | 'material' | 'license' | 'customer' | 'metrc_error' | 'obligation' | 'processor' | 'asset' | 'fleet_log' | 'carrier' | 'driver'
 export interface Link { doc_id: number; ref_kind: RefKind; ref_id: string }
 export interface FileRef { id: number; title: string; file_name: string | null; file_path: string | null; link_url: string | null; mime: string | null }
 
