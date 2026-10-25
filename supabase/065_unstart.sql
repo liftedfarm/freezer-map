@@ -1,4 +1,4 @@
--- 064: "Didn't start" in the Harvest log: a harvest opened by mistake goes back on the schedule (same planned date).
+-- 065: "Didn't start" in the Harvest log: a harvest opened by mistake goes back on the schedule (same planned date).
 -- Only while nothing is logged on it (no bins/weights, no pallets, nothing sent to METRC).
 -- A harvest that won't happen at all is taken off the Schedule instead. Safe to run twice.
 
@@ -27,4 +27,4 @@ end $$;
 revoke execute on function cult_unstart(bigint) from public, anon;
 grant execute on function cult_unstart(bigint) to authenticated;
 
-select 'ok' as unstart_064;
+select 'ok' as unstart_065;

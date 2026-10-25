@@ -169,7 +169,7 @@ export class CultApi {
   }
   async removeWeight(id: number) { const { error } = await this.sb.rpc('cult_remove_weight', { p_id: id }); fail(error) }
   async startHarvest(harvestId: number) { const { error } = await this.sb.rpc('cult_start', { p_harvest: harvestId }); fail(error) }
-  async unstart(harvestId: number) { const { error } = await this.sb.rpc('cult_unstart', { p_harvest: harvestId }); if (error) throw new Error(/cult_unstart/.test(error.message) ? 'Run 064_unstart.sql in Supabase first' : error.message) }
+  async unstart(harvestId: number) { const { error } = await this.sb.rpc('cult_unstart', { p_harvest: harvestId }); if (error) throw new Error(/cult_unstart/.test(error.message) ? 'Run 065_unstart.sql in Supabase first' : error.message) }
   async startDrying(harvestId: number, date: string | null, acres: number | null) {
     const { error } = await this.sb.rpc('cult_start_drying', { p_harvest: harvestId, p_date: date, p_acres: acres }); fail(error)
   }

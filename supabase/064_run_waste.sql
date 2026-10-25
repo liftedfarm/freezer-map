@@ -1,4 +1,4 @@
--- 063: METRC to-do for a finished processing run
+-- 064: METRC to-do for a finished processing run
 -- * "Record run waste / moisture loss" = everything that went in minus everything that came out
 --   (moisture loss + mold/refuse). It used to show the output weight.
 -- * Run steps ("Use package in processing run", "Record run waste") get the license of the run's output packages
@@ -43,4 +43,4 @@ update comp_metrc_actions a
   from events e
  where e.id = a.event_id and e.type in ('proc_used', 'proc_run_done') and a.status = 'todo' and a.license is null;
 
-select 'ok' as run_waste_063;
+select 'ok' as run_waste_064;
