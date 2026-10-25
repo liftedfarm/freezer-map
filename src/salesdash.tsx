@@ -55,7 +55,8 @@ export function SalesDashboard({ backend, customers, isAdmin, go }: { backend: B
   const dayNo = t0.getDate()
   const mtd = cum(moS, nThis, dayNo), lastMo = cum(lmS, nLast, nLast)
   const lastAtDay = lastMo[Math.min(dayNo, nLast) - 1] ?? 0
-  const pace = lastAtDay ? lbsMonth / lastAtDay - 1 : null
+  // only compare when last month had real volume by this day (not a month with a handful of app orders)
+  const pace = lastAtDay >= 1000 && lastAtDay >= lbsMonth * 0.1 ? lbsMonth / lastAtDay - 1 : null
   const moName = (x: Date) => x.toLocaleDateString(undefined, { month: 'short' })
   const cm = new Map<number, { res: number; left: number }>()
   for (const r of balC) { const x = cm.get(r.customer_id) ?? { res: 0, left: 0 }; x.res += Number(r.reserved); x.left += Number(r.remaining); cm.set(r.customer_id, x) }
