@@ -201,7 +201,7 @@ export function OrderForm({ backend, reserves, onClose, onDone }: { backend: Bac
       <div className="sheet form wide" onClick={e => e.stopPropagation()}>
         <div className="sheet-h"><h2>New order</h2><button className="ghost" onClick={onClose}>✕</button></div>
         <p className="muted">Fresh frozen, by the lb in steps of 10. You can order {reserves ? 'your reserve plus ' : ''}anything open on the menu.{price != null ? ` Your price: $${price.toFixed(2)}/lb.` : ''}</p>
-        <p className="muted small">Want to try a strain first? Check Sample on that line and enter how much you'd want if you like it. We'll hold that for you from the moment you order until {days ?? 10} days after it ships.</p>
+        <p className="muted small">Want to try a strain first? Check Sample on that line and enter how much you'd want if you like it. Once Lifted confirms the order, we'll hold that for you until {days ?? 10} days after it ships.</p>
         <input className="search" type="search" placeholder="Search strains" value={q} onChange={e => setQ(e.target.value)} />
         {!rows && !err && <p className="muted">Loading…</p>}
         <div className="picklist orderlist">

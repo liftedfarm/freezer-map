@@ -8,7 +8,7 @@ import type { Order, SampleHold } from './types'
 
 const n0 = (x: number | null | undefined) => Math.round(Number(x ?? 0)).toLocaleString()
 const d = (iso: string | null | undefined) => (iso ? new Date(iso.slice(0, 10) + 'T12:00:00').toLocaleDateString([], { month: 'short', day: 'numeric' }) : '')
-const STATE_L: Record<SampleHold['state'], string> = { waiting: 'Holding until the sample ships', active: 'Holding', expired: 'Expired', used: 'Ordered', released: 'Released', cancelled: 'Cancelled' }
+const STATE_L: Record<SampleHold['state'], string> = { submitted: 'Starts when the order is confirmed', waiting: 'Holding until the sample ships', active: 'Holding', expired: 'Expired', used: 'Ordered', released: 'Released', cancelled: 'Cancelled' }
 const live = (h: SampleHold) => h.state === 'waiting' || h.state === 'active'
 export const holdLine = (h: SampleHold) => h.state === 'waiting' ? 'holding, clock starts when the sample ships' : h.state === 'active' ? `held until ${d(h.until)}` : STATE_L[h.state].toLowerCase()
 
@@ -22,7 +22,7 @@ export function SampleHolds({ backend, customerId, staff, flash, title = 'Sample
   const load = () => backend.sampleHolds(customerId, past).then(setRows).catch(() => setRows([]))
   useEffect(() => { load() }, [customerId, past, rev])
   if (!rows) return null
-  const shown = rows.filter(h => past || live(h) || (h.until && h.until >= new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10)))
+  const shown = rows.filter(h => past || live(h) || h.state === 'submitted' || (h.until && h.until >= new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10)))
   if (!shown.length && !staff) return null
   async function act(h: SampleHold, release: boolean, until?: string) {
     try { await backend.setSampleHold(h.line_id, release, until ?? null); flash?.(release ? `${h.strain} hold released` : `${h.strain} held until ${d(until)}`); setExt(null); await load(); onChanged?.() }
@@ -38,7 +38,7 @@ export function SampleHolds({ backend, customerId, staff, flash, title = 'Sample
             {showCustomer && <td>{h.customer}</td>}
             <td>{h.strain}{h.crop_year !== new Date().getFullYear() && <span className="pill old">{h.crop_year} crop</span>}</td>
             <td className="num"><b>{n0(live(h) ? h.remaining : h.hold_lbs)}</b>{h.used_lbs > 0 && <div className="muted small">{n0(h.used_lbs)} of {n0(h.hold_lbs)} ordered</div>}</td>
-            <td><span className={`pill ${h.state === 'active' ? 'cp-ok' : h.state === 'waiting' ? 'cp-warn' : 'cp-mute'}`}>{STATE_L[h.state]}</span>
+            <td><span className={`pill ${h.state === 'active' ? 'cp-ok' : h.state === 'waiting' || h.state === 'submitted' ? 'cp-warn' : 'cp-mute'}`}>{STATE_L[h.state]}</span>
               {h.state === 'active' && <div className="muted small">until {d(h.until)}</div>}</td>
             {staff && <td className="hide-s small">{h.so_number ?? `#${h.order_id}`}{h.shipped_on ? ` · shipped ${d(h.shipped_on)}` : ''}</td>}
             {staff && <td className="nowrap">
@@ -71,7 +71,7 @@ export function SampleSheet({ backend, o, days, flash, onClose, onDone }: { back
     <div className="scrim" onClick={onClose}>
       <div className="sheet form" onClick={e => e.stopPropagation()}>
         <div className="sheet-h"><h2>Samples · {o.so_number ?? `#${o.id}`}</h2><button className="ghost" onClick={onClose}>✕</button></div>
-        <p className="muted">Check the lines that are samples and how much to hold for them. The hold comes off the open menu now, lasts until {days ?? 10} days after the order ships (customer setting), and goes away if the order is cancelled.</p>
+        <p className="muted">Check the lines that are samples and how much to hold for them. The hold comes off the open menu once the order is confirmed, lasts until {days ?? 10} days after the order ships (customer setting), and goes away if the order is cancelled.</p>
         <table className="restable"><thead><tr><th>Strain</th><th className="num">Lbs</th><th className="ctr">Sample</th><th className="num">Hold lbs</th></tr></thead>
           <tbody>{lines.map(l => <tr key={l.id}><td>{l.strain}</td><td className="num">{n0(l.lbs)}</td>
             <td className="ctr"><input type="checkbox" checked={!!smp[l.id]} onChange={e => setSmp({ ...smp, [l.id]: e.target.checked })} /></td>

@@ -214,4 +214,4 @@ export interface Statement {
 /** sample holds (061): what a sample order holds for the customer, and for how long */
 export interface SampleHold { line_id: number; order_id: number; so_number: string | null; customer_id: number; customer: string; strain: string; crop_year: number
   hold_lbs: number; used_lbs: number; remaining: number; placed_on: string | null; shipped_on: string | null; until: string | null
-  state: 'waiting' | 'active' | 'expired' | 'used' | 'released' | 'cancelled' }
+  state: 'submitted' | 'waiting' | 'active' | 'expired' | 'used' | 'released' | 'cancelled' }

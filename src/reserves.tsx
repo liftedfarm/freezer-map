@@ -255,7 +255,7 @@ export function ReservesView({ backend, customers, strains, onHand, flash, isAdm
               ))}
             </tbody>
           </table>
-          <p className="muted">Free = on hand − pending orders − reserves not yet shipped − increases customers have requested (held until approved or declined) − sample holds. Customers see Free rounded down to 10 lbs. On hand is what's in the freezers in this app. Negative means more is promised than is in the freezers.</p>
+          <p className="muted">Free = on hand − confirmed orders − approved reserves not yet shipped − sample holds on confirmed orders. Orders waiting for confirmation and reserve requests don't take anything until they're approved. Customers see Free rounded down to 10 lbs. On hand is what's in the freezers in this app. Negative means more is promised than is in the freezers.</p>
         </>
       )}
 
