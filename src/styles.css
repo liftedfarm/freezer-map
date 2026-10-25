@@ -949,6 +949,7 @@ html:has(.app.shell), html:has(.app.shell) body { height: 100%; overflow: hidden
   .wx-today .wx-dot { position: absolute; top: -3px; right: -5px; }
 }
 @media (max-width: 370px) { .wx-hl { display: none; } }
+@media (max-width: 600px) { .top .search { flex-basis: 70px; } }  /* room for the weather chip on the search row */
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .wx-pop { color: #93c5fd; } }
 :root[data-theme="dark"] .wx-pop { color: #93c5fd; }
 
