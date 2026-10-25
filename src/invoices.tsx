@@ -147,7 +147,7 @@ export function InvoicesView({ backend, customers, flash, isAdmin, sender, scope
       <h2>Invoices</h2>
       <Tiles>
         <Tile label="Open" value={money(sum(openI))} sub={`${openI.length} invoices`} onClick={() => setF('open')} />
-        <Tile label="Overdue" value={money(sum(od))} sub={`${od.length} invoices`} tone={od.length ? 'bad' : 'ok'} onClick={() => setF('overdue')} />
+        <Tile label="Overdue" value={money(sum(od))} sub={`${od.length} invoices`} tone={od.length ? 'warn' : 'ok'} onClick={() => setF('overdue')} />
         <Tile label="Not in QuickBooks yet" value={notAcct.length} sub="Accounting sends them" tone={notAcct.length ? 'info' : undefined} />
       </Tiles>
       <div className="row toolbar">

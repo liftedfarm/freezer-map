@@ -3,7 +3,7 @@ import type { Backend } from './api'
 import type { FOrder, Balance, Customer, MenuNumbers, Order, ReserveRequest, ReserveYears, SampleHold } from './types'
 import type { SalesMode } from './reserves'
 import { DeadlineEdit, FillOk } from './reserves'
-import { Card, Cards, DashHead, Empty, Meter, Tile, Tiles } from './dash'
+import { Card, Cards, DashHead, Empty, Legend, Meter, Spark, Tile, Tiles } from './dash'
 
 const n0 = (x: number) => Math.round(x).toLocaleString()
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
@@ -41,6 +41,22 @@ export function SalesDashboard({ backend, customers, isAdmin, go }: { backend: B
   const lbsMonth = lines(monthOrders).reduce((a, l) => a + Number(l.lbs), 0)
   const valMonth = lines(monthOrders).reduce((a, l) => a + Number(l.lbs) * Number(l.price_per_lb ?? 0), 0)
   const shippedMonth = lines(d.orders.filter(o => o.status === 'shipped' && (o.shipped_date ?? '') >= moS)).reduce((a, l) => a + Number(l.lbs), 0)
+  // month to date, day by day, against last month on the same days
+  const lmD = new Date(t0.getFullYear(), t0.getMonth() - 1, 1)
+  const lmS = `${lmD.getFullYear()}-${String(lmD.getMonth() + 1).padStart(2, '0')}-01`
+  const dim = (y: number, m: number) => new Date(y, m + 1, 0).getDate()
+  const nThis = dim(t0.getFullYear(), t0.getMonth()), nLast = dim(lmD.getFullYear(), lmD.getMonth())
+  const live = d.orders.filter(o => o.status !== 'cancelled' && o.status !== 'draft')
+  const cum = (startS: string, n: number, upTo: number) => {
+    const per = new Array(n).fill(0)
+    for (const o of live) { const p = placed(o); if (p >= startS && p.slice(0, 7) === startS.slice(0, 7)) { const i = Number(p.slice(8, 10)) - 1; if (i < n) per[i] += o.order_lines.reduce((a, l) => a + Number(l.lbs), 0) } }
+    let run = 0; return per.map((x, i) => (i < upTo ? (run += x) : null))
+  }
+  const dayNo = t0.getDate()
+  const mtd = cum(moS, nThis, dayNo), lastMo = cum(lmS, nLast, nLast)
+  const lastAtDay = lastMo[Math.min(dayNo, nLast) - 1] ?? 0
+  const pace = lastAtDay ? lbsMonth / lastAtDay - 1 : null
+  const moName = (x: Date) => x.toLocaleDateString(undefined, { month: 'short' })
   const cm = new Map<number, { res: number; left: number }>()
   for (const r of balC) { const x = cm.get(r.customer_id) ?? { res: 0, left: 0 }; x.res += Number(r.reserved); x.left += Number(r.remaining); cm.set(r.customer_id, x) }
   const byCust = [...cm].sort((a, b) => b[1].res - a[1].res).slice(0, 8)
@@ -49,15 +65,19 @@ export function SalesDashboard({ backend, customers, isAdmin, go }: { backend: B
     <div className="dash">
       <DashHead title="Dashboard" sub={`Sales · ${new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}`} />
       <Tiles>
-        <Tile label="Orders to confirm" value={toConfirm.length} sub={toConfirm.length ? `oldest ${fmt(toConfirm.map(o => o.order_date ?? '').sort()[0] || null)}` : 'all caught up'} tone={toConfirm.length ? 'warn' : 'ok'} onClick={() => go('orders')} />
-        <Tile label="Reserve requests" value={pend.length} sub={pend.length ? `${plural(new Set(pend.map(r => r.customer_id)).size, 'customer')} waiting${isAdmin ? '' : ' (Sales Admin approves)'}` : 'none waiting'} tone={pend.length ? 'warn' : 'ok'} onClick={() => go('requests')} />
+        <Tile label="Orders to confirm" value={toConfirm.length} sub={toConfirm.length ? `oldest ${fmt(toConfirm.map(o => o.order_date ?? '').sort()[0] || null)}` : 'all caught up'} tone={toConfirm.length ? 'warn' : 'ok'} foot={toConfirm.length ? 'Confirm' : undefined} onClick={() => go('orders')} />
+        <Tile label="Reserve requests" value={pend.length} sub={pend.length ? `${plural(new Set(pend.map(r => r.customer_id)).size, 'customer')} waiting${isAdmin ? '' : ' (Sales Admin approves)'}` : 'none waiting'} tone={pend.length ? (isAdmin ? 'warn' : 'info') : 'ok'} foot={pend.length ? 'Review' : undefined} onClick={() => go('requests')} />
         <Tile label={`${cur} reserves left`} value={`${n0(S('remaining'))} lbs`} sub={`of ${n0(S('reserved'))} reserved · ${n0(S('shipped'))} shipped`} onClick={() => go('customer')} />
         {holds.length > 0 && <Tile label="Sample holds" value={`${Math.round(holds.reduce((a, h) => a + Number(h.remaining), 0)).toLocaleString()} lbs`}
           sub={`${holds.length} hold${holds.length === 1 ? '' : 's'}${holds.some(h => h.until && h.until <= new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10)) ? ' · some end in 3 days' : ''}`} onClick={() => go('requests')} />}
-        <Tile label="Open menu" value={`${n0(free)} lbs`} sub={`free to sell across ${menu.filter(m => Number(m.free) > 0).length} strains`} tone="info" onClick={() => go('menu')} />
-        <Tile label="This month" value={`${n0(lbsMonth)} lbs`} sub={`${monthOrders.length} orders${valMonth ? ` · ${money(valMonth)}` : ''} · ${n0(shippedMonth)} shipped`} onClick={() => go('orders')} />
+        <Tile label="Open menu" value={`${n0(free)} lbs`} sub={`free to sell across ${menu.filter(m => Number(m.free) > 0).length} strains`} onClick={() => go('menu')} />
+        <Tile wide label="Sold this month" value={`${n0(lbsMonth)} lbs`} onClick={() => go('orders')}
+          range={<><Legend now={moName(t0)} then={moName(lmD)} /><span>Month to date</span></>}
+          kv={[...(valMonth ? [[money(valMonth), 'ordered'] as [string, string]] : []), [monthOrders.length, plural(monthOrders.length, 'order').replace(/^\d+ /, '')], [n0(shippedMonth), 'lbs shipped']]}
+          chart={<Spark data={mtd} ghost={lastMo} labels={[`${moName(t0)} 1`, `${moName(t0)} ${nThis}`]} empty="Shows once there are orders this month" />}
+          foot={pace != null ? `${pace >= 0 ? '▲' : '▼'} ${Math.abs(Math.round(pace * 100))}% vs ${moName(lmD)} pace` : 'Orders'} />
         {next && <Tile label={`${next.year} requests`} value={next.deadline ? `${Math.max(0, daysTo(next.deadline))} days` : 'no deadline'} sub={`${next.deadline ? `to ${fmt(next.deadline)} · ` : ''}${n0(nextBal.reduce((a, r) => a + Number(r.reserved), 0))} lbs approved, ${n0(nextReq.reduce((a, r) => a + Number(r.requested_lbs), 0))} asked`}
-          tone={next.deadline && daysTo(next.deadline) < 14 ? 'warn' : undefined} onClick={() => go('strain')} />}
+          tone={next.deadline && daysTo(next.deadline) < 14 ? 'heads' : undefined} onClick={() => go('strain')} />}
       </Tiles>
       <Cards>
         <Card title="Orders to confirm" badge={toConfirm.length} action="Orders" onAction={() => go('orders')}>

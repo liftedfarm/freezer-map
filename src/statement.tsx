@@ -29,7 +29,7 @@ export function StatementTiles({ s, onBalance }: { s: Statement; onBalance?: () 
   const b = s.balance, m = s.month, r = s.reserves
   return (
     <Tiles>
-      <Tile label="Current balance" value={money(b.amount)} tone={b.past_due > 0 ? 'bad' : b.amount > 0 ? 'warn' : 'ok'} onClick={onBalance}
+      <Tile label="Current balance" value={money(b.amount)} tone={b.past_due > 0 ? 'warn' : 'ok'} onClick={onBalance}
         sub={b.past_due > 0 ? `${money(b.past_due)} past due` : b.amount > 0 ? 'nothing past due' : 'all paid up'} />
       <Tile label={`Picked up in ${monthName(m.start)}`} value={`${n0(m.shipped)} lbs`} tone={m.min && m.left ? 'info' : undefined}
         sub={m.min ? (m.left ? `${n0(m.left)} lbs left of your ${n0(m.min)} lb monthly minimum` : `monthly minimum of ${n0(m.min)} lbs met`) : 'no monthly minimum'} />

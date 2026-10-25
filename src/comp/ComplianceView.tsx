@@ -74,8 +74,8 @@ function Dashboard({ c }: { c: Ctx }) {
     <Tiles>
       <Tile value={ov.overdue} label="Late" sub="deadlines past due" tone={ov.overdue ? 'bad' : 'ok'} onClick={() => c.go('deadlines')} />
       <Tile value={ov.due_soon} label="Due soon" sub={`${ov.due_30} in the next 30 days`} tone={ov.due_soon ? 'warn' : undefined} onClick={() => c.go('deadlines')} />
-      <Tile value={ov.metrc_todo} label="METRC to do" sub={ov.metrc_error ? `${ov.metrc_error} with a problem` : 'app actions to enter in METRC'} tone={ov.metrc_error ? 'bad' : ov.metrc_todo ? 'warn' : 'ok'} onClick={() => c.go('metrc', 'todo')} />
-      <Tile value={ov.errors_open} label="METRC errors" sub={`${ov.playbook} fixes in the playbook`} tone={ov.errors_open ? 'bad' : undefined} onClick={() => c.go('metrc', 'errors')} />
+      <Tile value={ov.metrc_todo} label="METRC to do" sub={ov.metrc_error ? `${ov.metrc_error} with a problem` : 'app actions to enter in METRC'} tone={ov.metrc_error ? 'warn' : ov.metrc_todo ? 'heads' : 'ok'} onClick={() => c.go('metrc', 'todo')} />
+      <Tile value={ov.errors_open} label="METRC errors" sub={`${ov.playbook} fixes in the playbook`} tone={ov.errors_open ? 'warn' : undefined} onClick={() => c.go('metrc', 'errors')} />
       <Tile value={`${ov.materials_approved}/${ov.materials}`} label="Materials approved" sub={ov.not_on_list ? `${ov.not_on_list} not on the CCOF list` : ov.materials_unreviewed ? `${ov.materials_unreviewed} not reviewed yet` : 'all on the CCOF list'} tone={ov.materials_unreviewed ? 'warn' : 'ok'} onClick={() => c.go('ccof', 'materials')} />
       <Tile value={ov.material_issues} label="Log lines not approved" sub="this year, certified sites" tone={ov.material_issues ? 'warn' : 'ok'} onClick={() => c.go('review')} />
       <Tile value={ov.tests_no_file} label="Test results, no file" sub="Production › Testing" tone={ov.tests_no_file ? 'warn' : 'ok'} onClick={() => c.go('review')} />

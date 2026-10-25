@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import type { Backend, Overview } from './api'
 import { MODULES } from './types'
 import type { AppUser } from './types'
-import { Card, Cards, DashHead, Empty, Meter, Tile, Tiles } from './dash'
+import { axisDate, Card, Cards, DashHead, Empty, lastDays, Meter, Spark, Tile, Tiles, ymd } from './dash'
 
 const n0 = (x: number) => Math.round(Number(x)).toLocaleString()
 const plural = (n: number, w: string) => `${n} ${n === 1 ? w : w === 'person' ? 'people' : /(ch|sh|s|x)$/.test(w) ? w + 'es' : w + 's'}`
@@ -17,6 +17,8 @@ export function AdminDashboard({ backend, open }: { backend: Backend; open: (j: 
   const [o, setO] = useState<Overview | null>(null)
   const [err, setErr] = useState<string | null>(null)
   useEffect(() => { backend.adminOverview().then(setO).catch(e => setErr(String(e?.message ?? e))) }, [backend])
+  const [lbsHist, setLbsHist] = useState<Map<string, number>>(new Map())
+  useEffect(() => { backend.dashSeries(['freezer_lbs'], lastDays(90)[0]).then(rs => setLbsHist(new Map(rs.map(r => [r.day, r.value])))).catch(() => {}) }, [backend])
   if (err) return <div className="list"><h2>Dashboard</h2><div className="warnbox">{err}</div></div>
   if (!o) return <p className="muted">Loading…</p>
   const vs = o.season.done_est ? o.season.actual / o.season.done_est - 1 : null
@@ -27,16 +29,19 @@ export function AdminDashboard({ backend, open }: { backend: Backend; open: (j: 
     <div className="dash">
       <DashHead title="Dashboard" sub={`Company overview · ${new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}`} />
       <Tiles>
-        <Tile label="In the freezers" value={`${n0(o.freezers.lbs)} lbs`} sub={`${n0(o.freezers.pallets)} pallets · ${n0(o.open_spaces)} open spots`} onClick={() => open('dist.map')} />
+        <Tile wide label="In the freezers" value={`${n0(o.freezers.lbs)} lbs`} range="90 days" onClick={() => open('dist.map')}
+          kv={[[n0(o.freezers.pallets), 'pallets'], [n0(o.open_spaces), 'open spots']]}
+          chart={<Spark data={lastDays(90).map((d, i, a) => (i === a.length - 1 ? Number(o.freezers.lbs) : lbsHist.get(d) ?? null))} labels={[axisDate(lastDays(90)[0]), 'Today']} />}
+          foot={(() => { const w = lbsHist.get(ymd(new Date(Date.now() - 7 * 864e5))); return w ? `${o.freezers.lbs >= w ? '▲' : '▼'} ${Math.abs((o.freezers.lbs / w - 1) * 100).toFixed(1)}% this week` : 'Map' })()} />
         <Tile label={`${o.crop_year} fresh frozen`} value={`${n0(o.season.actual)} lbs`} sub={vs != null ? `${vs >= 0 ? '+' : ''}${Math.round(vs * 100)}% vs estimate · ${o.season.done}/${o.season.harvests} harvests` : `${o.season.done}/${o.season.harvests} harvests`}
-          tone={vs == null ? undefined : vs < -0.1 ? 'warn' : 'ok'} onClick={() => open('cult.yields')} />
+          tone={vs == null ? undefined : vs < -0.1 ? 'heads' : 'ok'} onClick={() => open('cult.yields')} />
         <Tile label={`${o.crop_year} reserves left`} value={`${n0(o.reserves.remaining)} lbs`} sub={`of ${n0(o.reserves.reserved)} · ${plural(o.reserves.customers, 'customer')}`} onClick={() => open('sales.customer')} />
         <Tile label={`${o.next.year} reserves`} value={`${n0(o.next.reserved)} lbs`} sub={`${plural(o.next.customers, 'customer')} · ${n0(o.next.requested)} lbs asked${o.next.deadline ? ` · deadline ${fmt(o.next.deadline)}` : ''}`} tone="info" onClick={() => open('sales.strain')} />
         <Tile label={`Sold in ${month}`} value={`${n0(o.sales.lbs_ordered_month)} lbs`} sub={`${plural(o.sales.orders_month, 'order')}${o.sales.value_month ? ` · ${money(o.sales.value_month)}` : ''} · ${n0(o.sales.lbs_shipped_month)} shipped`} onClick={() => open('sales.orders')} />
         {N && <Tile label="Nursery" value={`${n0(N.rooting + N.ready)} clones`} sub={`${n0(N.ready)} ready · ${n0(N.owed)} owed on ${plural(N.open_orders, 'order')}${N.late ? `, ${N.late} late` : ''}`}
-          tone={N.late ? 'bad' : undefined} onClick={() => open('nurs.dashboard')} />}
-        {B && <Tile label="Unpaid invoices" value={money(B.open_amt)} sub={`${plural(B.open, 'invoice')}${B.overdue ? ` · ${money(B.overdue_amt)} overdue` : ' · none overdue'}`} tone={B.overdue ? 'bad' : B.open ? 'info' : 'ok'} onClick={() => open('sales.invoices')} />}
-        <Tile label="Waiting on someone" value={waiting} sub={waiting ? 'requests, orders, deliveries, invoices' : 'nothing waiting'} tone={waiting ? 'warn' : 'ok'} />
+          tone={N.late ? 'warn' : undefined} onClick={() => open('nurs.dashboard')} />}
+        {B && <Tile label="Unpaid invoices" value={money(B.open_amt)} sub={`${plural(B.open, 'invoice')}${B.overdue ? ` · ${money(B.overdue_amt)} overdue` : ' · none overdue'}`} tone={B.overdue ? 'warn' : 'ok'} foot={B.overdue ? 'Follow up' : undefined} onClick={() => open('sales.invoices')} />}
+        <Tile label="Waiting on someone" value={waiting} sub={waiting ? 'requests, orders, deliveries, invoices' : 'nothing waiting'} tone={waiting ? 'heads' : 'ok'} />
         <Tile label="Loads" value={o.loads.active} sub={`${o.loads.active ? `${o.loads.in_transit} in transit` : 'none active'}${o.open_orders != null ? ` · ${plural(o.open_orders, 'order')} to ship` : ''}`} onClick={() => open('dist.transit')} />
         {L && <Tile label={`Logs in ${month}`} value={L.month} sub={`${L.pesticide_month ? `${plural(L.pesticide_month, 'pesticide spray')}` : 'no pesticide sprays'}${L.labor_hours_month ? ` · ${n0(L.labor_hours_month)} labor hrs` : ''}`} onClick={() => open('cult.logs')} />}
       </Tiles>

@@ -155,6 +155,9 @@ export interface Backend {
   markInvoiceSent(id: number, to: string): Promise<void>
   /** Admin module */
   adminOverview(): Promise<Overview>
+  /** dashboard trend lines (066): save today's numbers / read saved days. Both quietly do nothing before 066 is run. */
+  dashRecord(p: Record<string, number>): Promise<void>
+  dashSeries(keys: string[], from: string): Promise<{ day: string; key: string; value: number }[]>
   appSettings(): Promise<Record<string, string>>
   setAppSetting(key: string, value: string): Promise<void>
   /** the database client, for modules that talk to their own tables (null in the demo) */
@@ -324,6 +327,12 @@ class SupaBackend implements Backend {
   async setInvoiceStatus(id: number, status: 'open' | 'paid' | 'void', note?: string) { const { error } = await this.sb.rpc('set_invoice_status', { p_inv: id, p_status: status, p_note: note ?? null }); fail(error) }
   async markInvoiceSent(id: number, to: string) { const { error } = await this.sb.rpc('mark_invoice_sent', { p_inv: id, p_to: to }); fail(error) }
   async setMyName(name: string) { const { error } = await this.sb.rpc('set_my_name', { p_name: name }); fail(error) }
+  async dashRecord(p: Record<string, number>) { await this.sb.rpc('dash_record', { p }) }
+  async dashSeries(keys: string[], from: string) {
+    const { data, error } = await this.sb.rpc('dash_series', { p_keys: keys, p_from: from })
+    if (error) return []
+    return ((data ?? []) as { day: string; key: string; value: number | string }[]).map(r => ({ ...r, value: Number(r.value) }))
+  }
   async adminOverview() {
     const { data, error } = await this.sb.rpc('admin_overview')
     if (error && /admin_overview/.test(error.message)) throw new Error('Run 024_module_roles.sql in Supabase first')
@@ -1073,6 +1082,23 @@ class DemoBackend implements Backend {
   async setLotGrade(): Promise<LotImpact> { throw new Error('Not in demo') }
   async setPalletGrade() { throw new Error('Not in demo') }
   async adminOverview(): Promise<Overview> { throw new Error('Not in demo') }
+  async dashRecord() {}
+  async dashSeries(keys: string[], from: string) {
+    // made-up wobbly lines so the demo shows trends
+    const out: { day: string; key: string; value: number }[] = []
+    const d0 = new Date(from + 'T12:00:00'), today = new Date()
+    const base: Record<string, number> = { freezer_lbs: 489000, open_spaces: 133, metrc_issues: 2, tags_pending: 0 }
+    for (let d = new Date(d0); d <= today; d.setDate(d.getDate() + 1)) {
+      const i = Math.round((today.getTime() - d.getTime()) / 864e5)  // days before today
+      const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+      for (const k of keys) {
+        const b = base[k] ?? 10, t = -i / 30
+        const v = k === 'open_spaces' ? b - t * 14 + Math.sin(i) * 3 : k === 'metrc_issues' ? b - t * 2 + Math.sin(i / 2) * 2 : b * (1 + t * 0.035) + Math.sin(i / 3) * b * 0.01
+        out.push({ day, key: k, value: Math.max(0, Math.round(v)) })
+      }
+    }
+    return out
+  }
   async appSettings() { return {} as Record<string, string> }
   async setAppSetting() {}
   client() { return null }

@@ -2,7 +2,7 @@ import { addDays, calcHarvest, daySummary, fieldName, fmtD, KIND_SHORT, monday, 
 import type { Ctx } from './calc'
 import type { CultData, Harvest } from './types'
 import type { CultTab } from './tabs'
-import { Card, Cards, DashHead, Empty, Meter, Tile, Tiles } from '../dash'
+import { axisDate, Bars, Card, Cards, DashHead, Empty, Legend, Meter, Spark, Tile, Tiles } from '../dash'
 
 const z = (x: number) => (x ? n0(x) : '')
 
@@ -61,18 +61,41 @@ export function CultDashboard({ d, c, site, onOpen, go }: { d: CultData; c: Ctx;
   const S = { n: sum(season.map(x => x.n)), done: sum(season.map(x => x.done)), est: sum(season.map(x => x.est)), doneEst: sum(season.map(x => x.doneEst)), act: sum(season.map(x => x.act)) }
   const vs = S.doneEst ? S.act / S.doneEst - 1 : null
 
+  // season curve: fresh frozen in so far vs the estimate, week by week
+  const curve = (() => {
+    const pts = ff.map(h => ({ h, k: calcHarvest(c, h) }))
+    const days = pts.flatMap(x => [x.h.planned_on, x.h.harvested_on]).filter((x): x is string => !!x).sort()
+    if (!days.length) return null
+    const wk0 = monday(days[0]), end = monday(days[days.length - 1] > now ? days[days.length - 1] : now)
+    const weeks: string[] = []
+    for (let w = wk0; w <= end; w = addDays(w, 7)) weeks.push(w)
+    const nowI = weeks.findIndex(w => addDays(w, 6) >= now)
+    let ea = 0, aa = 0
+    const est = weeks.map(w => { const e = addDays(w, 6); ea += sum(pts.filter(x => x.h.planned_on && x.h.planned_on >= w && x.h.planned_on <= e).map(x => x.k.estFF ?? 0)); return ea })
+    const act = weeks.map((w, i) => { const e = addDays(w, 6); aa += sum(pts.filter(x => x.h.status === 'done' && (x.h.harvested_on ?? x.h.planned_on) && (x.h.harvested_on ?? x.h.planned_on)! >= w && (x.h.harvested_on ?? x.h.planned_on)! <= e).map(x => x.k.actFF ?? 0)); return nowI >= 0 && i > nowI ? null : aa })
+    return { weeks, est, act }
+  })()
+  const estToDate = curve ? curve.est[Math.max(0, curve.act.reduce<number>((a, v, i) => (v != null ? i : a), 0))] : 0
   return (
     <div className="dash">
       <DashHead title="Dashboard" sub={`Production · ${site ?? 'both sites'} · ${new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}`} />
       {thisYear && <Tiles>
         <Tile label="Harvest today" value={`${n0(sum(todayP.map(p => p.og_weight)))} lbs`} sub={[todayP.length && `${todayP.length} pallets packed`, going.length && `${going.length} harvesting now`, todayH.length && `${todayH.length} not started`].filter(Boolean).join(' · ') || 'nothing scheduled today'}
           tone={going.length ? 'info' : undefined} onClick={() => go('harvest')} />
-        <Tile label="Next 7 days" value={`${n0(week.lbs)} lbs`} sub={week.n ? `${week.n} harvests · ${n0(week.plants)} plants` : 'no harvests scheduled'} onClick={() => go('week')} />
+        <Tile wide label="Next 7 days" value={`${n0(week.lbs)} lbs`} onClick={() => go('week')} range="Next 7 days"
+          kv={week.n ? [[week.n, 'harvests'], [n0(week.plants), 'plants'], ...(peak.people ? [[`${peak.people} people`, fmtD(peak.day, true)] as [string, string]] : [])] : undefined}
+          sub={week.n ? undefined : 'no harvests scheduled'}
+          chart={week.n ? <Bars items={dayTot.map(x => ({ label: new Date(x.day + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'short' }), value: x.lbs, title: `${fmtD(x.day, true)}: ${n0(x.lbs)} lbs · ${x.people} people` }))} /> : undefined}
+          foot={iceNow.length ? `Dry ice: order ${n0(sum(iceNow.map(x => x.k.dryIce)))} lbs by ${fmtD(iceNow[0].k.dryIceOrder!, true)}` : 'Week'} />
         <Tile label="Most people needed" value={peak.people || 0} sub={peak.people ? `${fmtD(peak.day, true)} · ${peak.deleaf} deleaf, ${peak.buck} buck` : 'no crews needed'} tone={peak.people ? 'info' : undefined} onClick={() => go('week')} />
-        <Tile label="Dry ice to order this week" value={`${n0(sum(iceNow.map(x => x.k.dryIce)))} lbs`} sub={iceNow.length ? `by ${fmtD(iceNow[0].k.dryIceOrder!, true)} for ${iceNow.length} harvests` : 'nothing due'} tone={iceNow.length ? 'warn' : 'ok'} />
-        <Tile label="Tests to sample" value={act.length} sub={act.length ? (late ? `${late} past the window` : 'window open now') : 'nothing due'} tone={late ? 'bad' : act.length ? 'warn' : 'ok'} onClick={() => go('testing')} />
-        <Tile label="Harvests not logged" value={unlogged.length} sub={unlogged.length ? `oldest ${fmtD(unlogged[0].planned_on, true)}` : 'all caught up'} tone={unlogged.length ? 'bad' : 'ok'} onClick={() => go('schedule')} />
-        <Tile label="Season fresh frozen" value={`${n0(S.act)} lbs`} sub={S.doneEst ? `${vs! >= 0 ? '+' : ''}${Math.round(vs! * 100)}% vs estimate · ${S.done}/${S.n} harvests` : `${S.done}/${S.n} harvests done`} tone={vs == null ? undefined : vs < -0.1 ? 'warn' : 'ok'} onClick={() => go('yields')} />
+        <Tile label="Dry ice to order this week" value={`${n0(sum(iceNow.map(x => x.k.dryIce)))} lbs`} sub={iceNow.length ? `by ${fmtD(iceNow[0].k.dryIceOrder!, true)} for ${iceNow.length} harvests` : 'nothing due'} tone={iceNow.length ? 'heads' : 'ok'} />
+        <Tile label="Tests to sample" value={act.length} sub={act.length ? (late ? `${late} past the window` : 'window open now') : 'nothing due'} tone={late ? 'warn' : act.length ? 'heads' : 'ok'} foot={act.length ? 'Sample' : undefined} onClick={() => go('testing')} />
+        <Tile label="Harvests not logged" value={unlogged.length} sub={unlogged.length ? `oldest ${fmtD(unlogged[0].planned_on, true)}` : 'all caught up'} tone={unlogged.length ? 'warn' : 'ok'} foot={unlogged.length ? 'Log them' : undefined} onClick={() => go('schedule')} />
+        <Tile wide label="Season fresh frozen" value={`${n0(S.act)} lbs`} tone={vs == null ? undefined : vs < -0.1 ? 'heads' : 'ok'} onClick={() => go('yields')}
+          range={<><Legend now="Actual" then="Estimate" /><span>Season</span></>}
+          kv={[[S.est ? `${Math.round(S.act / S.est * 100)}%` : '–', `of ${n0(S.est)} est.`], ...season.filter(x => x.n).map(x => [`${n0(x.act)}`, x.s] as [string, string]), [`${S.done}/${S.n}`, 'harvests']]}
+          chart={curve ? <Spark data={curve.act} ghost={curve.est} labels={[axisDate(curve.weeks[0]), axisDate(curve.weeks[curve.weeks.length - 1])]} /> : undefined}
+          foot={S.doneEst ? `${vs! >= 0 ? '+' : ''}${Math.round(vs! * 100)}% vs estimate so far${estToDate ? ` · ${n0(estToDate)} expected by now` : ''}` : 'Yields'} />
       </Tiles>}
       {!thisYear && <p className="muted">Looking at the {d.year} season. The this-week numbers only show for {d.currentYear}.</p>}
       <Cards>

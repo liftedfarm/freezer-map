@@ -83,7 +83,7 @@ function Dashboard({ ov, rows, conn, env, go, open, banner }: { ov: Overview; ro
       {banner}
       <Tiles>
         <Tile label="To send" value={ov.to_send} sub={money(ov.to_send_amt)} tone={ov.to_send ? 'info' : 'ok'} onClick={() => go('send')} />
-        <Tile label="Couldn't send" value={ov.errors} sub="need a fix" tone={ov.errors ? 'bad' : 'ok'} onClick={() => go('review')} />
+        <Tile label="Couldn't send" value={ov.errors} sub="need a fix" tone={ov.errors ? 'warn' : 'ok'} onClick={() => go('review')} />
         <Tile label="Unpaid in QuickBooks" value={dollars(ov.unpaid_amt)} sub={`${ov.unpaid} invoices`} onClick={() => go('sent')} />
         <Tile label="Overdue" value={dollars(ov.overdue_amt)} sub={`${ov.overdue} invoices`} tone={ov.overdue ? 'warn' : 'ok'} onClick={() => go('sent')} />
         <Tile label="Sent this month" value={ov.sent_month} sub={money(ov.sent_month_amt)} />

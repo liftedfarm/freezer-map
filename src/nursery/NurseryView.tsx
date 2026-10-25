@@ -106,10 +106,10 @@ function NurseryDashboard({ d, c, go, onOrder, onBatch }: { d: NData; c: NCtx; g
     <div className="dash">
       <DashHead title={t('Dashboard')} sub={`${t('Nursery')} · ${d.sites.map(s => s.name).join(', ')} · ${new Date().toLocaleDateString(lang() === 'es' ? 'es-MX' : undefined, { weekday: 'long', month: 'long', day: 'numeric' })}`} />
       <Tiles>
-        <Tile label={t('Deliveries this week')} value={n0(sum(due.map(o => c.owed(o))))} sub={due.length ? `${t('plants')} · ${tn(due.length, '{n} order', '{n} orders')}${late.length ? `, ${t('{n} late', { n: late.length })}` : ''}` : t('nothing due')} tone={late.length ? 'bad' : due.length ? 'info' : 'ok'} onClick={() => go('orders')} />
+        <Tile label={t('Deliveries this week')} value={n0(sum(due.map(o => c.owed(o))))} sub={due.length ? `${t('plants')} · ${tn(due.length, '{n} order', '{n} orders')}${late.length ? `, ${t('{n} late', { n: late.length })}` : ''}` : t('nothing due')} tone={late.length ? 'warn' : due.length ? 'info' : 'ok'} onClick={() => go('orders')} />
         <Tile label={t('Ready to go')} value={n0(sum(ready.map(c.left)))} sub={ready.length ? `${t('plants in')} ${tn(ready.length, '{n} batch', '{n} batches')}` : t('no batches ready')} tone={ready.length ? 'ok' : undefined} onClick={() => go('batches')} />
         <Tile label={t('Rooting')} value={n0(sum(rooting.map(c.left)))} sub={rooting.length ? `${tn(rooting.length, '{n} batch', '{n} batches')}${readySoon.length ? ` · ${t('{n} ready by {date}', { n: readySoon.length, date: fmtD(wk, true) })}` : ''}` : t('nothing rooting')} onClick={() => go('batches')} />
-        <Tile label={t('To cut this week')} value={toCut.length} sub={toCut.length ? t('first by {date}', { date: fmtD(toCut[0].cut_on, true) }) : t('all orders covered')} tone={toCut.some(o => o.cut_on! < now) ? 'bad' : toCut.length ? 'warn' : 'ok'} onClick={() => go('orders')} />
+        <Tile label={t('To cut this week')} value={toCut.length} sub={toCut.length ? t('first by {date}', { date: fmtD(toCut[0].cut_on, true) }) : t('all orders covered')} tone={toCut.some(o => o.cut_on! < now) ? 'warn' : toCut.length ? 'warn' : 'ok'} onClick={() => go('orders')} />
         <Tile label={t('Mother plants')} value={n0(sum(mothers.map(live)))} sub={`${[1, 2, 3].filter(gN).map(g => `${GEN_LABEL[g]} ${n0(gN(g))}`).join(' · ') || t('none yet')} · ${t('{n} strains', { n: mStrains.size })}`} onClick={() => go('mothers')} />
       </Tiles>
       <Cards>
