@@ -279,13 +279,13 @@ export function MixedBuilder({ title, target, candidates, initial, whereOf, busy
   )
 }
 
-export function SingleForm({ where, strains, busy, onClose, onSubmit }: {
-  where: string; strains: string[]; busy: boolean; onClose: () => void; onSubmit: (i: SingleInput) => void
+export function SingleForm({ where, strains, busy, onClose, onSubmit, tag: scanned }: {
+  where: string; strains: string[]; busy: boolean; onClose: () => void; onSubmit: (i: SingleInput) => void; tag?: string
 }) {
   const [code, setCode] = useState('')
   const [strain, setStrain] = useState('')
   const [w, setW] = useState('')
-  const [tag, setTag] = useState('')
+  const [tag, setTag] = useState(scanned ?? '')
   const [pending, setPending] = useState(false)
   const [hd, setHd] = useState('')
   const [note, setNote] = useState('')

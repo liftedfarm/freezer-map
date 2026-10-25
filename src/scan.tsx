@@ -50,7 +50,8 @@ export function ScanButton({ onScan, disabled, compact }: { onScan: (tag: string
   )
 }
 
-function Scanner({ onClose, onScan }: { onClose: () => void; onScan: (tag: string) => void }) {
+export function Scanner({ onClose, onScan, typed }: { onClose: () => void; onScan: (tag: string) => void; typed?: boolean }) {
+  const [typing, setTyping] = useState('')
   const video = useRef<HTMLVideoElement>(null)
   const photo = useRef<HTMLInputElement>(null)
   const [err, setErr] = useState<string | null>(null)
@@ -110,6 +111,9 @@ function Scanner({ onClose, onScan }: { onClose: () => void; onScan: (tag: strin
           <button className="primary" disabled={busy} onClick={() => photo.current?.click()}>{busy ? 'Reading photo…' : '📸 Take a photo instead'}</button>
           {torch && <button className="ghost" onClick={() => { torch(!torchOn); setTorchOn(!torchOn) }}>{torchOn ? 'Light off' : 'Light on'}</button>}
         </div>
+        {typed && <form className="row scantype" onSubmit={e => { e.preventDefault(); const tg = pickTag(typing); if (tg) onScan(tg) }}>
+          <input className="mono grow-in" value={typing} onChange={e => setTyping(e.target.value.toUpperCase().replace(/\s/g, ''))} placeholder="Or type the full tag" aria-label="Type the tag" />
+          <button className="ghost" disabled={!pickTag(typing)}>Go</button></form>}
         {miss && <p className="warn-t small-note">Couldn't read a tag in that photo. Get closer so the barcode fills most of the picture, keep it flat and in focus, and try again.</p>}
         <input ref={photo} type="file" accept="image/*" capture="environment" hidden
           onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) fromPhoto(f) }} />

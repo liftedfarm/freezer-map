@@ -1,4 +1,5 @@
 import { ScanButton } from './scan'
+import { sameTag, useScanHandler } from './scanroute'
 import { useEffect, useMemo, useState } from 'react'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { lbs } from './forms'
@@ -172,7 +173,7 @@ export function LoadForm({ ctx, load, onClose, onSaved }: { ctx: LoadCtx; load?:
 export function LoadView({ ctx, loadId, onBack, onEdit }: { ctx: LoadCtx; loadId: number; onBack: () => void; onEdit: () => void }) {
   const l = ctx.loads.find(x => x.id === loadId)
   const [placeItem, setPlaceItem] = useState<LoadItem | null>(null)
-  const [picker, setPicker] = useState<{ stop: number | null; position: number | null } | null>(null)
+  const [picker, setPicker] = useState<{ stop: number | null; position: number | null; pre?: number } | null>(null)
   const [posOpen, setPosOpen] = useState<number | null>(null)
   const [lics, setLics] = useState<Lic[]>([])
   const [making, setMaking] = useState<number | null>(null)
@@ -180,6 +181,20 @@ export function LoadView({ ctx, loadId, onBack, onEdit }: { ctx: LoadCtx; loadId
     const sb = ctx.api.client(); if (!sb) return
     sb.from('licenses').select('license_no, kind, site, hub, sort, active').then(({ data }) => setLics((data ?? []) as Lic[]))
   }, [ctx.api])
+  // Scan while loading: a planned pallet is marked on the truck; one that isn't on this load can be added
+  useScanHandler(l && editable(l) ? tag => {
+    const its = ctx.items.filter(i => i.load_id === l.id)
+    const it = its.find(i => sameTag(ctx.pallet(i.pallet_id)?.package_tag, tag) || ctx.contents(i.pallet_id).some(c => sameTag(c.package_tag, tag)))
+    if (it) {
+      const p = ctx.pallet(it.pallet_id)
+      if (it.loaded) setPosOpen(it.position)
+      else ctx.run(() => ctx.api.loadPallet(it.id), `${p?.code ?? 'Pallet'} on the truck · position ${it.position}`)
+      return true
+    }
+    const p = ctx.available.find(x => sameTag(x.package_tag, tag))
+    if (p) { setPicker({ stop: null, position: null, pre: p.id }); return true }
+    return false
+  } : null)
   if (!l) return <div className="list"><button className="ghost" onClick={onBack}>‹ Transit</button><p className="muted">Load not found.</p></div>
   const v = ctx.vehicles.find(x => x.id === l.vehicle_id)
   const stops = ctx.stops.filter(s => s.load_id === l.id).sort((a, b) => a.seq - b.seq)
@@ -302,14 +317,14 @@ export function LoadView({ ctx, loadId, onBack, onEdit }: { ctx: LoadCtx; loadId
           {unloaded ? `Depart (${unloaded} not loaded)` : 'Depart'}</button>}
         {canEdit && <button className="ghost" disabled={ctx.busy} onClick={() => ctx.confirm(`Cancel ${l.code}? Planned pallets stay where they are.`, 'Cancel load', async () => { if (await ctx.run(() => ctx.api.cancelLoad(l.id), `${l.code} cancelled`)) onBack() })}>Cancel load</button>}
       </div>
-      {canEdit && <p className="muted">Planned pallets stay in their freezer until someone taps "Pulled onto truck". Depart unlocks when everything is loaded.</p>}
+      {canEdit && <p className="muted">Planned pallets stay in their freezer until someone taps "Pulled onto truck" (or scans the pallet's tag with Scan). Depart unlocks when everything is loaded.</p>}
 
       {posOpen != null && (
         <PositionSheet ctx={ctx} load={l} pos={posOpen} items={items.filter(i => i.position === posOpen)} stops={stops}
           onClose={() => setPosOpen(null)} onMove={it => { setPosOpen(null); setPlaceItem(it) }} />
       )}
       {picker && (
-        <PalletPicker ctx={ctx} load={l} stops={stops.filter(s => s.status === 'pending')} initialStop={picker.stop} position={picker.position}
+        <PalletPicker ctx={ctx} load={l} stops={stops.filter(s => s.status === 'pending')} initialStop={picker.stop} position={picker.position} pre={picker.pre}
           free={spaces - new Set(items.map(i => i.position)).size} onClose={() => setPicker(null)} />
       )}
     </div>
@@ -359,12 +374,12 @@ function PositionSheet({ ctx, load, pos, items, stops, onClose, onMove }: {
   )
 }
 
-function PalletPicker({ ctx, load, stops, initialStop, position, free, onClose }: {
-  ctx: LoadCtx; load: Load; stops: LoadStop[]; initialStop: number | null; position: number | null; free: number; onClose: () => void
+function PalletPicker({ ctx, load, stops, initialStop, position, free, onClose, pre }: {
+  ctx: LoadCtx; load: Load; stops: LoadStop[]; initialStop: number | null; position: number | null; free: number; onClose: () => void; pre?: number
 }) {
   const [stop, setStop] = useState<number | null>(initialStop ?? (stops.length === 1 ? stops[0].id : null))
   const [q, setQ] = useState('')
-  const [picked, setPicked] = useState<number[]>([])
+  const [picked, setPicked] = useState<number[]>(pre != null ? [pre] : [])
   const single = position != null
   const results = useMemo(() => {
     const s = q.trim().toLowerCase()
@@ -386,6 +401,7 @@ function PalletPicker({ ctx, load, stops, initialStop, position, free, onClose }
     <div className="scrim" onClick={onClose}>
       <div className="sheet form" onClick={e => e.stopPropagation()}>
         <div className="sheet-h"><h2>{single ? `Add to position ${position}` : `Add pallets to ${load.code}`}</h2><button className="ghost" onClick={onClose}>✕</button></div>
+        {pre != null && <div className="infobox">{ctx.pallet(pre)?.code} isn't on {load.code} yet. Pick the stop and tap Add to load.{ctx.held(pre) ? ` It's held for ${ctx.held(pre)}.` : ''}</div>}
         <div className="field"><label>Stop</label>
           <div className="choices">
             {stops.map(s => <button key={s.id} className={stop === s.id ? 'on' : ''} style={{ ['--sc' as string]: stopColor(s.seq) }} onClick={() => setStop(s.id)}>
@@ -393,7 +409,7 @@ function PalletPicker({ ctx, load, stops, initialStop, position, free, onClose }
           </div>
         </div>
         <div className="field"><label>Find pallets {!single && <span className="muted">({free} open position{free === 1 ? '' : 's'})</span>}</label>
-          <div className="row tagrow"><input className="grow-in" value={q} onChange={e => setQ(e.target.value)} placeholder="Search strain, pallet # or tag" autoFocus /><ScanButton onScan={setQ} /></div>
+          <div className="row tagrow"><input className="grow-in" value={q} onChange={e => setQ(e.target.value)} placeholder="Search strain, pallet # or tag" autoFocus={pre == null} /><ScanButton onScan={setQ} /></div>
           {(results.length > 0 || picked.length > 0) && (
             <div className="picklist">
               {[...picked.map(id => ctx.pallet(id)!).filter(Boolean), ...results.filter(r => !picked.includes(r.id))].map(p => (

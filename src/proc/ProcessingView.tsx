@@ -15,6 +15,7 @@ import { Card, Cards, DashHead, Empty, Tile, Tiles } from '../dash'
 import { DateIn, F, NumIn, Pick, SaveBar, Sheet, TextIn, errText, useSel, SelAll, SelBox, SelBar, SelButton } from '../cult/ui'
 import type { Flash } from '../cult/ui'
 import { ScanButton } from '../scan'
+import { sameTag, useScanHandler } from '../scanroute'
 import { ModulePeople } from '../users'
 import { Fold } from '../fold'
 import { CrewTab, RunDayLog } from '../pay/CrewView'
@@ -85,6 +86,12 @@ export default function ProcessingView({ backend, flash, tab, go, isAdmin, canEd
   }, [api])
   useEffect(() => { load() }, [load])
   useEffect(() => { if (inv?.tick) load() }, [inv?.tick])   // a map action (split, merge, weight...) finished
+  // Scan in Processing opens the package card (Buck, Trim, Send to processor...); other tags go to the app's pallet card
+  useScanHandler(tag => {
+    const p = d?.pallets.find(x => sameTag(x.package_tag, tag))
+    if (!p) return false
+    setRun(null); setPkg(p); return true
+  })
 
   if (!api) return <div className="list"><h2>Processing</h2><p className="muted">Processing needs the database (not available in the demo).</p></div>
   if (err) return <div className="list"><h2>Processing</h2><div className="warnbox">Couldn't load Processing. If this is the first time, run 047_processing.sql in Supabase. ({err})</div></div>

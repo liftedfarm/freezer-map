@@ -1,5 +1,5 @@
 import { StrainLink } from '../strainCard'
-import { useBack } from '../nav'
+import { useBack, scrollTop } from '../nav'
 import { useEffect, useRef, useState } from 'react'
 import type { CultApi } from './api'
 import { addDays, calcHarvest, fieldName, fmtD, KIND_LABEL, n0, n1, sum, today } from './calc'
@@ -41,7 +41,7 @@ export function HarvestTab({ d, c, site, api, flash, onSaved, openFirst }: { d: 
     const logged = h.kind === 'ff' ? k.palletLbs : h.kind === 'dry' ? sum(h.raw_bins) : Number(h.dry_lbs ?? 0)
     const est = h.kind === 'ff' ? k.estFF : h.kind === 'dry' ? k.estRaw : k.estBiomass
     return (
-      <button key={h.id} className="li setrow hcard" onClick={() => { setOpenId(h.id); window.scrollTo(0, 0) }}>
+      <button key={h.id} className="li setrow hcard" onClick={() => { setOpenId(h.id); scrollTop() }}>
         <div className="grow">
           <div><b>{h.strain}</b> <span className="muted">{h.site} {fieldName(c, h.field_id)}</span> <span className={`kpill k-${h.kind}`}>{KIND_LABEL[h.kind]}</span></div>
           <div className="muted">{extra ?? STEP[h.kind]}{h.kind === 'ff' && k.pallets.length ? ` · ${k.pallets.length} pallets` : ''}{logged ? ` · ${n0(logged)} lbs logged` : ''}{est ? ` of ~${n0(est)} est.` : ''}</div>

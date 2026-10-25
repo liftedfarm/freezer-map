@@ -109,3 +109,9 @@ export function useTabHistory<T>(state: T, restore: (s: T) => void) {
     pushTab(state)
   }, [key])
 }
+
+// The app scrolls inside .app.shell, not the window (iOS Safari moves fixed bars while its toolbar
+// resizes, which left the bottom menu floating mid-screen). Use these instead of window.scrollTo / scrollY.
+const scroller = () => document.querySelector<HTMLElement>('.app.shell')
+export function scrollTop(y = 0) { const el = scroller(); if (el) el.scrollTo(0, y); else window.scrollTo(0, y) }
+export function scrollPos() { const el = scroller(); return el ? el.scrollTop : window.scrollY }

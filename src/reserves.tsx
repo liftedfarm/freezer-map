@@ -1,7 +1,7 @@
 import { SampleHolds, SampleSheet } from './samples'
 import { CustomerDashboard } from './statement'
 import { StrainLink } from './strainCard'
-import { useBack } from './nav'
+import { useBack, scrollTop, scrollPos } from './nav'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { PRODUCT_LABEL } from './types'
 import type { Backend } from './api'
@@ -81,8 +81,8 @@ export function ReservesView({ backend, customers, strains, onHand, flash, isAdm
   useEffect(() => { load() }, [])
   // By customer: one customer at a time, with a Back button (and the phone's Back) to the full list
   const listY = useRef(0)
-  const openCust = (id: number) => { listY.current = window.scrollY; setOpen(id); window.scrollTo(0, 0) }
-  const closeCust = () => { setOpen(null); requestAnimationFrame(() => window.scrollTo(0, listY.current)) }
+  const openCust = (id: number) => { listY.current = scrollPos(); setOpen(id); scrollTop() }
+  const closeCust = () => { setOpen(null); requestAnimationFrame(() => scrollTop(listY.current)) }
   useBack(mode === 'customer' && open != null && open > 0, closeCust)
   useEffect(() => { setOpen(null) }, [mode])
 

@@ -2,6 +2,7 @@ import '../cult/cult.css'
 import './comp.css'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Backend } from '../api'
+import { scrollTop } from '../nav'
 import { CompApi } from './api'
 import type { BackupRun, Cert, Deadline, DocType, Issue, MError, Material, Overview, TestNoFile } from './api'
 import type { CTab } from './tabs'
@@ -43,7 +44,7 @@ export default function ComplianceView({ backend, flash, tab, go, isAdmin, canEd
 
   const c: Ctx = {
     api, flash, canEdit, isAdmin, types, ov, me, reload: load, sub,
-    go: (t, s) => { if (t !== tab) go(t); setSub(s ?? null); window.scrollTo(0, 0) },
+    go: (t, s) => { if (t !== tab) go(t); setSub(s ?? null); scrollTop() },
     typeLabel: k => types.find(t => t.key === k)?.label ?? k ?? '',
   }
   return (

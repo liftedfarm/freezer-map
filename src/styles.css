@@ -794,3 +794,66 @@ tr.pastdue td { color: var(--bad, #b42318); }
 .nosample { flex-wrap: nowrap; }
 .nosample input[type=number] { width: 110px !important; flex: 0 0 110px; }
 .nosample .check { margin: 0; }
+
+/* ---------- app shell: the page itself never scrolls, .app does ----------
+   iOS Safari moves position:fixed bars while its toolbar grows and shrinks during a page scroll,
+   which left the bottom menu floating mid-screen. With the window never scrolling, the toolbar stays put. */
+html:has(.app.shell), html:has(.app.shell) body { height: 100%; overflow: hidden; }
+.app.shell { height: 100vh; height: 100dvh; overflow-y: auto; overscroll-behavior-y: contain; -webkit-overflow-scrolling: touch;
+  padding-bottom: calc(80px + env(safe-area-inset-bottom)); box-sizing: border-box; }
+
+/* ---------- phone bottom bar: module button + four screens (+ Scan in Distribution and Processing) ---------- */
+.pbar { grid-template-columns: 72px repeat(4, minmax(0, 1fr)); padding: 4px 2px env(safe-area-inset-bottom); }
+.pbar.with-scan { grid-template-columns: 72px repeat(2, minmax(0, 1fr)) 64px repeat(2, minmax(0, 1fr)); }
+.pbar button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 6px 0 8px; min-height: 56px;
+  font-size: 11px; font-weight: 600; color: var(--muted); box-shadow: none; min-width: 0; }
+.pbar button.on { box-shadow: none; color: var(--brand); }
+.pbar .pl { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 2px; box-sizing: border-box; }
+.pti { position: relative; display: flex; align-items: center; justify-content: center; width: 52px; height: 28px; border-radius: 14px; }
+.ptab.on .pti { background: color-mix(in srgb, var(--brand) 16%, transparent); }
+.pbadge { position: absolute; top: -5px; right: 3px; min-width: 17px; height: 17px; padding: 0 4px; box-sizing: border-box; border-radius: 9px;
+  background: var(--brand); color: var(--brand-ink); font-size: 10px; line-height: 17px; text-align: center; font-weight: 700; }
+.pbadge.warn { background: var(--warn); color: #fff; }
+.pbar .pmod { border-right: 1px solid var(--line); color: var(--brand); font-weight: 700; }
+.pmod-i { position: relative; display: flex; align-items: center; justify-content: center; width: 40px; height: 28px; border-radius: 10px; background: var(--brand); color: var(--brand-ink); }
+.pmod-i svg { width: 20px; height: 20px; }
+.pbar .pmod.on .pmod-i { outline: 2px solid color-mix(in srgb, var(--brand) 40%, transparent); outline-offset: 2px; }
+.pdot { position: absolute; top: -4px; right: -4px; width: 10px; height: 10px; border-radius: 50%; background: var(--warn); border: 2px solid var(--panel); }
+.pscan-w { display: flex; justify-content: center; align-items: flex-start; }
+.pbar .pscan { width: 60px; height: 60px; min-height: 0; margin-top: -20px; padding: 0; border-radius: 50%; border: 4px solid var(--bg);
+  background: var(--brand); color: var(--brand-ink); box-shadow: 0 6px 16px color-mix(in srgb, var(--brand) 35%, transparent); }
+.pbar .pscan:active { transform: scale(.95); }
+
+/* the module button's sheet: every module, then the rest of this module's screens */
+.modsheet .sheet-h { margin-bottom: 0; }
+.msh { font-size: 12px; font-weight: 700; color: var(--muted); letter-spacing: .04em; text-transform: uppercase; margin: 2px 0 8px; }
+.modgrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-bottom: 16px; }
+.modgrid button { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 2px; border-radius: 12px; border: 1px solid var(--line);
+  background: transparent; color: var(--ink); font-size: 11px; font-weight: 600; min-width: 0; }
+.modgrid button span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.modgrid button.on { border-color: var(--brand); color: var(--brand); background: color-mix(in srgb, var(--brand) 14%, var(--panel)); }
+.modgrid svg { width: 22px; height: 22px; }
+.morechips { display: flex; flex-wrap: wrap; gap: 8px; }
+.morechips button { padding: 10px 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); font-weight: 600; font-size: 14px; }
+.morechips button.on { border-color: var(--brand); color: var(--brand); }
+
+/* header on phones: the page title replaces the module switcher (it lives in the bottom bar now) */
+.ptitle { display: none; font-weight: 700; white-space: nowrap; }
+@media (max-width: 999px) {
+  .app.shell .modpick, .app.shell .desk-only { display: none; }
+  .app.shell .top .brand .app-name { display: none; }
+  .app.shell .top .brand .ptitle { display: inline; font-size: 17px; }
+  .app.shell .planbar { bottom: calc(64px + env(safe-area-inset-bottom)); }
+  .app.shell .undo-pill { bottom: calc(132px + env(safe-area-inset-bottom)); }
+  .app.shell .toast { bottom: calc(92px + env(safe-area-inset-bottom)); }
+}
+.rail-screens .rail-scan { justify-content: flex-start; gap: 8px; margin-bottom: 8px; border: 1px solid color-mix(in srgb, var(--brand) 45%, var(--line)); color: var(--brand); font-weight: 700; }
+.rail-scan svg { width: 20px; height: 20px; }
+
+/* scan results */
+.scantype { margin-top: 10px; gap: 6px; }
+.scantype input { flex: 1; min-width: 0; }
+.scanmiss .scanrange { padding: 10px 12px; border-radius: 10px; margin-bottom: 12px; }
+.scanmiss .warnbox { margin-bottom: 12px; }
+.scanpick .warnbox, .scanpick .okbox { margin: 8px 0 12px; padding: 10px 12px; border-radius: 10px; }
+@media (min-width: 1000px) { .app.shell.with-rail { padding-bottom: 20px; } }

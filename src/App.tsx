@@ -1,8 +1,10 @@
-import { ScanButton } from './scan'
-import { useScrimBack, useTabHistory } from './nav'
+import { Scanner } from './scan'
+import { routeScan, sameTag } from './scanroute'
+import { screenIcon, SCAN_ICON } from './icons'
+import { useScrimBack, useTabHistory, scrollTop } from './nav'
 import { StrainCardHost, StrainLink } from './strainCard'
 import { CompFleet, CrewFleet } from './fleet/Fleet'
-import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Backend, CONFIG_MISSING, IS_PORTAL, makeBackend, portalUrl } from './api'
 import { FREEZER_STATUSES, PRODUCT_LABEL, PRODUCT_SHORT, FINISH_LABEL } from './types'
@@ -40,7 +42,7 @@ import { COMP_TABS, COMP_TAIL } from './comp/tabs'
 import type { CTab } from './comp/tabs'
 import type { PTab } from './proc/tabs'
 import type { ATab } from './acct/tabs'
-import { LicensesPanel } from './licenses'
+import { LicensesPanel, PURPOSE_LABEL } from './licenses'
 import { TestRows } from './comp/trace'
 import { LoadForm, LoadView, PickLoad, TransitView, stopColor } from './loads'
 import type { LoadCtx } from './loads'
@@ -68,7 +70,9 @@ const ML = (m: Mod) => t(MOD_LABEL[m])
 const MOD_WHAT: Record<Mod, string> = { dist: 'Freezer map · transit · review', sales: 'Reserves · menu · orders', cult: 'Harvests · fields · plan', nurs: 'Mothers · cuttings · deliveries', proc: 'Drying · bucking · trimming', acct: 'Invoices to QuickBooks · payments', comp: 'METRC · CCOF · documents · deadlines', admin: 'Company · users · app settings' }
 type SalesTab = 'dash' | 'inventory' | SalesMode | 'invoices' | 'review' | 'activity' | 'settings'
 type AdminTab = 'dash' | 'review' | 'activity' | 'settings'
-interface NavItem { k: string; l: ReactNode; on: boolean; go: () => void }
+/** s: short plain label for the phone bar; n: count badge (warn = amber) */
+interface NavItem { k: string; l: ReactNode; s?: string; n?: number; warn?: boolean; on: boolean; go: () => void }
+const MOD_SHORT: Record<Mod, string> = { dist: 'Dist', sales: 'Sales', cult: 'Prod', nurs: 'Nursery', proc: 'Proc', acct: 'Acct', comp: 'Comp', admin: 'Admin' }
 const MOD_ICON: Record<Mod, ReactNode> = {
   dist: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><rect x="1" y="7" width="14" height="10" /><path d="M15 10h4l3 3v4h-7" /><circle cx="6" cy="19" r="2" /><circle cx="18" cy="19" r="2" /></svg>,
   sales: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z" /><circle cx="7.5" cy="7.5" r="1.5" /></svg>,
@@ -337,7 +341,7 @@ function describe(ix: Index, e: InvEvent, names?: Map<number, string>) {
 
 type FormState =
   | { kind: 'split' | 'merge' | 'tag' | 'weight'; p: Pallet }
-  | { kind: 'newchoice' | 'newmixed' | 'newsingle' | 'newmerged'; slot: Slot }
+  | { kind: 'newchoice' | 'newmixed' | 'newsingle' | 'newmerged'; slot: Slot; tag?: string }
   | { kind: 'addmixed'; m: Pallet; initial?: Pallet[] }
   | { kind: 'pickmixed'; p: Pallet }
 interface Placing { title: string; sub: string; run: (slot: Slot) => Promise<void> }
@@ -368,7 +372,11 @@ export default function App() {
   const [nurTab, setNurTabS] = useState<NTab>(() => ([...NURSERY_TABS, ...NURSERY_TAIL].find(t => t.t === stored('nur.tab'))?.t ?? 'dashboard'))
   const [modMenu, setModMenu] = useState(false)
   const [more, setMore] = useState(false)
-  const top = () => { setMore(false); window.scrollTo(0, 0) }
+  // Scan (bottom bar in Distribution and Processing): camera open, a tag nobody has, an older pallet found by its tag
+  const [scanning, setScanning] = useState(false)
+  const [scanMiss, setScanMiss] = useState<{ tag: string; checked: boolean; range: string | null } | null>(null)
+  const [scanned, setScanned] = useState<Pallet | null>(null)
+  const top = () => { setMore(false); scrollTop() }
   const setCultTab = (t: CultTab) => { setCultTabS(t); store('cult.tab', t); setView('cult'); top() }
   const setSalesTab = (t: SalesTab) => { setSalesTabS(t); setView('sales'); top() }
   const setAdminTab = (t: AdminTab) => { setAdminTabS(t); setView('admin'); top() }
@@ -599,7 +607,7 @@ export default function App() {
   const shippedChecks = (snap.shipped ?? []).filter(c => ix.pallet.has(c.pallet_id))
   const fromHarvest = snap.pallets.filter(p => p.harvest_id != null && p.status === 'in_freezer' && p.slot_id != null && ix.freezer.get(ix.slot.get(p.slot_id)?.freezer_id ?? -1)?.kind === 'staging')
   const reviewCount = fromHarvest.length + review.length + pendingTags.length + unplaced.length + shippedChecks.length
-  const selected = palletId != null ? (ix.pallet.get(palletId) ?? pool.find(p => p.id === palletId) ?? extra.find(p => p.id === palletId) ?? null) : null
+  const selected = palletId != null ? (ix.pallet.get(palletId) ?? pool.find(p => p.id === palletId) ?? extra.find(p => p.id === palletId) ?? (scanned?.id === palletId ? scanned : null)) : null
   const where = (p: Pallet): string => {
     const m = p.container_id ? ix.pallet.get(p.container_id) : undefined
     if (m) return `on ${m.code} · ${where(m)}`
@@ -654,7 +662,32 @@ export default function App() {
   const mixedList = snap.pallets.filter(p => p.kind === 'mixed' && p.status === 'in_freezer')
     .map(p => ({ p, n: ix.contentsOf.get(p.id)?.length ?? 0, w: weightOf(ix, p) }))
   const strainNames = (snap.strains ?? []).filter(s => s.active).map(s => s.name)
-  const openFreezer = (id: number) => { setFreezerId(id); setView('freezer'); window.scrollTo(0, 0) }
+  const canDist = lv.distribution === 'user' || lv.distribution === 'admin'
+  // a scanned tag: the screen you're on gets first go (order, load, Processing), then the pallet card, then "not found"
+  const handleScan = async (tag: string) => {
+    setScanning(false)
+    if (await routeScan(tag)) return
+    const hit = snap.pallets.find(p => sameTag(p.package_tag, tag))
+    if (hit) { setPalletId(hit.id); return }
+    try {
+      const old = (await backend.search(tag)).find(p => sameTag(p.package_tag, tag))
+      if (old) { setScanned(old); setPalletId(old.id); return }
+    } catch { /* not found below */ }
+    setScanMiss({ tag, checked: false, range: null })
+    const sb = backend.client()
+    const done = (range: string | null) => setScanMiss(m => m && m.tag === tag ? { ...m, checked: true, range } : m)
+    if (!sb) { done(null); return }
+    sb.from('tag_ranges').select('*').then(({ data }) => {
+      const r = ((data ?? []) as { site: string; purpose: string; prefix: string; first_n: number; last_n: number; digits: number; license?: string | null; active?: boolean }[])
+        .find(r => tag.startsWith(r.prefix) && tag.length === r.prefix.length + r.digits && Number(tag.slice(r.prefix.length)) >= r.first_n && Number(tag.slice(r.prefix.length)) <= r.last_n)
+      done(r ? `${r.site} · ${t(PURPOSE_LABEL[r.purpose] ?? r.purpose)}${r.license ? ` · ${r.license}` : ''}${r.active === false ? ` (${t('range switched off')})` : ''}` : null)
+    })
+  }
+  const newWithTag = (tag: string) => {
+    setView('map')
+    startPlacing({ title: t('New pallet with tag …{x}', { x: tag.slice(-6) }), sub: t('Open a freezer and tap the slot it goes in.'), run: async slot => setForm({ kind: 'newsingle', slot, tag }) })
+  }
+  const openFreezer = (id: number) => { setFreezerId(id); setView('freezer'); scrollTop() }
   const goTo = (slotId: number | null) => {
     const s = slotId != null ? ix.slot.get(slotId) : undefined
     if (s) { const f = ix.freezer.get(s.freezer_id)!; setSite(f.site); openFreezer(f.id) }
@@ -713,19 +746,19 @@ export default function App() {
     { k: 'dash', l: 'Dashboard', on: view === 'dash', go: () => go('dash') },
     { k: 'map', l: 'Map', on: view === 'map' || view === 'freezer', go: () => go(view !== 'map' && view !== 'freezer' && freezerId != null ? 'freezer' : 'map') },
     { k: 'inventory', l: 'Inventory', on: view === 'inventory', go: () => go('inventory') },
-    { k: 'fulfill', l: <>Fulfillment{badge(toFulfill)}</>, on: view === 'fulfill', go: () => go('fulfill') },
-    { k: 'transit', l: <>Transit{badge(openLoads.length)}</>, on: view === 'transit' || view === 'load', go: () => go('transit') },
+    { k: 'fulfill', l: <>Fulfillment{badge(toFulfill)}</>, s: t('Fulfill'), n: toFulfill, on: view === 'fulfill', go: () => go('fulfill') },
+    { k: 'transit', l: <>Transit{badge(openLoads.length)}</>, s: 'Transit', n: openLoads.length, on: view === 'transit' || view === 'load', go: () => go('transit') },
   ]
   const distTail: NavItem[] = [
-    { k: 'review', l: <>Review{badge(reviewCount, true)}</>, on: view === 'review', go: () => go('review') },
+    { k: 'review', l: <>Review{badge(reviewCount, true)}</>, s: 'Review', n: reviewCount, warn: true, on: view === 'review', go: () => go('review') },
     { k: 'activity', l: 'Activity', on: view === 'activity', go: () => go('activity') },
     ...(isAdminOf('dist') ? [{ k: 'settings', l: 'Settings', on: view === 'settings', go: () => go('settings') }] : []),
   ]
-  const sItem = (t: SalesTab, l: ReactNode): NavItem => ({ k: t, l, on: view === 'sales' && salesTab === t, go: () => setSalesTab(t) })
-  const salesMain: NavItem[] = [sItem('dash', 'Dashboard'), sItem('inventory', 'Inventory'), sItem('menu', SALES_TITLES.menu), sItem('orders', <>Orders{badge(counts.orders, true)}</>), sItem('invoices', 'Invoices'),
-    sItem('requests', <>Requests{badge(counts.requests, salesAdmin)}</>), sItem('customer', 'Reserves'), sItem('strain', 'By strain')]
+  const sItem = (t: SalesTab, l: ReactNode, x?: Partial<NavItem>): NavItem => ({ k: t, l, ...x, on: view === 'sales' && salesTab === t, go: () => setSalesTab(t) })
+  const salesMain: NavItem[] = [sItem('dash', 'Dashboard'), sItem('inventory', 'Inventory'), sItem('menu', SALES_TITLES.menu), sItem('orders', <>Orders{badge(counts.orders, true)}</>, { s: 'Orders', n: counts.orders, warn: true }), sItem('invoices', 'Invoices'),
+    sItem('requests', <>Requests{badge(counts.requests, salesAdmin)}</>, { s: 'Requests', n: counts.requests, warn: salesAdmin }), sItem('customer', 'Reserves'), sItem('strain', 'By strain')]
   const fillsToOk = (forders ?? []).filter(o => o.state === 'needs_ok').length
-  const salesTail: NavItem[] = [sItem('review', <>Review{badge(salesBadge + fillsToOk, true)}</>), sItem('activity', 'Activity'), ...(isAdminOf('sales') ? [sItem('settings', 'Settings')] : [])]
+  const salesTail: NavItem[] = [sItem('review', <>Review{badge(salesBadge + fillsToOk, true)}</>, { s: 'Review', n: salesBadge + fillsToOk, warn: true }), sItem('activity', 'Activity'), ...(isAdminOf('sales') ? [sItem('settings', 'Settings')] : [])]
   const cItem = (t: CultTab, l: string): NavItem => ({ k: t, l, on: view === 'cult' && cultTab === t, go: () => setCultTab(t) })
   const cultMain = CULT_TABS.map(x => cItem(x.t, t(x.l)))
   const cultTail = CULT_TAIL.filter(x => x.t !== 'setup' || isAdminOf('cult')).map(x => cItem(x.t, t(x.l)))
@@ -748,10 +781,19 @@ export default function App() {
     dist: { main: distMain, tail: distTail }, sales: { main: salesMain, tail: salesTail }, cult: { main: cultMain, tail: cultTail }, nurs: { main: nurMain, tail: nurTail }, admin: { main: adminMain, tail: adminTail } }
   const nav = NAV[cur]
   const all = [...nav.main, ...nav.tail]
-  const bottomFit = all.length <= 5 ? all : nav.main.slice(0, 4)
-  const bottomRest = all.length <= 5 ? [] : all.filter(x => !bottomFit.includes(x))
-  const restOn = bottomRest.find(x => x.on)
-  const restBadge = cur === 'dist' ? reviewCount : cur === 'sales' ? salesBadge : 0
+  // phone bottom bar: module button, the module's first four screens (Scan in the middle in Distribution and Processing)
+  const bottomFit = all.slice(0, 4)
+  const extras: NavItem[] = [
+    ...(staff ? [{ k: 'fleet', l: t('Vehicles'), on: view === 'fleet', go: () => go('fleet') }] : []),
+    { k: 'mine', l: t('My settings'), on: view === 'mine', go: () => go('mine') },
+  ]
+  const bottomRest = [...all.slice(4), ...extras]
+  const restOn = bottomRest.some(x => x.on)
+  const restBadge = all.slice(4).reduce((a, x) => a + (x.n ?? 0), 0)
+  const canScan = cur === 'dist' || cur === 'proc'
+  const shortL = (x: NavItem) => x.k === 'dash' || x.k === 'dashboard' ? t('Home') : x.s ?? (typeof x.l === 'string' ? x.l : x.k)
+  const curScreen = all.find(x => x.on) ?? extras.find(x => x.on)
+  const pageTitle = !curScreen || curScreen.k === 'dash' || curScreen.k === 'dashboard' ? ML(cur) : typeof curScreen.l === 'string' ? curScreen.l : curScreen.s ?? ML(cur)
   const jump = (j: Jump) => {
     const [m, t] = j.split('.') as [Mod, string]
     if (!lv[MOD_KEY[m]]) { flash(`You don't have ${MOD_LABEL[m]}`, true); return }
@@ -762,7 +804,7 @@ export default function App() {
   document.title = noMods ? 'Lifted Farms' : `${view === 'mine' ? t('My settings') : view === 'fleet' ? t('Vehicles') : ML(cur)} · Lifted Farms`
 
   return (
-    <div className={`app ${noMods ? '' : 'with-rail'} ${myMods.length > 1 ? 'with-mods' : ''} ${banner ? 'is-moving' : ''} mod-${cur} ${!noMods && lv[MOD_KEY[cur]] === 'view' ? 'viewonly' : ''}`}
+    <div className={`app shell ${noMods ? '' : 'with-rail'} ${myMods.length > 1 ? 'with-mods' : ''} ${banner ? 'is-moving' : ''} mod-${cur} ${!noMods && lv[MOD_KEY[cur]] === 'view' ? 'viewonly' : ''}`}
       style={{ ['--navw' as string]: myMods.length > 1 ? '284px' : '200px' }}>
       {viewBar}
       {!noMods && (
@@ -777,6 +819,7 @@ export default function App() {
           </div>}
           <nav className="rail-screens" aria-label={`${ML(cur)} screens`}>
             <div className="rail-h">{ML(cur).toUpperCase()}</div>
+            {canScan && <button className="rail-scan" onClick={() => setScanning(true)}>{SCAN_ICON}<span>{t('Scan a tag')}</span></button>}
             {nav.main.map(x => <button key={x.k} className={x.on ? 'on' : ''} onClick={x.go}>{x.l}</button>)}
             {nav.tail.length > 0 && <div className="rail-sep" />}
             {nav.tail.map(x => <button key={x.k} className={x.on ? 'on' : ''} onClick={x.go}>{x.l}</button>)}
@@ -785,7 +828,7 @@ export default function App() {
       )}
       <header className="top">
         <div className="brand" onClick={() => nav.main[0]?.go()}>
-          <img className="logo-img logo-l" src="/logo-light.svg" alt="Lifted Farms" /><img className="logo-img logo-d" src="/logo-dark.svg" alt="Lifted Farms" /> <span className="app-name">{appName}</span> {backend.demo && <span className="demo">DEMO</span>}
+          <img className="logo-img logo-l" src="/logo-light.svg" alt="Lifted Farms" /><img className="logo-img logo-d" src="/logo-dark.svg" alt="Lifted Farms" /> <span className="app-name">{appName}</span><span className="ptitle">{pageTitle}</span> {backend.demo && <span className="demo">DEMO</span>}
         </div>
         {myMods.length > 1 && (
           <div className="modpick">
@@ -808,10 +851,10 @@ export default function App() {
         </div>}
         {cur === 'dist' && !noMods && <><input className="search" type="search" placeholder="Pallet, strain or tag" value={query}
           onChange={e => { setQuery(e.target.value); if (view === 'freezer' || view === 'activity' || view === 'dash' || view === 'mine' || view === 'fleet') setView('map') }} />
-          <ScanButton compact onScan={tag => { setQuery(tag); if (view === 'freezer' || view === 'activity' || view === 'dash' || view === 'mine' || view === 'fleet') setView('map') }} /></>}
+          <button type="button" className="ghost small scanbtn desk-only" title={t('Scan a METRC tag')} onClick={() => setScanning(true)}>📷</button></>}
         {(cur !== 'dist' || noMods) && <span className="grow" />}
-        {staff && <button className={`ghost small ${view === 'fleet' ? 'on-btn' : ''}`} title={t('Vehicles: inspections, maintenance, incidents')} onClick={() => (view === 'fleet' ? go(lastView.current) : go('fleet'))}>🚚<span className="hide-phone"> {t('Vehicles')}</span></button>}
-        <button className={`ghost small ${view === 'mine' ? 'on-btn' : ''}`} title={t('Your own settings')} onClick={() => (view === 'mine' ? go(lastView.current) : go('mine'))}>⚙<span className="hide-phone"> {t('My settings')}</span></button>
+        {staff && <button className={`ghost small desk-only ${view === 'fleet' ? 'on-btn' : ''}`} title={t('Vehicles: inspections, maintenance, incidents')} onClick={() => (view === 'fleet' ? go(lastView.current) : go('fleet'))}>🚚<span className="hide-phone"> {t('Vehicles')}</span></button>}
+        <button className={`ghost small desk-only ${view === 'mine' ? 'on-btn' : ''}`} title={t('Your own settings')} onClick={() => (view === 'mine' ? go(lastView.current) : go('mine'))}>⚙<span className="hide-phone"> {t('My settings')}</span></button>
         <button className="ghost small" title={t('Signed in as {u}. Click to sign out.', { u: user ?? '' })} onClick={() => backend.signOut().then(() => setUser(null))}>{who(user)} ⏏</button>
       </header>
 
@@ -840,7 +883,7 @@ export default function App() {
               reviewCounts: { spot: unplaced.length, tags: pendingTags.length, issues: review.length },
               openFreezer: id => { const f = ix.freezer.get(id)!; setSite(f.site); openFreezer(id) },
               openPallet: id => setPalletId(id),
-              openLoad: id => { setLoadId(id); setView('load'); window.scrollTo(0, 0) },
+              openLoad: id => { setLoadId(id); setView('load'); scrollTop() },
               goReview: () => setView('review'),
               goActivity: () => setView('activity'),
               goTransit: () => setView('transit'),
@@ -917,8 +960,8 @@ export default function App() {
         {view === 'fulfill' && cur === 'dist' && <FulfillView err={fErr} backend={backend} orders={forders} reload={async () => { await reload(); await refreshF() }} flash={flash}
           pallets={snap.pallets} heldBy={heldBy} onLoad={id => ix.loadOf.has(id)} inRun={id => snap.inRun?.[id]} where={where} siteOf={siteOf} rank={p => (p.slot_id != null ? ix.slot.get(p.slot_id)?.front_rank : null) ?? 99}
           canon={canonOf} loads={snap.loads ?? []} vehicles={snap.vehicles ?? []} isSales={isSales}
-          openLoad={id => { setLoadId(id); setView('load'); window.scrollTo(0, 0) }} openPallet={setPalletId} />}
-        {view === 'transit' && <TransitView ctx={ctx} onOpen={id => { setLoadId(id); setView('load'); window.scrollTo(0, 0) }} onNew={() => setLoadForm({})} />}
+          openLoad={id => { setLoadId(id); setView('load'); scrollTop() }} openPallet={setPalletId} />}
+        {view === 'transit' && <TransitView ctx={ctx} onOpen={id => { setLoadId(id); setView('load'); scrollTop() }} onNew={() => setLoadForm({})} />}
         {view === 'load' && loadId != null && <LoadView ctx={ctx} loadId={loadId} onBack={() => setView('transit')} onEdit={() => setLoadForm({ load: (snap.loads ?? []).find(l => l.id === loadId) })} />}
         {view === 'cult' && inCult && <Suspense fallback={<p className="muted">Loading…</p>}><CultView backend={backend} flash={flash} tab={cultTab} go={setCultTab} onPalletsChanged={() => { reload() }} /></Suspense>}
         {view === 'cult' && inCult && cultTab === 'setup' && strainSettings}
@@ -979,20 +1022,47 @@ export default function App() {
       )}
       <DragGhost />
       {!noMods && <>
-        <nav className="bottom">
-          {bottomFit.map(x => <button key={x.k} className={x.on ? 'on' : ''} onClick={x.go}>{x.l}</button>)}
-          {bottomRest.length > 0 && <button className={restOn ? 'on' : ''} onClick={() => setMore(true)}>{restOn ? restOn.l : <>{t('More')}{badge(restBadge, true)}</>}</button>}
+        <nav className={`bottom pbar ${canScan ? 'with-scan' : ''}`} aria-label={`${ML(cur)} screens`}>
+          <button className={`pmod ${restOn ? 'on' : ''}`} aria-label={t('Switch module, now {m}', { m: ML(cur) })} onClick={() => setMore(true)}>
+            <span className="pmod-i">{MOD_ICON[cur]}{restBadge > 0 && <i className="pdot" />}</span><span className="pl">{t(MOD_SHORT[cur])} ▴</span></button>
+          {bottomFit.map((x, i) => <Fragment key={x.k}>
+            {canScan && i === 2 && <div className="pscan-w"><button className="pscan" aria-label={t('Scan a METRC tag')} onClick={() => setScanning(true)}>{SCAN_ICON}</button></div>}
+            <button className={`ptab ${x.on ? 'on' : ''}`} onClick={x.go}>
+              <span className="pti">{screenIcon(x.k)}{(x.n ?? 0) > 0 && <b className={`pbadge ${x.warn ? 'warn' : ''}`}>{x.n}</b>}</span><span className="pl">{shortL(x)}</span></button>
+          </Fragment>)}
         </nav>
-        {more && bottomRest.length > 0 && (
+        {more && (
           <div className="scrim" onClick={() => setMore(false)}>
-            <div className="sheet" onClick={e => e.stopPropagation()}>
-              <div className="sheet-h"><h2>{ML(cur)}</h2><button className="ghost" onClick={() => setMore(false)}>✕</button></div>
-              <div className="choices col">{bottomRest.map(x => <button key={x.k} className={x.on ? 'on' : ''} onClick={x.go}>{x.l}</button>)}</div>
+            <div className="sheet modsheet" onClick={e => e.stopPropagation()}>
+              <div className="sheet-h"><span /><button className="ghost" aria-label={t('Close')} onClick={() => setMore(false)}>✕</button></div>
+              {myMods.length > 1 && <>
+                <div className="msh">{t('Switch module')}</div>
+                <div className="modgrid">{myMods.map(x => <button key={x.m} className={cur === x.m ? 'on' : ''} onClick={() => { setMore(false); goMod(x.m) }}>{MOD_ICON[x.m]}<span>{x.l}</span></button>)}</div>
+              </>}
+              <div className="msh">{t('More in {m}', { m: ML(cur) })}</div>
+              <div className="morechips">{bottomRest.map(x => <button key={x.k} className={x.on ? 'on' : ''} onClick={() => { setMore(false); x.go() }}>{x.l}</button>)}</div>
             </div>
           </div>
         )}
       </>}
 
+      {scanning && <Scanner typed onClose={() => setScanning(false)} onScan={handleScan} />}
+      {scanMiss && (
+        <div className="scrim" onClick={() => setScanMiss(null)}>
+          <div className="sheet scanmiss" onClick={e => e.stopPropagation()}>
+            <div className="sheet-h"><div><h2>{t('Tag not found')}</h2><div className="mono small">{scanMiss.tag}</div></div><button className="ghost" onClick={() => setScanMiss(null)}>✕</button></div>
+            <p className="muted">{t('No pallet or package in the app has this tag, current or older.')}</p>
+            {!scanMiss.checked ? <p className="muted">{t('Checking our METRC tag ranges…')}</p>
+              : scanMiss.range ? <div className="okbox scanrange">{t('This tag is one of ours: {r}', { r: scanMiss.range })}</div>
+              : <div className="warnbox">{t("This tag isn't in any of our METRC tag ranges. Check that it's ours before using it.")}</div>}
+            <div className="choices col">
+              {cur === 'dist' && canDist && <button onClick={() => { const tg = scanMiss.tag; setScanMiss(null); newWithTag(tg) }}>{t('Make a new pallet with this tag')}</button>}
+              {cur === 'dist' && <button onClick={() => { const tg = scanMiss.tag; setScanMiss(null); setQuery(tg.slice(-6)); setView('map') }}>{t('Search by the last 6 digits')}</button>}
+              <button onClick={() => { setScanMiss(null); setScanning(true) }}>{t('Scan again')}</button>
+            </div>
+          </div>
+        </div>
+      )}
       {selected && !banner && (
         <PalletSheet ix={ix} p={selected} busy={busy} where={where} flash={flash}
           others={selected.slot_id != null && !selected.container_id ? (ix.inSlot.get(selected.slot_id) ?? []).filter(x => x.id !== selected.id) : []}
@@ -1098,7 +1168,7 @@ export default function App() {
           onSubmit={(ids, tag, pending, note) => submit(() => backend.mergePallets(ids, tag, pending, form.slot.id, note), m => `${m.code} created from ${ids.length} pallets`, m => setPalletId(m.id))} />
       )}
       {form?.kind === 'newsingle' && (
-        <SingleForm where={slotLabel(form.slot)} strains={strainNames} busy={busy} onClose={() => setForm(null)}
+        <SingleForm where={slotLabel(form.slot)} tag={form.tag} strains={strainNames} busy={busy} onClose={() => setForm(null)}
           onSubmit={i => submit(() => backend.createSingle(form.slot.id, i), p => `${p.code} created`, p => setPalletId(p.id))} />
       )}
       {form?.kind === 'pickmixed' && (

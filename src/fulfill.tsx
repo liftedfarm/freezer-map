@@ -1,5 +1,6 @@
-import { useBack } from './nav'
+import { useBack, scrollTop } from './nav'
 import { ScanButton } from './scan'
+import { sameTag, useScanHandler } from './scanroute'
 import { useMemo, useState } from 'react'
 import type { Backend } from './api'
 import type { FLine, FOrder, FState, Load, Pallet, Vehicle } from './types'
@@ -50,7 +51,7 @@ export function FulfillView(props: FulfillProps) {
               const want = orderLbs(o), have = orderGot(o)
               const late = o.wanted_date && o.wanted_date < today() && (g === 'open' || g === 'needs_ok' || g === 'ready')
               return (
-                <button key={o.id} className="li setrow forder" onClick={() => { setOpenId(o.id); window.scrollTo(0, 0) }}>
+                <button key={o.id} className="li setrow forder" onClick={() => { setOpenId(o.id); scrollTop() }}>
                   <div className="grow">
                     <div><b>{o.customer}</b> <span className="muted">{o.so ?? `Order #${o.id}`}{o.source === 'portal' ? ' · portal' : o.source === 'roshi' ? ' · Roshi' : ''}</span></div>
                     <div className="muted">{o.lines.length} strains · {n0(want)} lbs{o.wanted_date ? <> · <span className={late ? 'bad-t' : ''}>wanted {fmt(o.wanted_date)}</span></> : o.order_date ? ` · ordered ${fmt(o.order_date)}` : ''}
@@ -73,11 +74,43 @@ function OrderPage({ o, back, backend, reload, flash, pallets, heldBy, onLoad, i
   const [busy, setBusy] = useState(false)
   const [loadPick, setLoadPick] = useState(false)
   const [sendTo, setSendTo] = useState<string | null>(null)
+  const [scanRes, setScanRes] = useState<{ p: Pallet; msg: string; line?: FLine } | null>(null)
   const editable = o.state === 'open' || o.state === 'needs_ok' || o.state === 'ready'
   const run = async (f: () => Promise<unknown>, ok: string) => {
     setBusy(true)
     try { await f(); await reload(); flash(ok) } catch (e) { flash(String((e as Error).message ?? e), true) } finally { setBusy(false) }
   }
+  // Scan on this page: the pallet goes to the line it matches (same strain and product), or says why it can't
+  const assign = (l: FLine, p: Pallet) => {
+    const over = Number(p.current_weight ?? 0) - Math.max(0, Number(l.lbs) - got(l))
+    return run(() => backend.pickPallet(l.id, p.id), `${p.code} assigned to ${l.strain}${over > 0.5 ? ` (${n0(over)} lbs over)` : ''}`)
+  }
+  useScanHandler(editable ? tag => {
+    const p = pallets.find(x => sameTag(x.package_tag, tag))
+    if (!p) return false
+    if (o.lines.some(l => l.picks.some(pk => pk.pallet_id === p.id))) { flash(`${p.code} is already on this order`); return true }
+    const prod = (x: { product?: string | null }) => x.product ?? 'fresh_frozen'
+    const fits = o.lines.filter(l => !l.cant_fill && canon(l.strain) === canon(p.strain) && prod(l) === prod(p))
+    const line = fits.find(l => got(l) < Number(l.lbs)) ?? fits[0]
+    const other = heldBy.get(p.id)
+    const why = other ? `Held for ${other.customer} · ${other.so ?? 'another order'}. Unassign it there first.`
+      : !line ? (o.lines.some(l => canon(l.strain) === canon(p.strain))
+        ? `Wrong product: this is ${PRODUCT_LABEL[prod(p) as keyof typeof PRODUCT_LABEL] ?? prod(p)}, and the ${p.strain} line wants ${o.lines.filter(l => canon(l.strain) === canon(p.strain)).map(l => PRODUCT_LABEL[prod(l) as keyof typeof PRODUCT_LABEL]).join(' or ')}.`
+        : `Wrong strain: ${p.strain ?? 'this pallet has no strain'}${p.strain ? " isn't on this order" : ''}. This order is ${[...new Set(o.lines.map(l => l.strain))].join(', ')}.`)
+      : p.kind === 'mixed' ? 'This is a mixed pallet. Scan the tag on the package you want instead.'
+      : p.container_id ? 'This package is on a mixed pallet. Take it off on the freezer map first.'
+      : onLoad(p.id) ? 'Already on a load.'
+      : inRun?.(p.id) ? `In a processing run (${inRun(p.id)}).`
+      : p.status !== 'in_freezer' ? `Not in a freezer: ${where(p)}.`
+      : p.pushed === false ? "Logged at harvest, not a METRC package yet."
+      : !(Number(p.current_weight) > 0) ? 'No weight on it. Fix the weight first.'
+      : null
+    if (why) { setScanRes({ p, msg: why }); return true }
+    const need = Math.max(0, Number(line!.lbs) - got(line!)), w = Number(p.current_weight)
+    if (need > 0 && w > need + 0.5) { setScanRes({ p, line, msg: `${p.code} has ${n0(w)} lbs and the ${line!.strain} line needs ${n0(need)} more. Assign the whole pallet, or take part of it.` }); return true }
+    assign(line!, p)
+    return true
+  } : null)
   const pal = useMemo(() => new Map(pallets.map(p => [p.id, p])), [pallets])
   // where this order's pallets are right now (OHR / GVR / on a truck)
   const at = new Map<string, number>()
@@ -93,6 +126,21 @@ function OrderPage({ o, back, backend, reload, flash, pallets, heldBy, onLoad, i
         <span className="muted">{[o.po && `PO ${o.po}`, o.order_date && `ordered ${fmt(o.order_date)}`, o.wanted_date && `wanted ${fmt(o.wanted_date)}`, o.source === 'roshi' ? 'from Roshi' : o.source === 'portal' ? 'from the portal' : ''].filter(Boolean).join(' · ')}</span>
       </div>
       {o.notes && <p className="muted">"{o.notes}"</p>}
+      {editable && <p className="muted small-note scanhint">Tap Scan and scan a pallet's tag to assign it to the line it matches.</p>}
+      {scanRes && (
+        <div className="scrim" onClick={() => setScanRes(null)}>
+          <div className="sheet scanpick" onClick={e => e.stopPropagation()}>
+            <div className="sheet-h"><div><h2>{scanRes.p.code}</h2><div className="muted">{scanRes.p.strain ?? 'No strain'} · {n0(Number(scanRes.p.current_weight ?? 0))} lbs · {where(scanRes.p)}</div></div>
+              <button className="ghost" onClick={() => setScanRes(null)}>✕</button></div>
+            <div className={scanRes.line ? 'okbox' : 'warnbox'}>{scanRes.msg}</div>
+            <div className="row end wrap">
+              <button className="ghost" onClick={() => { setScanRes(null); openPallet(scanRes.p.id) }}>Open pallet</button>
+              {scanRes.line && <button className="ghost" disabled={busy} onClick={() => { setAdding(scanRes.line!.id); setScanRes(null) }}>Take part</button>}
+              {scanRes.line && <button className="primary" disabled={busy} onClick={() => { assign(scanRes.line!, scanRes.p); setScanRes(null) }}>Assign whole pallet</button>}
+            </div>
+          </div>
+        </div>
+      )}
 
       {o.state === 'needs_ok' && <div className="warnbox">Some lines don't match what was ordered. {isSales ? 'OK the new amounts below, or change the pallets.' : 'Sales has to OK the new amounts before this can go on a load.'}
         {isSales && <div className="row" style={{ marginTop: 8 }}><button className="primary small" disabled={busy} onClick={() => run(() => backend.approveFill(o.id), 'Amounts OK\'d')}>OK these amounts</button></div>}</div>}
