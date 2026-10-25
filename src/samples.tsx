@@ -54,28 +54,28 @@ export function SampleHolds({ backend, customerId, staff, flash, title = 'Sample
   )
 }
 
-/** Sales: make an existing order a sample (or not) and set how much to hold per strain */
+/** Sales: mark which lines of an order are samples and how much each holds */
 export function SampleSheet({ backend, o, days, flash, onClose, onDone }: { backend: Backend; o: Order; days?: number | null; flash: (t: string, bad?: boolean) => void; onClose: () => void; onDone: () => void }) {
   const lines = o.order_lines.filter(l => (l.product ?? 'fresh_frozen') === 'fresh_frozen')
-  const [on, setOn] = useState(!!o.is_sample)
+  const [smp, setSmp] = useState<Record<number, boolean>>(() => Object.fromEntries(lines.map(l => [l.id, !!l.is_sample])))
   const [hold, setHold] = useState<Record<number, string>>(() => Object.fromEntries(lines.map(l => [l.id, l.hold_lbs ? String(l.hold_lbs) : ''])))
   const [busy, setBusy] = useState(false)
   async function save() {
     setBusy(true)
-    try { await backend.setOrderSample(o.id, on, lines.map(l => ({ line_id: l.id, hold_lbs: hold[l.id] === '' ? null : Number(hold[l.id]) }))); flash(on ? 'Sample order saved' : 'No longer a sample'); onDone() }
-    catch (e) { flash(String((e as Error).message ?? e), true) } finally { setBusy(false) }
+    try {
+      await backend.setOrderSample(o.id, false, lines.map(l => ({ line_id: l.id, sample: !!smp[l.id], hold_lbs: smp[l.id] && hold[l.id] !== '' ? Number(hold[l.id]) : null })))
+      flash('Sample lines saved'); onDone()
+    } catch (e) { flash(String((e as Error).message ?? e), true) } finally { setBusy(false) }
   }
   return (
     <div className="scrim" onClick={onClose}>
       <div className="sheet form" onClick={e => e.stopPropagation()}>
-        <div className="sheet-h"><h2>Sample order · {o.so_number ?? `#${o.id}`}</h2><button className="ghost" onClick={onClose}>✕</button></div>
-        <label className="check"><input type="checkbox" checked={on} onChange={e => setOn(e.target.checked)} /> This is a sample order</label>
-        {on && <>
-          <p className="muted">How much to hold for them per strain. It comes off the open menu now and stays held {days ?? 10} days after the sample ships (customer setting).</p>
-          <table className="restable"><thead><tr><th>Strain</th><th className="num">Sample lbs</th><th className="num">Hold lbs</th></tr></thead>
-            <tbody>{lines.map(l => <tr key={l.id}><td>{l.strain}</td><td className="num">{n0(l.lbs)}</td>
-              <td className="num"><input className="qty" type="number" min="0" step="10" value={hold[l.id] ?? ''} placeholder="0" onChange={e => setHold({ ...hold, [l.id]: e.target.value })} /></td></tr>)}</tbody></table>
-        </>}
+        <div className="sheet-h"><h2>Samples · {o.so_number ?? `#${o.id}`}</h2><button className="ghost" onClick={onClose}>✕</button></div>
+        <p className="muted">Check the lines that are samples and how much to hold for them. The hold comes off the open menu now, lasts until {days ?? 10} days after the order ships (customer setting), and goes away if the order is cancelled.</p>
+        <table className="restable"><thead><tr><th>Strain</th><th className="num">Lbs</th><th className="ctr">Sample</th><th className="num">Hold lbs</th></tr></thead>
+          <tbody>{lines.map(l => <tr key={l.id}><td>{l.strain}</td><td className="num">{n0(l.lbs)}</td>
+            <td className="ctr"><input type="checkbox" checked={!!smp[l.id]} onChange={e => setSmp({ ...smp, [l.id]: e.target.checked })} /></td>
+            <td className="num">{smp[l.id] && <input className="qty" type="number" min="0" step="10" value={hold[l.id] ?? ''} placeholder="0" onChange={e => setHold({ ...hold, [l.id]: e.target.value })} />}</td></tr>)}</tbody></table>
         <div className="row between csave"><span />
           <div className="row"><button className="ghost" onClick={onClose}>Cancel</button><button className="primary" disabled={busy} onClick={save}>Save</button></div></div>
       </div>

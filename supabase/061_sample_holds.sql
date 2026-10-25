@@ -1,11 +1,14 @@
--- Migration 061 (feedback #3, Matt): sample orders hold product for the customer.
--- A customer (portal) or Sales marks an order as a sample and, per strain, asks for an amount to hold (their likely order).
+-- Migration 061 (feedback #3, Matt): sample lines hold product for the customer.
+-- A customer (portal) or Sales marks any line of an order as a sample (so samples can ride along on a full order) and,
+-- for that strain, asks for an amount to hold (their likely order). Updated 10/24: sample is per line, not per order.
+-- The hold starts when the order is placed, runs until N days after it ships, and goes away if the order is cancelled.
 -- The hold comes off the open menu for everyone else while the sample is on its way, and for N days after it ships
 -- (customer setting, default 10). Whatever that customer orders of the strain afterwards uses the hold up.
 -- Sales can release or extend a hold. Nothing runs on a schedule: a hold simply stops counting when it expires.
 -- Safe to re-run.
 
 alter table orders add column if not exists is_sample boolean not null default false;
+alter table order_lines add column if not exists is_sample boolean not null default false;
 alter table order_lines add column if not exists hold_lbs numeric;
 alter table order_lines add column if not exists hold_until date;            -- Sales override (extend / shorten)
 alter table order_lines add column if not exists hold_released_at timestamptz;
@@ -16,6 +19,10 @@ alter table order_lines add constraint order_lines_hold_lbs_check check (hold_lb
 alter table customers drop constraint if exists customers_sample_hold_days_check;
 alter table customers add constraint customers_sample_hold_days_check check (sample_hold_days is null or sample_hold_days between 0 and 120);
 insert into app_settings (key, value) values ('sales.sample_hold_days', '10') on conflict (key) do nothing;
+-- orders marked as a sample by the first version: their fresh frozen lines are the sample lines
+update order_lines l set is_sample = true from orders o
+ where o.id = l.order_id and o.is_sample and not l.is_sample and l.product = 'fresh_frozen';
+-- orders.is_sample now just means "has a sample line" (for the Sample pill)
 
 create or replace function sample_hold_days(p_customer int) returns int
 language sql stable security definer set search_path = public as $$
@@ -42,13 +49,13 @@ language sql stable security definer set search_path = public as $$
     join order_lines l on l.order_id = o.id
     -- used = what they ordered of it after the sample, beyond what their reserve already covers (an order draws on the reserve first)
     cross join lateral (
-      select least(coalesce(sum(l2.lbs) filter (where not o2.is_sample and o2.created_at > o.created_at), 0),
+      select least(coalesce(sum(l2.lbs) filter (where not l2.is_sample and o2.created_at > o.created_at), 0),
                    greatest(coalesce(sum(l2.lbs), 0) - coalesce((select sum(r.lbs) from reserves r where r.customer_id = o.customer_id
                               and lower(r.strain) = lower(l.strain) and r.crop_year = l.crop_year and r.product = 'fresh_frozen'), 0), 0)) as used
         from orders o2 join order_lines l2 on l2.order_id = o2.id
        where o2.customer_id = o.customer_id and o2.status in ('submitted','pending','shipped')
          and lower(l2.strain) = lower(l.strain) and l2.crop_year = l.crop_year and l2.product = 'fresh_frozen') u
-   where o.is_sample and coalesce(l.hold_lbs, 0) > 0 and l.product = 'fresh_frozen'
+   where l.is_sample and coalesce(l.hold_lbs, 0) > 0 and l.product = 'fresh_frozen'
 $$;
 revoke execute on function _sample_holds() from public, anon, authenticated;
 
@@ -131,7 +138,7 @@ end $$;
 revoke execute on function open_menu() from public, anon;
 grant execute on function open_menu() to authenticated;
 
--- portal ordering (020) + sample orders: p_sample, and hold_lbs on each line
+-- portal ordering (020) + sample lines: each line can have "sample": true and "hold_lbs" (p_sample = every line is a sample)
 drop function if exists place_order(jsonb, text, text, date);
 create or replace function place_order(p_lines jsonb, p_note text default null, p_po text default null, p_wanted date default null, p_sample boolean default false)
 returns int
@@ -142,40 +149,44 @@ begin
   if me is null then raise exception 'Only a customer login can place orders'; end if;
   perform pg_advisory_xact_lock(4242);          -- one order at a time, so two can't take the same lbs
   insert into orders (customer_id, status, order_date, source, notes, po_number, wanted_date, placed_by, created_by, is_sample)
-  values (me, 'submitted', current_date, 'portal', nullif(trim(p_note), ''), nullif(trim(p_po), ''), p_wanted, jwt_email(), jwt_email(), coalesce(p_sample, false))
+  values (me, 'submitted', current_date, 'portal', nullif(trim(p_note), ''), nullif(trim(p_po), ''), p_wanted, jwt_email(), jwt_email(), false)
   returning * into o;
   for l in
-    select x ->> 'strain' as strain, coalesce((x ->> 'crop_year')::int, crop_year()) as yr, sum((x ->> 'lbs')::numeric) as lbs,
-           max(nullif(x ->> 'hold_lbs', '')::numeric) as hold
-      from jsonb_array_elements(coalesce(p_lines, '[]')) x group by 1, 2
+    select x ->> 'strain' as strain, coalesce((x ->> 'crop_year')::int, crop_year()) as yr,
+           coalesce(p_sample, false) or coalesce((x ->> 'sample')::boolean, false) as smp,
+           sum((x ->> 'lbs')::numeric) as lbs, max(nullif(x ->> 'hold_lbs', '')::numeric) as hold
+      from jsonb_array_elements(coalesce(p_lines, '[]')) x group by 1, 2, 3
   loop
     if coalesce(l.lbs, 0) <= 0 then continue; end if;
     if l.lbs % 10 <> 0 then raise exception 'Use multiples of 10 lbs (% lbs of %)', l.lbs, l.strain; end if;
-    if p_sample and coalesce(l.hold, 0) % 10 <> 0 then raise exception 'Hold amounts go in multiples of 10 lbs (% lbs of %)', l.hold, l.strain; end if;
+    if l.smp and coalesce(l.hold, 0) % 10 <> 0 then raise exception 'Hold amounts go in multiples of 10 lbs (% lbs of %)', l.hold, l.strain; end if;
     s := canonical_strain(l.strain);
     if s is null then raise exception 'Unknown strain %', l.strain; end if;
     select * into ok from _orderable(me) x where lower(x.strain) = lower(s) and x.crop_year = l.yr;
     if coalesce(ok.can_order, 0) < l.lbs then
       raise exception 'Only % lbs of % (% crop) can be ordered right now', coalesce(ok.can_order, 0), s, l.yr;
     end if;
-    if p_sample and coalesce(l.hold, 0) > 0 and coalesce(ok.can_order, 0) < l.lbs + l.hold then
+    if l.smp and coalesce(l.hold, 0) > 0 and coalesce(ok.can_order, 0) < l.lbs + l.hold then
       raise exception 'Only % lbs of % can be held after this sample', greatest(coalesce(ok.can_order, 0) - l.lbs, 0), s;
     end if;
     select t.price_per_lb into price from terms_for(me, l.yr) t;
-    insert into order_lines (order_id, strain, lbs, price_per_lb, crop_year, hold_lbs)
-    values (o.id, s, l.lbs, price, l.yr, case when p_sample and coalesce(l.hold, 0) > 0 then l.hold end);
+    insert into order_lines (order_id, strain, lbs, price_per_lb, crop_year, is_sample, hold_lbs)
+    values (o.id, s, l.lbs, price, l.yr, l.smp, case when l.smp and coalesce(l.hold, 0) > 0 then l.hold end);
     n := n + 1;
   end loop;
   if n = 0 then raise exception 'Add at least one strain'; end if;
+  update orders set is_sample = exists (select 1 from order_lines where order_id = o.id and is_sample) where id = o.id;
   insert into events (user_email, type, note, details)
-  values (jwt_email(), 'order_placed', p_note, jsonb_build_object('order_id', o.id, 'customer_id', me, 'sample', coalesce(p_sample, false),
+  values (jwt_email(), 'order_placed', p_note, jsonb_build_object('order_id', o.id, 'customer_id', me,
+          'samples', (select count(*) from order_lines where order_id = o.id and is_sample),
           'customer', (select name from customers where id = me), 'lbs', (select sum(lbs) from order_lines where order_id = o.id), 'lines', n));
   return o.id;
 end $$;
 revoke execute on function place_order(jsonb, text, text, date, boolean) from public, anon;
 grant execute on function place_order(jsonb, text, text, date, boolean) to authenticated;
 
--- Sales: mark an order as a sample and set what to hold per line. p_holds: [{"line_id": 12, "hold_lbs": 200}] or [{"strain": "Hashburger", "hold_lbs": 200}]
+-- Sales: mark lines as samples and set what to hold. p_holds: [{"line_id": 12, "sample": true, "hold_lbs": 200}] or [{"strain": "Hashburger", ...}].
+-- "sample" left out = p_sample. p_sample false with no lines = no samples on this order.
 create or replace function set_order_sample(p_order int, p_sample boolean, p_holds jsonb default '[]') returns void
 language plpgsql security definer set search_path = public as $$
 declare o orders; h jsonb;
@@ -184,18 +195,19 @@ begin
   if not can_edit('sales') then raise exception 'Only Sales can change this'; end if;
   select * into o from orders where id = p_order;
   if o.id is null then raise exception 'Order not found'; end if;
-  update orders set is_sample = coalesce(p_sample, false), updated_at = now() where id = p_order;
-  if not coalesce(p_sample, false) then
-    update order_lines set hold_lbs = null, hold_until = null where order_id = p_order;
+  if not coalesce(p_sample, false) and jsonb_array_length(coalesce(p_holds, '[]')) = 0 then
+    update order_lines set is_sample = false, hold_lbs = null, hold_until = null where order_id = p_order;
   else
     for h in select * from jsonb_array_elements(coalesce(p_holds, '[]')) loop
-      update order_lines set hold_lbs = nullif(nullif(h ->> 'hold_lbs', '')::numeric, 0)
+      update order_lines set is_sample = coalesce((h ->> 'sample')::boolean, coalesce(p_sample, false)),
+             hold_lbs = case when coalesce((h ->> 'sample')::boolean, coalesce(p_sample, false)) then nullif(nullif(h ->> 'hold_lbs', '')::numeric, 0) end
        where order_id = p_order and product = 'fresh_frozen'
          and (id = nullif(h ->> 'line_id', '')::int or (h ->> 'line_id' is null and lower(strain) = lower(coalesce(canonical_strain(h ->> 'strain'), h ->> 'strain'))));
     end loop;
   end if;
+  update orders set is_sample = exists (select 1 from order_lines where order_id = p_order and is_sample), updated_at = now() where id = p_order;
   insert into events (user_email, type, note, details)
-  values (current_email(), 'sample_set', o.so_number, jsonb_build_object('order_id', p_order, 'sample', p_sample, 'holds', p_holds,
+  values (current_email(), 'sample_set', o.so_number, jsonb_build_object('order_id', p_order, 'sample', exists (select 1 from order_lines where order_id = p_order and is_sample), 'holds', p_holds,
           'customer', (select name from customers where id = o.customer_id)));
 end $$;
 
@@ -208,7 +220,7 @@ begin
   if not can_edit('sales') then raise exception 'Only Sales can change a hold'; end if;
   select * into l from order_lines where id = p_line;
   select * into o from orders where id = l.order_id;
-  if l.id is null or not o.is_sample then raise exception 'Sample hold not found'; end if;
+  if l.id is null or not l.is_sample then raise exception 'Sample hold not found'; end if;
   if p_release then
     update order_lines set hold_released_at = now(), hold_released_by = current_email() where id = p_line;
   else

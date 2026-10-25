@@ -187,8 +187,7 @@ export function NewOrderSheet({ backend, customers, strains, flash, onClose, onD
   const [termsCode, setTermsCode] = useState<string>('')
   const [shipping, setShipping] = useState('')
   const [terms, setTerms] = useState<PaymentTerm[]>([])
-  const [lines, setLines] = useState<{ strain: string; lbs: string; price: string; product: Product; hold?: string }[]>([{ strain: '', lbs: '', price: '', product: 'fresh_frozen' }])
-  const [sample, setSample] = useState(false)
+  const [lines, setLines] = useState<{ strain: string; lbs: string; price: string; product: Product; sample?: boolean; hold?: string }[]>([{ strain: '', lbs: '', price: '', product: 'fresh_frozen' }])
   const [busy, setBusy] = useState(false)
   useEffect(() => { backend.paymentTerms().then(setTerms).catch(() => {}) }, [])
   const c = customers.find(x => x.id === cust)
@@ -199,9 +198,14 @@ export function NewOrderSheet({ backend, customers, strains, flash, onClose, onD
     try {
       const ls: NewOrderLine[] = lines.filter(l => l.strain.trim() && Number(l.lbs) > 0).map(l => ({ strain: l.strain.trim(), lbs: Number(l.lbs), price: l.price === '' ? null : Number(l.price), product: l.product }))
       const o = await backend.createOrder(cust!, ls, po, wanted || null, notes, termsCode || null)
-      if (sample) {
-        try { await backend.setOrderSample(o.id, true, lines.filter(l => l.product === 'fresh_frozen' && l.strain.trim() && Number(l.lbs) > 0).map(l => ({ strain: l.strain.trim(), hold_lbs: Number(l.hold || 0) || null }))) }
-        catch (e) { flash(`Order made, but it wasn't marked as a sample: ${(e as Error).message}`, true) }
+      const used = lines.filter(l => l.strain.trim() && Number(l.lbs) > 0)
+      if (used.some(l => l.sample)) {
+        try {
+          // lines come back in the order they were sent
+          const { data } = await backend.client()!.from('order_lines').select('id').eq('order_id', o.id).order('id')
+          const ids = ((data ?? []) as { id: number }[]).map(x => x.id)
+          await backend.setOrderSample(o.id, true, used.map((l, i) => ({ line_id: ids[i], sample: !!l.sample && l.product === 'fresh_frozen', hold_lbs: l.sample ? Number(l.hold || 0) || null : null })).filter(x => x.line_id))
+        } catch (e) { flash(`Order made, but the sample lines weren't saved: ${(e as Error).message}`, true) }
       }
       if (shipping !== '') {
         const { error } = await backend.client()?.rpc('set_order_shipping', { p_order: o.id, p_amount: Number(shipping) }) ?? { error: null }
@@ -223,19 +227,24 @@ export function NewOrderSheet({ backend, customers, strains, flash, onClose, onD
           {c && licenseWarning(c) && <div className="warnbox">{licenseWarning(c)} Compliance keeps customer licenses in Compliance › Library › Customer licenses.</div>}</div>
         <div className="field"><label>Lines <span className="muted">(price blank = their contract price for fresh frozen; dry products get priced on the invoice)</span></label>
           <datalist id="no-strains">{strains.filter(s => s.active).map(s => <option key={s.id} value={s.name} />)}</datalist>
-          {lines.map((l, i) => (
-            <div key={i} className="row noline">
+          {lines.map((l, i) => (<div key={i} className="nolinewrap">
+            <div className="row noline">
               <select value={l.product} aria-label="Product" onChange={e => setLines(ls => ls.map((x, j) => j === i ? { ...x, product: e.target.value as Product } : x))}>
                 {SALE_PRODUCTS.map(p => <option key={p} value={p}>{PRODUCT_LABEL[p]}</option>)}</select>
               <input list="no-strains" placeholder="Strain" value={l.strain} onChange={e => setLines(ls => ls.map((x, j) => j === i ? { ...x, strain: e.target.value } : x))} />
               <input type="number" placeholder="lbs" value={l.lbs} onChange={e => setLines(ls => ls.map((x, j) => j === i ? { ...x, lbs: e.target.value } : x))} />
               <input type="number" placeholder="$/lb" value={l.price} onChange={e => setLines(ls => ls.map((x, j) => j === i ? { ...x, price: e.target.value } : x))} />
-              {sample && l.product === 'fresh_frozen' && <input type="number" step="10" placeholder="hold lbs" title="lbs to hold for them after the sample" value={l.hold ?? ''} onChange={e => setLines(ls => ls.map((x, j) => j === i ? { ...x, hold: e.target.value } : x))} />}
               {lines.length > 1 && <button className="ghost small" onClick={() => setLines(ls => ls.filter((_, j) => j !== i))}>✕</button>}
             </div>
+            {l.product === 'fresh_frozen' && <div className="row nosample">
+              <label className="check"><input type="checkbox" checked={!!l.sample} onChange={e => setLines(ls => ls.map((x, j) => j === i ? { ...x, sample: e.target.checked } : x))} /> Sample</label>
+              {l.sample && <><input type="number" step="10" min="0" placeholder="hold lbs" value={l.hold ?? ''} onChange={e => setLines(ls => ls.map((x, j) => j === i ? { ...x, hold: e.target.value } : x))} />
+                <span className="muted small">lbs to hold for them</span></>}
+            </div>}
+          </div>
           ))}
           <button className="ghost small" onClick={() => setLines(ls => [...ls, { strain: '', lbs: '', price: '', product: ls[ls.length - 1]?.product ?? 'fresh_frozen' }])}>+ Line</button></div>
-        <label className="check"><input type="checkbox" checked={sample} onChange={e => setSample(e.target.checked)} /> Sample order <span className="muted">(hold lbs per strain for {c?.sample_hold_days ?? 10} days after it ships)</span></label>
+        {lines.some(l => l.sample) && <p className="muted small">Sample lines hold the "hold lbs" for {c?.name ?? 'the customer'} from now until {c?.sample_hold_days ?? 10} days after the order ships. Cancelling the order drops the hold.</p>}
         <div className="grid2">
           <div className="field"><label>Customer PO</label><input value={po} onChange={e => setPo(e.target.value)} /></div>
           <div className="field"><label>Wanted by</label><input type="date" value={wanted} onChange={e => setWanted(e.target.value)} /></div>

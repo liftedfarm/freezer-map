@@ -164,7 +164,7 @@ export function OrderForm({ backend, reserves, onClose, onDone }: { backend: Bac
   const [wanted, setWanted] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
-  const [sample, setSample] = useState(false)
+  const [smp, setSmp] = useState<Record<string, boolean>>({})
   const [hold, setHold] = useState<Record<string, string>>({})
   const [days, setDays] = useState<number | null>(null)
   useEffect(() => {
@@ -177,7 +177,8 @@ export function OrderForm({ backend, reserves, onClose, onDone }: { backend: Bac
   const canOrder = (r: MenuRow) => (reserves && r.crop_year === cy ? Math.floor(Number(r.my_left ?? 0) / 10) * 10 : 0) + Math.floor(Number(r.my_hold ?? 0) / 10) * 10 + Number(r.available)
   const list = (rows ?? []).filter(r => canOrder(r) > 0 && (!q || r.strain.toLowerCase().includes(q.toLowerCase())))
     .sort((a, b) => b.crop_year - a.crop_year || Number(b.my_left ?? 0) - Number(a.my_left ?? 0) || a.strain.localeCompare(b.strain))
-  const lines = Object.entries(qty).map(([k, v]) => { const [strain, y] = k.split('|'); return { strain, crop_year: Number(y), lbs: Number(v), hold_lbs: sample && Number(hold[k] || 0) > 0 ? Number(hold[k]) : null } }).filter(l => l.lbs > 0)
+  const lines = Object.entries(qty).map(([k, v]) => { const [strain, y] = k.split('|'); return { strain, crop_year: Number(y), lbs: Number(v), sample: !!smp[k], hold_lbs: smp[k] && Number(hold[k] || 0) > 0 ? Number(hold[k]) : null } }).filter(l => l.lbs > 0)
+  const anySample = Object.values(smp).some(Boolean)
   const problems = lines.map(l => {
     const r = rows?.find(x => x.strain === l.strain && x.crop_year === l.crop_year)
     const nm = l.crop_year === cy ? l.strain : `${l.strain} (${l.crop_year})`
@@ -191,7 +192,8 @@ export function OrderForm({ backend, reserves, onClose, onDone }: { backend: Bac
 
   async function submit() {
     setBusy(true); setErr(null)
-    try { const id = await backend.placeOrder(lines, note, po, wanted || null, sample); onDone(sample ? `Sample order #${id} sent${lines.some(l => l.hold_lbs) ? `, with ${n0(lines.reduce((a, l) => a + (l.hold_lbs ?? 0), 0))} lbs on hold for you` : ''}. Lifted will confirm it.` : `Order #${id} sent: ${n0(total)} lbs. Lifted will confirm it.`) }
+    try { const id = await backend.placeOrder(lines, note, po, wanted || null); const held = lines.reduce((a, l) => a + (l.hold_lbs ?? 0), 0)
+      onDone(`Order #${id} sent: ${n0(total)} lbs${lines.some(l => l.sample) ? ` including samples${held ? `, with ${n0(held)} lbs on hold for you` : ''}` : ''}. Lifted will confirm it.`) }
     catch (e) { setErr((e as Error).message) } finally { setBusy(false) }
   }
   return (
@@ -199,13 +201,12 @@ export function OrderForm({ backend, reserves, onClose, onDone }: { backend: Bac
       <div className="sheet form wide" onClick={e => e.stopPropagation()}>
         <div className="sheet-h"><h2>New order</h2><button className="ghost" onClick={onClose}>✕</button></div>
         <p className="muted">Fresh frozen, by the lb in steps of 10. You can order {reserves ? 'your reserve plus ' : ''}anything open on the menu.{price != null ? ` Your price: $${price.toFixed(2)}/lb.` : ''}</p>
-        <label className="check sample-check"><input type="checkbox" checked={sample} onChange={e => setSample(e.target.checked)} /> This is a sample order</label>
-        {sample && <p className="infobox">Order the sample amount, and next to it how much you'd want to buy if you like it. We'll hold that for you while the sample is on its way and for {days ?? 10} days after it ships.</p>}
+        <p className="muted small">Want to try a strain first? Check Sample on that line and enter how much you'd want if you like it. We'll hold that for you from the moment you order until {days ?? 10} days after it ships.</p>
         <input className="search" type="search" placeholder="Search strains" value={q} onChange={e => setQ(e.target.value)} />
         {!rows && !err && <p className="muted">Loading…</p>}
         <div className="picklist orderlist">
           <table className="restable">
-            <thead><tr><th>Strain</th>{reserves && <th className="num">Your reserve left</th>}<th className="num">Can order</th><th className="num">{sample ? 'Sample lbs' : 'Lbs'}</th>{sample && <th className="num">Hold for me</th>}</tr></thead>
+            <thead><tr><th>Strain</th>{reserves && <th className="num">Your reserve left</th>}<th className="num">Can order</th><th className="num">Lbs</th><th className="ctr">Sample</th>{anySample && <th className="num">Hold for me</th>}</tr></thead>
             <tbody>
               {list.map(r => (
                 <tr key={key(r)} className={Number(qty[key(r)] || 0) > 0 ? 'picked' : ''}>
@@ -214,8 +215,9 @@ export function OrderForm({ backend, reserves, onClose, onDone }: { backend: Bac
                   <td className="num">{n0(canOrder(r))}</td>
                   <td className="num"><input className="qty" type="number" min="0" step="10" max={canOrder(r)} value={qty[key(r)] ?? ''} placeholder="0"
                     onChange={e => setQty({ ...qty, [key(r)]: e.target.value })} /></td>
-                  {sample && <td className="num"><input className="qty" type="number" min="0" step="10" value={hold[key(r)] ?? ''} placeholder="0"
-                    onChange={e => setHold({ ...hold, [key(r)]: e.target.value })} /></td>}
+                  <td className="ctr"><input type="checkbox" aria-label={`${r.strain} is a sample`} checked={!!smp[key(r)]} onChange={e => setSmp({ ...smp, [key(r)]: e.target.checked })} /></td>
+                  {anySample && <td className="num">{smp[key(r)] && <input className="qty" type="number" min="0" step="10" value={hold[key(r)] ?? ''} placeholder="0"
+                    onChange={e => setHold({ ...hold, [key(r)]: e.target.value })} />}</td>}
                 </tr>
               ))}
             </tbody>

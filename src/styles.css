@@ -789,3 +789,8 @@ tr.pastdue td { color: var(--bad, #b42318); }
 .sholds h3 { display: flex; align-items: center; gap: 12px; }
 .sholds .sh-past { font-weight: 400; font-size: 13px; }
 .sample-check { margin: 6px 0; }
+.ctr { text-align: center; }
+.nosample { gap: 8px; align-items: center; margin: -2px 0 8px 4px; }
+.nosample { flex-wrap: nowrap; }
+.nosample input[type=number] { width: 110px !important; flex: 0 0 110px; }
+.nosample .check { margin: 0; }
