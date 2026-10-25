@@ -66,7 +66,10 @@ export class FleetApi {
   async data(): Promise<FleetData> {
     const d = await this.rpc<FleetData | null>('fleet_data')
     if (!d) throw new Error('Sign in with your Lifted account to see vehicles')
-    return d
+    // before 063 runs: no drivers / carriers / departments yet
+    const all: Dept[] = ['distribution', 'cultivation', 'nursery', 'processing', 'company']
+    return { ...d, drivers: d.drivers ?? [], carriers: d.carriers ?? [], my_depts: d.my_depts ?? (d.can_edit ? all : []), carrier_admin: d.carrier_admin ?? d.can_edit,
+      assets: d.assets.map(a => ({ ...a, department: a.department ?? 'company', driver_ids: a.driver_ids ?? [], carrier_id: a.carrier_id ?? null })) }
   }
   due() { return this.rpc<Due[]>('fleet_due') }
   saveAsset(p: Partial<Asset>) { return this.rpc<number>('fleet_save_asset', { p }) }
