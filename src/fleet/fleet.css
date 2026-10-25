@@ -1,23 +1,23 @@
 /* Vehicles and equipment */
 .fbig { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin: 12px 0 16px; }
-.fbtn { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 16px; border-radius: 12px; border: 1px solid var(--line, #d9ded8); background: var(--card, #fff); text-align: left; font-size: 16px; cursor: pointer; }
+.fbtn { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 16px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); text-align: left; font-size: 16px; cursor: pointer; }
 .fbtn span { font-size: 13px; opacity: .7; }
-.fbtn.bad { border-color: #e2b4b4; }
-.fbtn.bad b { color: #b42318; }
+.fbtn.bad { border-color: color-mix(in srgb, var(--bad) 45%, var(--line)); }
+.fbtn.bad b { color: var(--bad); }
 .fpills { gap: 4px; margin-top: 4px; }
 .fasset.retired { opacity: .55; }
 .freps { gap: 6px; margin-bottom: 8px; }
 .fset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .fset:disabled input, .fset:disabled select, .fset:disabled textarea { opacity: .85; }
-.fcheck { display: flex; flex-direction: column; border: 1px solid var(--line, #d9ded8); border-radius: 10px; overflow: hidden; margin-bottom: 10px; }
-.fci { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; border-top: 1px solid var(--line, #e5e8e4); }
+.fcheck { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin-bottom: 10px; }
+.fci { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; border-top: 1px solid var(--line); }
 .fci:first-child { border-top: 0; }
-.fci.defect { background: rgba(220, 60, 60, .07); }
+.fci.defect { background: color-mix(in srgb, var(--bad) 10%, transparent); }
 .fcb { display: inline-flex; gap: 4px; }
-.fcb button { padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line, #d9ded8); background: transparent; font-size: 13px; min-width: 52px; }
-.fcb button.on.ok { background: #1f7a3a; color: #fff; border-color: #1f7a3a; }
-.fcb button.on.defect { background: #b42318; color: #fff; border-color: #b42318; }
-.fcb button.on.na { background: #6b7280; color: #fff; border-color: #6b7280; }
+.fcb button { padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-size: 13px; min-width: 52px; }
+.fcb button.on.ok { background: var(--brand); color: var(--brand-ink); border-color: var(--brand); }
+.fcb button.on.defect { background: var(--bad); color: #fff; border-color: var(--bad); }
+.fcb button.on.na { background: var(--muted); color: var(--panel); border-color: var(--muted); }
 .fcnote { flex-basis: 100%; }
 .fdocs { margin-top: 14px; display: grid; gap: 12px; }
 .ffiles { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }

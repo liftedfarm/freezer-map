@@ -31,6 +31,7 @@ const COLS: Record<ListName, Col[]> = {
     { key: 'contact', label: 'Contact', kind: 'text', synonyms: ['contact', 'phone', 'email', 'contact info'] },
     { key: 'legal_name', label: 'Legal name', kind: 'text', synonyms: ['legal name', 'legal', 'entity', 'company legal name'], hint: 'on invoices, if different' },
     { key: 'payment_terms', label: 'Payment terms', kind: 'terms', synonyms: ['payment terms', 'terms', 'net'], hint: 'default for this customer' },
+    { key: 'sample_hold_days', label: 'Sample hold (days)', kind: 'int', synonyms: ['sample hold', 'sample hold days', 'hold days'], hint: 'how long a sample order holds product after it ships; blank = 10' },
     { key: 'billing_address', label: 'Billing address', kind: 'area', synonyms: ['billing address', 'bill to', 'billing'] },
     { key: 'billing_contact', label: 'Billing contact', kind: 'text', synonyms: ['billing contact', 'ap contact', 'accounts payable'] },
     { key: 'billing_email', label: 'Billing email', kind: 'text', synonyms: ['billing email', 'ap email', 'invoice email'], hint: 'invoices go here' },

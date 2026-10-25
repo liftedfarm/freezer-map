@@ -1,3 +1,4 @@
+import { SampleHolds, SampleSheet } from './samples'
 import { CustomerDashboard } from './statement'
 import { StrainLink } from './strainCard'
 import { useBack } from './nav'
@@ -70,6 +71,8 @@ export function ReservesView({ backend, customers, strains, onHand, flash, isAdm
   const [q, setQ] = useState('')
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<ImportResult | null>(null)
+  const [sampleOf, setSampleOf] = useState<Order | null>(null)
+  const [holdRev, setHoldRev] = useState(0)
   const load = () => Promise.all([backend.listBalances(), backend.listOrders().catch(() => [] as Order[]),
       backend.listRequests().catch(() => [] as ReserveRequest[]), backend.menuNumbers().catch(() => [] as MenuNumbers[])])
     .then(([b, o, r, m]) => {
@@ -201,6 +204,7 @@ export function ReservesView({ backend, customers, strains, onHand, flash, isAdm
                 {isAdmin && <tfoot><tr><td colSpan={5}><span className="muted">Tap a strain to change it. </span><button className="ghost small" onClick={() => setEdit({ customer_id: c.id, strain: '', lbs: '', isNew: true })}>+ Add strain for {c.name}</button></td></tr></tfoot>}
               </table>
             </div>
+            <SampleHolds backend={backend} customerId={c.id} staff flash={flash} rev={holdRev} onChanged={load} />
             <h3>Account</h3>
             <CustomerDashboard backend={backend} customerId={c.id} staff />
             {cReqs.length > 0 && <><h3>Reserve requests waiting</h3>
@@ -251,7 +255,7 @@ export function ReservesView({ backend, customers, strains, onHand, flash, isAdm
               ))}
             </tbody>
           </table>
-          <p className="muted">Free = on hand − pending orders − reserves not yet shipped − increases customers have requested (held until approved or declined). Customers see Free rounded down to 10 lbs. On hand is what's in the freezers in this app. Negative means more is promised than is in the freezers.</p>
+          <p className="muted">Free = on hand − pending orders − reserves not yet shipped − increases customers have requested (held until approved or declined) − sample holds. Customers see Free rounded down to 10 lbs. On hand is what's in the freezers in this app. Negative means more is promised than is in the freezers.</p>
         </>
       )}
 
@@ -261,6 +265,7 @@ export function ReservesView({ backend, customers, strains, onHand, flash, isAdm
         <OpenMenu backend={backend} reserves={false} />
       </>}
 
+      {mode === 'requests' && <SampleHolds backend={backend} staff showCustomer flash={flash} rev={holdRev} onChanged={load} />}
       {mode === 'requests' && <RequestsPanel backend={backend} reqs={reqs.filter(r => !ql || cname(r.customer_id).toLowerCase().includes(ql) || r.strain.toLowerCase().includes(ql))}
         nums={nums} cname={cname} cur={cur} isAdmin={isAdmin} flash={flash} onDone={load} />}
 
@@ -270,7 +275,7 @@ export function ReservesView({ backend, customers, strains, onHand, flash, isAdm
           {shownOrders.map(o => (
             <div key={o.id} className="rescard">
               <button className="li setrow" onClick={() => setOpen(open === -o.id ? null : -o.id)}>
-                <div className="grow"><b>{o.so_number ?? `Order #${o.id}`}</b> <span className={`pill o-${o.status}`}>{STATUS_LABEL[o.status]}</span>
+                <div className="grow"><b>{o.so_number ?? `Order #${o.id}`}</b> <span className={`pill o-${o.status}`}>{STATUS_LABEL[o.status]}</span>{o.is_sample && <span className="pill sample">Sample</span>}
                   {o.status === 'pending' && fulfil?.get(o.id) && <span className={`pill fs-${fulfil.get(o.id)!.state}`}>{STATE_LABEL[fulfil.get(o.id)!.state]}{fulfil.get(o.id)!.stop ? ` · ${fulfil.get(o.id)!.stop!.load}` : ''}</span>}
                   <div className="muted">{cname(o.customer_id)} · {fmtDate(o.order_date)}{o.source === 'portal' ? ' · from portal' : ''}{o.roshi_status && o.roshi_status !== 'Fulfilled' ? ` · Roshi: ${o.roshi_status}` : ''}</div></div>
                 <b className="num">{n0(orderLbs(o))} lbs</b>
@@ -279,6 +284,7 @@ export function ReservesView({ backend, customers, strains, onHand, flash, isAdm
               {open === -o.id && (o.status === 'pending' || o.status === 'shipped') && onDoc && <div className="row wrap orderdocs">
                 <button className="ghost small" onClick={() => onDoc('so', o.id)}>Sales order PDF</button>
                 {onInvoice && <button className="ghost small" onClick={() => onInvoice(o.id)}>{o.status === 'shipped' ? 'Invoice' : 'Make invoice now'}</button>}</div>}
+              {open === -o.id && o.status !== 'cancelled' && <div className="row wrap orderdocs"><button className="ghost small" onClick={() => setSampleOf(o)}>{o.is_sample ? `Sample: ${o.order_lines.filter(l => Number(l.hold_lbs ?? 0) > 0).map(l => `${n0(Number(l.hold_lbs))} ${l.strain}`).join(', ') || 'no hold'} · change` : 'Make this a sample order…'}</button></div>}
               {open === -o.id && <OrderEditor backend={backend} o={o} strains={strains} flash={flash} onChanged={load} />}
             </div>
           ))}
@@ -287,6 +293,8 @@ export function ReservesView({ backend, customers, strains, onHand, flash, isAdm
       )}
 
 
+      {sampleOf && <SampleSheet backend={backend} o={sampleOf} days={cust.get(sampleOf.customer_id)?.sample_hold_days ?? null} flash={flash} onClose={() => setSampleOf(null)}
+        onDone={async () => { setSampleOf(null); setHoldRev(r => r + 1); await load() }} />}
       {edit && (
         <div className="scrim" onClick={() => setEdit(null)}>
           <div className="sheet form" onClick={e => e.stopPropagation()}>
@@ -358,7 +366,7 @@ export function MyOrders({ backend, onChange }: { backend: Backend; onChange?: (
       {rows.map(o => (
         <div key={o.id} className="rescard">
           <button className="li setrow" onClick={() => setOpen(open === o.id ? null : o.id)}>
-            <div className="grow"><b>{o.so_number ?? `Order #${o.id}`}</b> <span className={`pill o-${o.status}`}>{STATUS_LABEL[o.status]}</span>
+            <div className="grow"><b>{o.so_number ?? `Order #${o.id}`}</b> <span className={`pill o-${o.status}`}>{STATUS_LABEL[o.status]}</span>{o.is_sample && <span className="pill sample">Sample</span>}
               <div className="muted">{fmtDate(o.order_date)}{o.shipped_date && o.status === 'shipped' ? ` · shipped ${fmtDate(o.shipped_date)}` : ''}</div></div>
             <b className="num">{n0(orderLbs(o))} lbs</b>
           </button>

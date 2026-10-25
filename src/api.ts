@@ -1,7 +1,7 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { accessFromRole } from './types'
 import type { SalesDoc } from './docs'
-import type { Item, HarvestLot, LotImpact, Invoice, NewOrderLine, PaymentTerm, FOrder, Prefs, ModKey, Level, ReserveYears, CustomerTerms, UnmatchedTag, ShippedCheck, StopManifest, OrderInput, Terms, Statement, MenuNumbers, MenuRow, ReserveRequest, Balance, ImportResult, Order, RoshiRow, Reserve, LinkInfo, AppUser, Customer, Me, Role, Freezer, FreezerStatus, InvEvent, ListName, ListRow, Load, LoadItem, LoadStop, MixLine, Pallet, Settings, SingleInput, Slot, Snapshot, StopInput, Strain, Vehicle } from './types'
+import type { Item, HarvestLot, LotImpact, Invoice, NewOrderLine, PaymentTerm, FOrder, Prefs, ModKey, Level, ReserveYears, CustomerTerms, UnmatchedTag, ShippedCheck, StopManifest, OrderInput, Terms, Statement, SampleHold, MenuNumbers, MenuRow, ReserveRequest, Balance, ImportResult, Order, RoshiRow, Reserve, LinkInfo, AppUser, Customer, Me, Role, Freezer, FreezerStatus, InvEvent, ListName, ListRow, Load, LoadItem, LoadStop, MixLine, Pallet, Settings, SingleInput, Slot, Snapshot, StopInput, Strain, Vehicle } from './types'
 
 export interface SaveUser { email: string; name: string; kind: 'staff' | 'customer' | 'none'; customerId: number | null; access: Partial<Record<ModKey, Level>>; owner?: boolean; login?: 'microsoft' | 'email' | null }
 export interface Overview {
@@ -59,7 +59,12 @@ export interface Backend {
   decideRequest(id: number, approve: boolean, note: string): Promise<void>
   listOrders(): Promise<Order[]>
   salesCounts(): Promise<{ orders: number; requests: number }>
-  placeOrder(lines: OrderInput[], note: string, po: string, wanted: string | null): Promise<number>
+  placeOrder(lines: OrderInput[], note: string, po: string, wanted: string | null, sample?: boolean): Promise<number>
+  /** sample holds (061) */
+  sampleHolds(customerId?: number | null, all?: boolean): Promise<SampleHold[]>
+  setOrderSample(orderId: number, sample: boolean, holds: { line_id?: number; strain?: string; hold_lbs: number | null }[]): Promise<void>
+  setSampleHold(lineId: number, release: boolean, until?: string | null): Promise<void>
+  mySampleHoldDays(): Promise<number | null>
   cancelMyOrder(id: number): Promise<void>
   setOrderStatus(id: number, status: string, so: string, note: string, date?: string | null): Promise<void>
   setSpan(palletId: number, toSlot: number | null): Promise<void>
@@ -447,12 +452,24 @@ class SupaBackend implements Backend {
     const { data: s } = await this.sb.auth.getSession()
     fetch('/api/notify-request', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${s.session?.access_token ?? ''}` }, body: JSON.stringify({ kind, id }) }).catch(() => {})
   }
-  async placeOrder(lines: OrderInput[], note: string, po: string, wanted: string | null) {
-    const { data, error } = await this.sb.rpc('place_order', { p_lines: lines, p_note: note || null, p_po: po || null, p_wanted: wanted || null })
+  async placeOrder(lines: OrderInput[], note: string, po: string, wanted: string | null, sample = false) {
+    const { data, error } = await this.sb.rpc('place_order', { p_lines: lines, p_note: note || null, p_po: po || null, p_wanted: wanted || null, ...(sample ? { p_sample: true } : {}) })
     fail(error)
     this.notify('order', data as number)
     return data as number
   }
+  async sampleHolds(customerId?: number | null, all = false) {
+    const { data, error } = await this.sb.rpc('sample_holds', { p_customer: customerId ?? null, p_all: all })
+    if (error) { if (/sample_holds/.test(error.message)) return []; fail(error) }
+    return (data ?? []) as SampleHold[]
+  }
+  async setOrderSample(orderId: number, sample: boolean, holds: { line_id?: number; strain?: string; hold_lbs: number | null }[]) {
+    const { error } = await this.sb.rpc('set_order_sample', { p_order: orderId, p_sample: sample, p_holds: holds })
+    if (error && /set_order_sample/.test(error.message)) throw new Error('Sample orders need 061_sample_holds.sql run in Supabase.')
+    fail(error)
+  }
+  async setSampleHold(lineId: number, release: boolean, until?: string | null) { const { error } = await this.sb.rpc('set_sample_hold', { p_line: lineId, p_release: release, p_until: until ?? null }); fail(error) }
+  async mySampleHoldDays() { const { data, error } = await this.sb.rpc('my_sample_hold_days'); if (error) return null; return data as number | null }
   async cancelMyOrder(id: number) { const { error } = await this.sb.rpc('cancel_my_order', { p_id: id }); fail(error) }
   async setOrderStatus(id: number, status: string, so: string, note: string, date?: string | null) {
     const { error } = await this.sb.rpc('set_order_status', { p_id: id, p_status: status, p_so: so || null, p_note: note || null, ...(date ? { p_date: date } : {}) }); fail(error)
@@ -745,6 +762,10 @@ class DemoBackend implements Backend {
   async listOrders() { return [] }
   async salesCounts() { return { orders: 0, requests: 0 } }
   async placeOrder(): Promise<number> { throw new Error('Not in demo') }
+  async sampleHolds() { return [] as SampleHold[] }
+  async setOrderSample() { throw new Error('Not in demo') }
+  async setSampleHold() { throw new Error('Not in demo') }
+  async mySampleHoldDays() { return null }
   async cancelMyOrder() {}
   async setOrderStatus() {}
   async setSpan() { throw new Error('Not in demo') }

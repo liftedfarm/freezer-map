@@ -318,6 +318,8 @@ function describe(ix: Index, e: InvEvent, names?: Map<number, string>) {
     case 'comp_license': { const d = e.details as { expires?: string } | null; return `License ${e.note} expires ${d?.expires ?? '(no date)'}` }
     case 'comp_setting': return `Compliance settings: ${e.note}`
     case 'comp_backup': { const d = e.details as { copied?: number; archived?: number; failed?: number } | null; return `SharePoint backup: ${d?.copied ?? 0} copied, ${d?.archived ?? 0} archived, ${d?.failed ?? 0} failed` }
+    case 'sample_set': { const d = e.details as { sample?: boolean; customer?: string } | null; return `${e.note ?? 'Order'} ${d?.sample ? 'marked as a sample' : 'no longer a sample'}${d?.customer ? ` (${d.customer})` : ''}` }
+    case 'sample_hold': { const d = e.details as { release?: boolean; until?: string; customer?: string } | null; return `Sample hold ${e.note}${d?.customer ? ` for ${d.customer}` : ''}: ${d?.release ? 'released' : `until ${d?.until}`}` }
     case 'fleet_asset': { const d = e.details as { new?: boolean } | null; return `${d?.new ? 'Vehicle added' : 'Vehicle changed'}: ${e.note}` }
     case 'fleet_inspection': { const d = e.details as { result?: string } | null; return `Inspection${d?.result ? ` (${d.result === 'pass' ? 'passed' : d.result === 'defects' ? 'defects found' : 'out of service'})` : ''}: ${e.note}` }
     case 'fleet_maintenance': return `Maintenance: ${e.note}`

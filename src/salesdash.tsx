@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { Backend } from './api'
-import type { FOrder, Balance, Customer, MenuNumbers, Order, ReserveRequest, ReserveYears } from './types'
+import type { FOrder, Balance, Customer, MenuNumbers, Order, ReserveRequest, ReserveYears, SampleHold } from './types'
 import type { SalesMode } from './reserves'
 import { DeadlineEdit, FillOk } from './reserves'
 import { Card, Cards, DashHead, Empty, Meter, Tile, Tiles } from './dash'
@@ -19,6 +19,8 @@ export function SalesDashboard({ backend, customers, isAdmin, go }: { backend: B
   const [d, setD] = useState<Data | null>(null)
   const [err, setErr] = useState<string | null>(null)
   useEffect(() => { loadAll(backend).then(setD).catch(e => setErr(String(e?.message ?? e))) }, [backend])
+  const [holds, setHolds] = useState<SampleHold[]>([])
+  useEffect(() => { backend.sampleHolds().then(h => setHolds(h.filter(x => x.state === 'waiting' || x.state === 'active'))).catch(() => {}) }, [backend])
   if (err) return <div className="list"><div className="warnbox">Couldn't load sales. ({err})</div></div>
   if (!d) return <p className="muted">Loading…</p>
   const cname = (id: number) => customers.find(c => c.id === id)?.name ?? `#${id}`
@@ -50,6 +52,8 @@ export function SalesDashboard({ backend, customers, isAdmin, go }: { backend: B
         <Tile label="Orders to confirm" value={toConfirm.length} sub={toConfirm.length ? `oldest ${fmt(toConfirm.map(o => o.order_date ?? '').sort()[0] || null)}` : 'all caught up'} tone={toConfirm.length ? 'warn' : 'ok'} onClick={() => go('orders')} />
         <Tile label="Reserve requests" value={pend.length} sub={pend.length ? `${plural(new Set(pend.map(r => r.customer_id)).size, 'customer')} waiting${isAdmin ? '' : ' (Sales Admin approves)'}` : 'none waiting'} tone={pend.length ? 'warn' : 'ok'} onClick={() => go('requests')} />
         <Tile label={`${cur} reserves left`} value={`${n0(S('remaining'))} lbs`} sub={`of ${n0(S('reserved'))} reserved · ${n0(S('shipped'))} shipped`} onClick={() => go('customer')} />
+        {holds.length > 0 && <Tile label="Sample holds" value={`${Math.round(holds.reduce((a, h) => a + Number(h.remaining), 0)).toLocaleString()} lbs`}
+          sub={`${holds.length} hold${holds.length === 1 ? '' : 's'}${holds.some(h => h.until && h.until <= new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10)) ? ' · some end in 3 days' : ''}`} onClick={() => go('requests')} />}
         <Tile label="Open menu" value={`${n0(free)} lbs`} sub={`free to sell across ${menu.filter(m => Number(m.free) > 0).length} strains`} tone="info" onClick={() => go('menu')} />
         <Tile label="This month" value={`${n0(lbsMonth)} lbs`} sub={`${monthOrders.length} orders${valMonth ? ` · ${money(valMonth)}` : ''} · ${n0(shippedMonth)} shipped`} onClick={() => go('orders')} />
         {next && <Tile label={`${next.year} requests`} value={next.deadline ? `${Math.max(0, daysTo(next.deadline))} days` : 'no deadline'} sub={`${next.deadline ? `to ${fmt(next.deadline)} · ` : ''}${n0(nextBal.reduce((a, r) => a + Number(r.reserved), 0))} lbs approved, ${n0(nextReq.reduce((a, r) => a + Number(r.requested_lbs), 0))} asked`}

@@ -28,7 +28,7 @@ export function OpenMenu({ backend, reserves }: { backend: Backend; reserves: bo
   const older = rows.filter(r => r.crop_year < cy && Number(r.available) > 0 && (!q || r.strain.toLowerCase().includes(q.toLowerCase())))
   const olderYears = [...new Set(older.map(r => r.crop_year))].sort((a, b) => b - a)
   const cur = rows.filter(r => r.crop_year === cy)
-  const shown = cur.filter(r => (reserves || Number(r.available) > 0) && (!mine || r.my_reserved != null || r.request_id != null) && (!q || r.strain.toLowerCase().includes(q.toLowerCase())))
+  const shown = cur.filter(r => (reserves || Number(r.available) > 0 || Number(r.my_hold ?? 0) > 0) && (!mine || r.my_reserved != null || r.request_id != null) && (!q || r.strain.toLowerCase().includes(q.toLowerCase())))
   const totalAvail = cur.reduce((a, r) => a + Number(r.available), 0)
 
   return (
@@ -49,7 +49,8 @@ export function OpenMenu({ backend, reserves }: { backend: Backend; reserves: bo
             <tr key={r.strain}>
               <td>{r.strain}{(() => { const m = info.get(r.strain.toLowerCase()); const bits = [m?.solventless_pct != null ? `${Number(m.solventless_pct)}% solventless` : '', m?.hydrocarbon_pct != null ? `${Number(m.hydrocarbon_pct)}% hydrocarbon` : ''].filter(Boolean)
                 return bits.length ? <div className="muted small">{bits.join(' · ')}</div> : null })()}
-                {r.request_id != null && <div className="reqnote">Requested {n0(r.requested_lbs)} lbs · waiting</div>}</td>
+                {r.request_id != null && <div className="reqnote">Requested {n0(r.requested_lbs)} lbs · waiting</div>}
+                {Number(r.my_hold ?? 0) > 0 && <div className="reqnote">Held for you: {n0(r.my_hold)} lbs{r.my_hold_until ? ` until ${new Date(r.my_hold_until + 'T12:00').toLocaleDateString([], { month: 'short', day: 'numeric' })}` : ' (from your sample)'}</div>}</td>
               <td className="num">{Number(r.available) > 0 ? n0(r.available) : <span className="muted">0</span>}</td>
               {reserves && <><td className="num">{r.my_reserved != null ? <>{n0(r.my_reserved)}<div className="muted small">{n0(r.my_left)} left</div></> : <span className="muted">-</span>}</td>
               <td className="num">
@@ -163,28 +164,34 @@ export function OrderForm({ backend, reserves, onClose, onDone }: { backend: Bac
   const [wanted, setWanted] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  const [sample, setSample] = useState(false)
+  const [hold, setHold] = useState<Record<string, string>>({})
+  const [days, setDays] = useState<number | null>(null)
   useEffect(() => {
     backend.openMenu().then(setRows).catch(e => setErr(String(e?.message ?? e)))
     backend.myTerms().then(t => setPrice(t?.price_per_lb != null ? Number(t.price_per_lb) : null))
+    backend.mySampleHoldDays().then(setDays).catch(() => {})
   }, [])
   const key = (r: { strain: string; crop_year: number }) => `${r.strain}|${r.crop_year}`
   const cy = Math.max(...(rows ?? []).map(r => r.crop_year), 0)
-  const canOrder = (r: MenuRow) => (reserves && r.crop_year === cy ? Math.floor(Number(r.my_left ?? 0) / 10) * 10 : 0) + Number(r.available)
+  const canOrder = (r: MenuRow) => (reserves && r.crop_year === cy ? Math.floor(Number(r.my_left ?? 0) / 10) * 10 : 0) + Math.floor(Number(r.my_hold ?? 0) / 10) * 10 + Number(r.available)
   const list = (rows ?? []).filter(r => canOrder(r) > 0 && (!q || r.strain.toLowerCase().includes(q.toLowerCase())))
     .sort((a, b) => b.crop_year - a.crop_year || Number(b.my_left ?? 0) - Number(a.my_left ?? 0) || a.strain.localeCompare(b.strain))
-  const lines = Object.entries(qty).map(([k, v]) => { const [strain, y] = k.split('|'); return { strain, crop_year: Number(y), lbs: Number(v) } }).filter(l => l.lbs > 0)
+  const lines = Object.entries(qty).map(([k, v]) => { const [strain, y] = k.split('|'); return { strain, crop_year: Number(y), lbs: Number(v), hold_lbs: sample && Number(hold[k] || 0) > 0 ? Number(hold[k]) : null } }).filter(l => l.lbs > 0)
   const problems = lines.map(l => {
     const r = rows?.find(x => x.strain === l.strain && x.crop_year === l.crop_year)
     const nm = l.crop_year === cy ? l.strain : `${l.strain} (${l.crop_year})`
     if (l.lbs % 10 !== 0) return `${nm}: use multiples of 10 lbs`
     if (r && l.lbs > canOrder(r)) return `${nm}: up to ${n0(canOrder(r))} lbs`
+    if (l.hold_lbs && l.hold_lbs % 10 !== 0) return `${nm}: hold in multiples of 10 lbs`
+    if (r && l.hold_lbs && l.lbs + l.hold_lbs > canOrder(r)) return `${nm}: up to ${n0(Math.max(canOrder(r) - l.lbs, 0))} lbs can be held`
     return null
   }).filter(Boolean) as string[]
   const total = lines.reduce((a, l) => a + l.lbs, 0)
 
   async function submit() {
     setBusy(true); setErr(null)
-    try { const id = await backend.placeOrder(lines, note, po, wanted || null); onDone(`Order #${id} sent: ${n0(total)} lbs. Lifted will confirm it.`) }
+    try { const id = await backend.placeOrder(lines, note, po, wanted || null, sample); onDone(sample ? `Sample order #${id} sent${lines.some(l => l.hold_lbs) ? `, with ${n0(lines.reduce((a, l) => a + (l.hold_lbs ?? 0), 0))} lbs on hold for you` : ''}. Lifted will confirm it.` : `Order #${id} sent: ${n0(total)} lbs. Lifted will confirm it.`) }
     catch (e) { setErr((e as Error).message) } finally { setBusy(false) }
   }
   return (
@@ -192,11 +199,13 @@ export function OrderForm({ backend, reserves, onClose, onDone }: { backend: Bac
       <div className="sheet form wide" onClick={e => e.stopPropagation()}>
         <div className="sheet-h"><h2>New order</h2><button className="ghost" onClick={onClose}>✕</button></div>
         <p className="muted">Fresh frozen, by the lb in steps of 10. You can order {reserves ? 'your reserve plus ' : ''}anything open on the menu.{price != null ? ` Your price: $${price.toFixed(2)}/lb.` : ''}</p>
+        <label className="check sample-check"><input type="checkbox" checked={sample} onChange={e => setSample(e.target.checked)} /> This is a sample order</label>
+        {sample && <p className="infobox">Order the sample amount, and next to it how much you'd want to buy if you like it. We'll hold that for you while the sample is on its way and for {days ?? 10} days after it ships.</p>}
         <input className="search" type="search" placeholder="Search strains" value={q} onChange={e => setQ(e.target.value)} />
         {!rows && !err && <p className="muted">Loading…</p>}
         <div className="picklist orderlist">
           <table className="restable">
-            <thead><tr><th>Strain</th>{reserves && <th className="num">Your reserve left</th>}<th className="num">Can order</th><th className="num">Lbs</th></tr></thead>
+            <thead><tr><th>Strain</th>{reserves && <th className="num">Your reserve left</th>}<th className="num">Can order</th><th className="num">{sample ? 'Sample lbs' : 'Lbs'}</th>{sample && <th className="num">Hold for me</th>}</tr></thead>
             <tbody>
               {list.map(r => (
                 <tr key={key(r)} className={Number(qty[key(r)] || 0) > 0 ? 'picked' : ''}>
@@ -205,6 +214,8 @@ export function OrderForm({ backend, reserves, onClose, onDone }: { backend: Bac
                   <td className="num">{n0(canOrder(r))}</td>
                   <td className="num"><input className="qty" type="number" min="0" step="10" max={canOrder(r)} value={qty[key(r)] ?? ''} placeholder="0"
                     onChange={e => setQty({ ...qty, [key(r)]: e.target.value })} /></td>
+                  {sample && <td className="num"><input className="qty" type="number" min="0" step="10" value={hold[key(r)] ?? ''} placeholder="0"
+                    onChange={e => setHold({ ...hold, [key(r)]: e.target.value })} /></td>}
                 </tr>
               ))}
             </tbody>

@@ -1,3 +1,4 @@
+import { SampleHolds } from './samples'
 import { CustomerDashboard } from './statement'
 import { useEffect, useState } from 'react'
 import type { Backend } from './api'
@@ -144,6 +145,7 @@ export function Portal({ backend, me, signOut }: { backend: Backend; me: Me; sig
           {reserves && future.map(y => <div key={y.year}><h3>{y.year} reserves</h3><ReserveTable backend={backend} year={y.year} current={false} deadline={y.deadline} open={y.open} onMsg={setMsg} /></div>)}
           {reserves && ys && <><h3>{ys.current} reserves</h3><ReserveTable backend={backend} year={ys.current} current deadline={null} open onMsg={setMsg} /></>}
           {reserves && !ys && <><h3>Your reserves</h3><MyReserves backend={backend} /></>}
+          <SampleHolds backend={backend} title="Held for you" rev={rev} />
           <h3>Open menu</h3>{terms !== undefined && <OpenMenu backend={backend} reserves={reserves} />}
         </div>
       </main>

@@ -86,7 +86,7 @@ export interface InvEvent {
 }
 
 export interface Vehicle { id: number; name: string; plate: string | null; kind: string | null; notes: string | null; active: boolean; spaces: number; across: number; owner: string | null }
-export interface Customer { id: number; name: string; kind: 'internal' | 'external'; license: string | null; address: string | null; contact: string | null; notes: string | null; active: boolean; price_per_lb?: number | null; contract_lbs?: number | null; monthly_min_lbs?: number | null; deposit_usd?: number | null; storage_fee?: number | null; reserves_enabled?: boolean; legal_name?: string | null; payment_terms?: string | null; billing_address?: string | null; billing_contact?: string | null; billing_email?: string | null; billing_phone?: string | null; ship_to_name?: string | null; ship_to_address?: string | null; receiving_contact?: string | null; license_expires?: string | null }
+export interface Customer { id: number; name: string; kind: 'internal' | 'external'; license: string | null; address: string | null; contact: string | null; notes: string | null; active: boolean; price_per_lb?: number | null; contract_lbs?: number | null; monthly_min_lbs?: number | null; deposit_usd?: number | null; storage_fee?: number | null; reserves_enabled?: boolean; legal_name?: string | null; payment_terms?: string | null; billing_address?: string | null; billing_contact?: string | null; billing_email?: string | null; billing_phone?: string | null; ship_to_name?: string | null; ship_to_address?: string | null; receiving_contact?: string | null; license_expires?: string | null; sample_hold_days?: number | null }
 export interface Strain { id: number; name: string; aliases: string[]; color: string | null; notes: string | null; active: boolean; show_on_menu?: boolean; strain_no?: number | null; default_grade?: Grade; trial?: boolean }
 export type Grade = 'SHO' | 'BHO'
 /** what a lot grade change touched: still on hand, held for orders, already shipped (by invoice) */
@@ -160,14 +160,14 @@ export interface Balance { id: number; customer_id: number; strain: string; rese
 /** reserve crop years: the current crop plus future crops with a request deadline */
 export interface ReserveYears { current: number; years: { year: number; deadline: string | null; open: boolean }[] }
 export interface CustomerTerms { customer_id: number; crop_year: number; price_per_lb: number | null; contract_lbs: number | null; monthly_min_lbs: number | null; deposit_usd: number | null; storage_fee: number | null }
-export interface OrderLine { id: number; order_id: number; strain: string; product?: Product; lbs: number; price_per_lb: number | null; price_override: boolean; farm: string | null; package_tag: string | null; crop_year?: number }
-export interface Order { id: number; so_number: string | null; customer_id: number; status: 'draft' | 'submitted' | 'pending' | 'shipped' | 'cancelled'; roshi_status: string | null; order_date: string | null; shipped_date: string | null; source: string; notes: string | null; po_number?: string | null; wanted_date?: string | null; placed_by?: string | null; confirmed_by?: string | null; order_lines: OrderLine[] }
+export interface OrderLine { id: number; order_id: number; strain: string; product?: Product; lbs: number; price_per_lb: number | null; price_override: boolean; farm: string | null; package_tag: string | null; crop_year?: number; hold_lbs?: number | null }
+export interface Order { id: number; so_number: string | null; customer_id: number; status: 'draft' | 'submitted' | 'pending' | 'shipped' | 'cancelled'; roshi_status: string | null; order_date: string | null; shipped_date: string | null; source: string; notes: string | null; po_number?: string | null; wanted_date?: string | null; placed_by?: string | null; confirmed_by?: string | null; is_sample?: boolean; order_lines: OrderLine[] }
 export interface RoshiRow { line_id: string; so_number: string; customer: string; sku_name: string; sku_id: string | null; status: string; gross: number | null; units: number | null; order_date: string | null; shipped_date: string | null; package_tag: string | null }
 export interface ImportResult { orders_added: number; orders_updated: number; lines_added: number; lines_updated: number; skipped: number; new_customers: string[]; new_strains: string[] }
-export interface MenuRow { strain: string; crop_year: number; available: number; my_reserved: number | null; my_shipped: number | null; my_pending: number | null; my_left: number | null; request_id: number | null; requested_lbs: number | null }
+export interface MenuRow { strain: string; crop_year: number; available: number; my_reserved: number | null; my_shipped: number | null; my_pending: number | null; my_left: number | null; request_id: number | null; requested_lbs: number | null; my_hold?: number | null; my_hold_until?: string | null }
 export interface MenuNumbers { strain: string; crop_year: number; on_menu: boolean; on_hand: number; pending: number; reserved_left: number; held: number; free: number }
 export interface ReserveRequest { id: number; customer_id: number; strain: string; current_lbs: number; requested_lbs: number; note: string | null; status: 'pending' | 'approved' | 'declined' | 'cancelled'; requested_by: string; requested_at: string; decided_by: string | null; decided_at: string | null; decision_note: string | null; crop_year?: number; batch_id?: string | null; approved_lbs?: number | null }
-export interface OrderInput { strain: string; lbs: number; crop_year?: number }
+export interface OrderInput { strain: string; lbs: number; crop_year?: number; hold_lbs?: number | null }
 export interface UnmatchedTag { package_tag: string; strain: string; lbs: number; tags_on_line: number; sos: string; last_shipped: string | null }
 export interface ShippedCheck { pallet_id: number; package_tag: string; shipped_lbs: number; new_lbs: number; sos: string; last_shipped: string | null }
 export interface Terms { name: string; price_per_lb: number | null; contract_lbs: number | null; reserves_enabled?: boolean }
@@ -211,3 +211,7 @@ export interface Statement {
   pending_lbs: number; reserves: { year: number; reserved: number; shipped: number; pending: number; remaining: number; strains: number }
   contract_lbs: number | null; price_per_lb: number | null; from: string
 }
+/** sample holds (061): what a sample order holds for the customer, and for how long */
+export interface SampleHold { line_id: number; order_id: number; so_number: string | null; customer_id: number; customer: string; strain: string; crop_year: number
+  hold_lbs: number; used_lbs: number; remaining: number; placed_on: string | null; shipped_on: string | null; until: string | null
+  state: 'waiting' | 'active' | 'expired' | 'used' | 'released' | 'cancelled' }

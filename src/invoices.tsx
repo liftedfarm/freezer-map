@@ -187,7 +187,8 @@ export function NewOrderSheet({ backend, customers, strains, flash, onClose, onD
   const [termsCode, setTermsCode] = useState<string>('')
   const [shipping, setShipping] = useState('')
   const [terms, setTerms] = useState<PaymentTerm[]>([])
-  const [lines, setLines] = useState<{ strain: string; lbs: string; price: string; product: Product }[]>([{ strain: '', lbs: '', price: '', product: 'fresh_frozen' }])
+  const [lines, setLines] = useState<{ strain: string; lbs: string; price: string; product: Product; hold?: string }[]>([{ strain: '', lbs: '', price: '', product: 'fresh_frozen' }])
+  const [sample, setSample] = useState(false)
   const [busy, setBusy] = useState(false)
   useEffect(() => { backend.paymentTerms().then(setTerms).catch(() => {}) }, [])
   const c = customers.find(x => x.id === cust)
@@ -198,6 +199,10 @@ export function NewOrderSheet({ backend, customers, strains, flash, onClose, onD
     try {
       const ls: NewOrderLine[] = lines.filter(l => l.strain.trim() && Number(l.lbs) > 0).map(l => ({ strain: l.strain.trim(), lbs: Number(l.lbs), price: l.price === '' ? null : Number(l.price), product: l.product }))
       const o = await backend.createOrder(cust!, ls, po, wanted || null, notes, termsCode || null)
+      if (sample) {
+        try { await backend.setOrderSample(o.id, true, lines.filter(l => l.product === 'fresh_frozen' && l.strain.trim() && Number(l.lbs) > 0).map(l => ({ strain: l.strain.trim(), hold_lbs: Number(l.hold || 0) || null }))) }
+        catch (e) { flash(`Order made, but it wasn't marked as a sample: ${(e as Error).message}`, true) }
+      }
       if (shipping !== '') {
         const { error } = await backend.client()?.rpc('set_order_shipping', { p_order: o.id, p_amount: Number(shipping) }) ?? { error: null }
         if (error) flash(`Order made, but shipping wasn't saved: ${error.message}`, true)
@@ -225,10 +230,12 @@ export function NewOrderSheet({ backend, customers, strains, flash, onClose, onD
               <input list="no-strains" placeholder="Strain" value={l.strain} onChange={e => setLines(ls => ls.map((x, j) => j === i ? { ...x, strain: e.target.value } : x))} />
               <input type="number" placeholder="lbs" value={l.lbs} onChange={e => setLines(ls => ls.map((x, j) => j === i ? { ...x, lbs: e.target.value } : x))} />
               <input type="number" placeholder="$/lb" value={l.price} onChange={e => setLines(ls => ls.map((x, j) => j === i ? { ...x, price: e.target.value } : x))} />
+              {sample && l.product === 'fresh_frozen' && <input type="number" step="10" placeholder="hold lbs" title="lbs to hold for them after the sample" value={l.hold ?? ''} onChange={e => setLines(ls => ls.map((x, j) => j === i ? { ...x, hold: e.target.value } : x))} />}
               {lines.length > 1 && <button className="ghost small" onClick={() => setLines(ls => ls.filter((_, j) => j !== i))}>✕</button>}
             </div>
           ))}
           <button className="ghost small" onClick={() => setLines(ls => [...ls, { strain: '', lbs: '', price: '', product: ls[ls.length - 1]?.product ?? 'fresh_frozen' }])}>+ Line</button></div>
+        <label className="check"><input type="checkbox" checked={sample} onChange={e => setSample(e.target.checked)} /> Sample order <span className="muted">(hold lbs per strain for {c?.sample_hold_days ?? 10} days after it ships)</span></label>
         <div className="grid2">
           <div className="field"><label>Customer PO</label><input value={po} onChange={e => setPo(e.target.value)} /></div>
           <div className="field"><label>Wanted by</label><input type="date" value={wanted} onChange={e => setWanted(e.target.value)} /></div>
