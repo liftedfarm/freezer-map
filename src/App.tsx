@@ -785,7 +785,6 @@ export default function App() {
   const bottomFit = all.slice(0, 4)
   const extras: NavItem[] = [
     ...(staff ? [{ k: 'fleet', l: t('Vehicles'), on: view === 'fleet', go: () => go('fleet') }] : []),
-    { k: 'mine', l: t('My settings'), on: view === 'mine', go: () => go('mine') },
   ]
   const bottomRest = [...all.slice(4), ...extras]
   const restOn = bottomRest.some(x => x.on)
@@ -793,7 +792,7 @@ export default function App() {
   const canScan = cur === 'dist' || cur === 'proc'
   const shortL = (x: NavItem) => x.k === 'dash' || x.k === 'dashboard' ? t('Home') : x.s ?? (typeof x.l === 'string' ? x.l : x.k)
   const curScreen = all.find(x => x.on) ?? extras.find(x => x.on)
-  const pageTitle = !curScreen || curScreen.k === 'dash' || curScreen.k === 'dashboard' ? ML(cur) : typeof curScreen.l === 'string' ? curScreen.l : curScreen.s ?? ML(cur)
+  const pageTitle = view === 'mine' ? t('My settings') : !curScreen || curScreen.k === 'dash' || curScreen.k === 'dashboard' ? ML(cur) : typeof curScreen.l === 'string' ? curScreen.l : curScreen.s ?? ML(cur)
   const jump = (j: Jump) => {
     const [m, t] = j.split('.') as [Mod, string]
     if (!lv[MOD_KEY[m]]) { flash(`You don't have ${MOD_LABEL[m]}`, true); return }
@@ -854,7 +853,7 @@ export default function App() {
           <button type="button" className="ghost small scanbtn desk-only" title={t('Scan a METRC tag')} onClick={() => setScanning(true)}>📷</button></>}
         {(cur !== 'dist' || noMods) && <span className="grow" />}
         {staff && <button className={`ghost small desk-only ${view === 'fleet' ? 'on-btn' : ''}`} title={t('Vehicles: inspections, maintenance, incidents')} onClick={() => (view === 'fleet' ? go(lastView.current) : go('fleet'))}>🚚<span className="hide-phone"> {t('Vehicles')}</span></button>}
-        <button className={`ghost small desk-only ${view === 'mine' ? 'on-btn' : ''}`} title={t('Your own settings')} onClick={() => (view === 'mine' ? go(lastView.current) : go('mine'))}>⚙<span className="hide-phone"> {t('My settings')}</span></button>
+        <button className={`ghost small ${view === 'mine' ? 'on-btn' : ''}`} title={t('Your own settings')} onClick={() => (view === 'mine' ? go(lastView.current) : go('mine'))}>⚙<span className="hide-phone"> {t('My settings')}</span></button>
         <button className="ghost small" title={t('Signed in as {u}. Click to sign out.', { u: user ?? '' })} onClick={() => backend.signOut().then(() => setUser(null))}>{who(user)} ⏏</button>
       </header>
 
