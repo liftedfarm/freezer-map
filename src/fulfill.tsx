@@ -3,7 +3,7 @@ import { ScanButton } from './scan'
 import { sameTag, useScanHandler } from './scanroute'
 import { useMemo, useState } from 'react'
 import type { Backend } from './api'
-import type { FLine, FOrder, FState, Load, Pallet, Vehicle } from './types'
+import type { Customer, FLine, FOrder, FState, Load, LoadStop, Pallet, Vehicle } from './types'
 import { Meter } from './dash'
 import { PRODUCT_LABEL } from './types'
 
@@ -21,12 +21,17 @@ export interface FulfillProps {
   pallets: Pallet[]; heldBy: Map<number, FOrder>; onLoad: (id: number) => boolean; inRun?: (id: number) => string | undefined
   where: (p: Pallet) => string; siteOf: (p: Pallet) => string | null; rank: (p: Pallet) => number; canon: (s: string | null | undefined) => string
   loads: Load[]; vehicles: Vehicle[]; isSales: boolean; openLoad: (id: number) => void; openPallet: (id: number) => void
+  stops?: LoadStop[]; customers?: Customer[]
+  /** which order is open (kept by the app so a load's stop can open an order here) */
+  openId?: number | null; setOpenId?: (id: number | null) => void
 }
 
 /** Distribution > Fulfillment: confirmed orders get pallets, then go on a load */
 export function FulfillView(props: FulfillProps) {
   const { orders } = props
-  const [openId, setOpenId] = useState<number | null>(null)
+  const [ownId, setOwnId] = useState<number | null>(null)
+  const openId = props.setOpenId ? (props.openId ?? null) : ownId
+  const setOpenId = props.setOpenId ?? setOwnId
   const [q, setQ] = useState('')
   useBack(openId != null, () => setOpenId(null))
   if (props.err) return <div className="list fulfill"><h2>Fulfillment</h2><div className="warnbox">{props.err}</div></div>
@@ -69,7 +74,7 @@ export function FulfillView(props: FulfillProps) {
   )
 }
 
-function OrderPage({ o, back, backend, reload, flash, pallets, heldBy, onLoad, inRun, where, siteOf, rank, canon, loads, vehicles, isSales, openLoad, openPallet }: FulfillProps & { o: FOrder; back: () => void }) {
+function OrderPage({ o, back, backend, reload, flash, pallets, heldBy, onLoad, inRun, where, siteOf, rank, canon, loads, vehicles, isSales, openLoad, openPallet, stops, customers }: FulfillProps & { o: FOrder; back: () => void }) {
   const [adding, setAdding] = useState<number | null>(null)
   const [busy, setBusy] = useState(false)
   const [loadPick, setLoadPick] = useState(false)
@@ -189,7 +194,7 @@ function OrderPage({ o, back, backend, reload, flash, pallets, heldBy, onLoad, i
             <button key={s} className="ghost small" disabled={busy} onClick={() => setSendTo(s)}>Send to {s}</button>)}</div>}
         </div>
         {sites.length > 1 && <p className="warn-t small-note">This order is at OHR and GVR. Send one side over first, or it ships on two METRC manifests (one per license).</p>}
-        {sendTo && <LoadChooser o={o} loads={loads} vehicles={vehicles} busy={busy} close={() => setSendTo(null)} title={`Send the pallets that aren't at ${sendTo} to ${sendTo}`}
+        {sendTo && <LoadChooser o={o} loads={loads} vehicles={vehicles} stops={stops} customers={customers} busy={busy} close={() => setSendTo(null)} title={`Send the pallets that aren't at ${sendTo} to ${sendTo}`}
           onPick={id => run(() => backend.orderTransfer(o.id, id, sendTo), `On the load to ${sendTo}`).then(() => setSendTo(null))}
           onNew={(v, d) => run(() => backend.orderTransferNew(o.id, v, d, sendTo), `New load to ${sendTo} made`).then(() => setSendTo(null))} />}
         {sendTo && <p className="muted small-note">They stay held for {o.customer}. When the load is delivered they're received at {sendTo}, and can go straight onto the customer's load from there.</p>}
@@ -198,7 +203,7 @@ function OrderPage({ o, back, backend, reload, flash, pallets, heldBy, onLoad, i
       <section className="dcard">
         {o.state === 'ready' && !loadPick && <div className="row between"><span><b>Ready.</b> <span className="muted">Every line has its pallets.</span></span>
           <button className="primary" disabled={busy} onClick={() => setLoadPick(true)}>Put on a load</button></div>}
-        {o.state === 'ready' && loadPick && <LoadChooser o={o} loads={loads} vehicles={vehicles} busy={busy} close={() => setLoadPick(false)}
+        {o.state === 'ready' && loadPick && <LoadChooser o={o} loads={loads} vehicles={vehicles} stops={stops} customers={customers} busy={busy} close={() => setLoadPick(false)}
           onPick={id => run(() => backend.orderToLoad(o.id, id), 'On the load').then(() => setLoadPick(false))}
           onNew={(v, d) => run(async () => { const l = await backend.createLoad(v, d, [{ customer_id: o.customer_id, manifest: '' }], '', ''); await backend.orderToLoad(o.id, l.id) }, 'New load made with this order').then(() => setLoadPick(false))} />}
         {o.state === 'loaded' && o.stop && <div className="row between wrap"><span>On <b>{o.stop.load}</b> <span className="muted">· {fmt(o.stop.load_date)} · {o.stop.load_status.replace('_', ' ')}</span></span>
@@ -255,17 +260,24 @@ function Pick({ line, need, cands, where, rank, busy, close, onWhole, onPart }: 
   )
 }
 
-function LoadChooser({ o, loads, vehicles, busy, close, onPick, onNew, title }: {
-  o: FOrder; loads: Load[]; vehicles: Vehicle[]; busy: boolean; close: () => void; onPick: (id: number) => void; onNew: (vehicle: number, date: string) => void; title?: string
+function LoadChooser({ o, loads, vehicles, stops = [], customers = [], busy, close, onPick, onNew, title }: {
+  o: FOrder; loads: Load[]; vehicles: Vehicle[]; stops?: LoadStop[]; customers?: Customer[]; busy: boolean; close: () => void; onPick: (id: number) => void; onNew: (vehicle: number, date: string) => void; title?: string
 }) {
-  const open = loads.filter(l => l.status === 'planning' || l.status === 'loading').sort((a, b) => a.load_date.localeCompare(b.load_date))
+  // loads that already stop at this customer come first (the order joins that stop)
+  const stopsAt = (l: Load) => stops.filter(s => s.load_id === l.id).sort((a, b) => a.seq - b.seq)
+  const hasMe = (l: Load) => stopsAt(l).some(s => s.customer_id === o.customer_id && s.status === 'pending')
+  const open = loads.filter(l => l.status === 'planning' || l.status === 'loading')
+    .sort((a, b) => (title ? 0 : Number(hasMe(b)) - Number(hasMe(a))) || a.load_date.localeCompare(b.load_date))
+  const names = (l: Load) => stopsAt(l).map(s => customers.find(c => c.id === s.customer_id)?.name ?? '?').join(', ')
   const vs = vehicles.filter(v => v.active)
   const [v, setV] = useState<number | null>(vs[0]?.id ?? null)
   const [d, setD] = useState(o.wanted_date && o.wanted_date >= today() ? o.wanted_date : today())
   return (
     <div className="dlist">
       <div className="row between"><b>{title ?? `Put ${o.customer} on a load`}</b><button className="ghost small" onClick={close}>Cancel</button></div>
-      {open.map(l => <button key={l.id} className="drow click" disabled={busy} onClick={() => onPick(l.id)}><span><b>{l.code}</b><span className="muted"> · {fmt(l.load_date)} · {vehicles.find(x => x.id === l.vehicle_id)?.name ?? ''} · {l.status}</span></span><span>Add ›</span></button>)}
+      {open.map(l => <button key={l.id} className="drow click" disabled={busy} onClick={() => onPick(l.id)}><span><b>{l.code}</b><span className="muted"> · {fmt(l.load_date)} · {vehicles.find(x => x.id === l.vehicle_id)?.name ?? ''} · {l.status}</span>
+        {stopsAt(l).length > 0 && <span className="muted small"><br />Stops: {names(l)}</span>}
+        {!title && hasMe(l) && <span className="ok-t small"><br />Already stops at {o.customer}: joins that stop</span>}</span><span>Add ›</span></button>)}
       {!open.length && <p className="muted">No loads being planned. Make a new one:</p>}
       <div className="drow"><span className="grow"><b>New load</b></span>
         <select value={v ?? ''} onChange={e => setV(Number(e.target.value))}>{vs.map(x => <option key={x.id} value={x.id}>{x.name}</option>)}</select>

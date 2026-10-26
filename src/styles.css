@@ -1035,3 +1035,21 @@ html:has(.app.shell), html:has(.app.shell) body { height: 100%; overflow: hidden
 .ststats .none { color: var(--ghost); }
 .strow .chev { color: var(--ghost); font-size: 20px; line-height: 1; flex: none; }
 @media (max-width: 600px) { .ststats { white-space: normal; } }
+
+/* loads <-> orders: orders on a stop, type-ahead stop search */
+.stoporders { display: grid; gap: 4px; width: 100%; margin: 2px 0 4px; }
+.sorder { display: flex; justify-content: space-between; align-items: center; gap: 8px; width: 100%; text-align: left; padding: 6px 8px;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--empty); color: var(--ink); font: inherit; font-size: 14px; cursor: pointer; }
+.sorder.ready { background: var(--panel); border-style: dashed; cursor: default; }
+.sattach { display: flex; gap: 8px; align-items: center; font-size: 14px; cursor: pointer; }
+.stopsearch { position: relative; width: 100%; }
+.stopsearch > input { width: 100%; padding-right: 30px; box-sizing: border-box; }
+.stopsearch .combo-arrow { position: absolute; right: 2px; top: 50%; transform: translateY(-50%); border: 0; background: none; color: var(--muted); padding: 4px 8px; cursor: pointer; }
+.stoplist { position: absolute; z-index: 60; top: 100%; left: 0; right: 0; margin: 2px 0 0; padding: 4px 0; list-style: none; max-height: 300px; overflow: auto;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.18); }
+.stoplist li { cursor: pointer; color: var(--ink); font-size: 14px; }
+.stoplist li .sname { padding: 8px 12px; display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; }
+.stoplist li.hi .sname { background: var(--empty); }
+.stoplist li.none { padding: 8px 12px; cursor: default; }
+.stoplist .sgroup { padding: 6px 12px 2px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); cursor: default; }
+.stoplist .sready { font-size: 12px; color: var(--brand); font-weight: 600; }

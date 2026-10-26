@@ -3,7 +3,8 @@ import { sameTag, useScanHandler } from './scanroute'
 import { useEffect, useMemo, useState } from 'react'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { lbs } from './forms'
-import type { Customer, Load, LoadDriver, LoadItem, LoadStop, Pallet, StopInput, StopManifest, Vehicle } from './types'
+import type { Customer, FOrder, Load, LoadDriver, LoadItem, LoadStop, Pallet, StopInput, StopManifest, Vehicle } from './types'
+import { STATE_LABEL, orderGot, orderLbs } from './fulfill'
 
 // Everything the transit screens need from the app, passed in to avoid circular imports.
 export interface LoadCtx {
@@ -22,6 +23,9 @@ export interface LoadCtx {
   confirm: (text: string, ok: string, fn: () => Promise<void>) => void
   openPallet: (id: number) => void
   putBack: (item: LoadItem, p: Pallet) => void // start "tap a freezer slot" for a loaded pallet
+  orders?: FOrder[]                            // Fulfillment orders (confirmed): which stop each one is on
+  openOrder?: (id: number) => void             // open the order in Distribution > Fulfillment
+  refreshOrders?: () => Promise<void>
   api: {
     createLoad(v: number, d: string, s: StopInput[], driver: string, notes: string): Promise<Load>
     updateLoad(id: number, v: number, d: string, driver: string, notes: string): Promise<void>
@@ -34,6 +38,7 @@ export interface LoadCtx {
     departLoad(l: number): Promise<void>
     deliverStop(s: number): Promise<void>
     cancelLoad(l: number): Promise<void>
+    orderToLoad(orderId: number, loadId: number): Promise<void>
     stopManifest(s: number): Promise<StopManifest>
     client(): SupabaseClient | null
   }
@@ -53,6 +58,17 @@ const STATUS: Record<string, string> = { planning: 'Planning', loading: 'Loading
 const today = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' })
 const fmtDate = (d: string) => new Date(d + 'T12:00:00').toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })
 const editable = (l: Load) => l.status === 'planning' || l.status === 'loading'
+
+const n0 = (x: number) => Math.round(Number(x)).toLocaleString()
+const soOf = (o: FOrder) => o.so ?? `Order #${o.id}`
+const palletIds = (o: FOrder) => o.lines.flatMap(l => l.picks.map(pk => pk.pallet_id))
+/** orders for a customer that aren't on a load yet (not shipped/cancelled) */
+const notLoaded = (ctx: LoadCtx, customerId: number) => (ctx.orders ?? []).filter(o => o.customer_id === customerId && !o.stop && ['open', 'needs_ok', 'ready'].includes(o.state))
+/** put orders on a load, then refresh Fulfillment so both sides match */
+async function attachOrders(ctx: LoadCtx, loadId: number, ids: number[]) {
+  for (const id of ids) await ctx.api.orderToLoad(id, loadId)
+  await ctx.refreshOrders?.()
+}
 
 function label(ctx: LoadCtx, p: Pallet) {
   if (p.kind === 'mixed') { const c = ctx.contents(p.id); return `Mixed · ${c.length} pkg${c.length === 1 ? '' : 's'}` }
@@ -76,6 +92,10 @@ export function TransitView({ ctx, onOpen, onNew }: { ctx: LoadCtx; onOpen: (id:
         <div className="stopline">
           {st.map(s => <span key={s.id} className={`stopchip ${s.status}`} style={{ ['--sc' as string]: stopColor(s.seq) }}>{s.seq}. {ctx.customers.find(c => c.id === s.customer_id)?.name}</span>)}
         </div>
+        {(() => {
+          const os = (ctx.orders ?? []).filter(o => o.stop && st.some(s => s.id === o.stop!.id))
+          return os.length > 0 && <div className="muted small">Orders: {os.map(o => `${soOf(o)} ${o.customer}`).join(' · ')}</div>
+        })()}
         <div className="muted">{it.length}/{v?.spaces ?? '?'} positions used · {it.filter(i => i.loaded).length} loaded · {lbs(w)}</div>
       </button>
     )
@@ -101,17 +121,31 @@ export function LoadForm({ ctx, load, onClose, onSaved }: { ctx: LoadCtx; load?:
   const [driver, setDriver] = useState(load?.driver ?? '')
   const [notes, setNotes] = useState(load?.notes ?? '')
   const [stops, setStops] = useState<(StopInput & { delivered?: boolean })[]>(existing.map(s => ({ id: s.id, customer_id: s.customer_id, manifest: s.manifest ?? '', delivered: s.status === 'delivered' })))
-  const [add, setAdd] = useState('')
+  // ready orders to put on this load when it's saved (ticked by default for stops added here)
+  const [attach, setAttach] = useState<Set<number>>(new Set())
+  const addStop = (id: number) => {
+    setStops(s => [...s, { customer_id: id, manifest: '' }])
+    const ready = notLoaded(ctx, id).filter(o => o.state === 'ready').map(o => o.id)
+    if (ready.length) setAttach(a => new Set([...a, ...ready]))
+  }
+  const removeStop = (i: number) => {
+    const cid = stops[i]?.customer_id
+    setStops(st => st.filter((_, j) => j !== i))
+    if (cid != null && !stops.some((x, j) => j !== i && x.customer_id === cid)) setAttach(a => new Set([...a].filter(id => (ctx.orders ?? []).find(o => o.id === id)?.customer_id !== cid)))
+  }
+  const toggleAttach = (id: number) => setAttach(a => { const n = new Set(a); if (n.has(id)) n.delete(id); else n.add(id); return n })
   const move = (i: number, d: number) => setStops(s => { const n = [...s]; const [x] = n.splice(i, 1); n.splice(i + d, 0, x); return n })
   const ok = vehicle != null && stops.length > 0
   async function save() {
     const clean = stops.map(({ delivered: _d, ...s }) => s)
+    const ids = [...attach].filter(id => { const o = (ctx.orders ?? []).find(x => x.id === id); return o && o.state === 'ready' && !o.stop && clean.some(s => s.customer_id === o.customer_id) })
+    const withOrders = ids.length ? ` with ${ids.length} order${ids.length === 1 ? '' : 's'}` : ''
     if (load) {
       const a = await ctx.run(() => ctx.api.updateLoad(load.id, vehicle!, date, driver, notes), 'Load updated')
-      if (a && await ctx.run(() => ctx.api.setStops(load.id, clean), 'Stops saved')) onSaved(load.id)
+      if (a && await ctx.run(async () => { await ctx.api.setStops(load.id, clean); if (ids.length) await attachOrders(ctx, load.id, ids) }, `Stops saved${withOrders}`)) onSaved(load.id)
     } else {
       let id = 0
-      if (await ctx.run(async () => { id = (await ctx.api.createLoad(vehicle!, date, clean, driver, notes)).id }, 'Load created')) onSaved(id)
+      if (await ctx.run(async () => { id = (await ctx.api.createLoad(vehicle!, date, clean, driver, notes)).id; if (ids.length) await attachOrders(ctx, id, ids) }, `Load created${withOrders}`)) onSaved(id)
     }
   }
   return (
@@ -136,19 +170,27 @@ export function LoadForm({ ctx, load, onClose, onSaved }: { ctx: LoadCtx; load?:
               <div className="grow">
                 <b>{customers.find(c => c.id === s.customer_id)?.name ?? ctx.customers.find(c => c.id === s.customer_id)?.name}</b>{s.delivered && <span className="muted"> · delivered</span>}
                 <input placeholder="Manifest # (optional)" value={s.manifest} onChange={e => setStops(st => st.map((x, j) => j === i ? { ...x, manifest: e.target.value } : x))} />
+                {stops.findIndex(x => x.customer_id === s.customer_id) === i && (() => {
+                  const on = s.id != null ? (ctx.orders ?? []).filter(o => o.stop?.id === s.id) : []
+                  const waiting = notLoaded(ctx, s.customer_id)
+                  if (!on.length && !waiting.length) return null
+                  return <div className="stoporders">
+                    {on.map(o => <div key={o.id} className="small ok-t">✓ {soOf(o)} on this stop · {n0(orderGot(o))} lbs</div>)}
+                    {waiting.map(o => o.state === 'ready'
+                      ? <label key={o.id} className="sattach"><input type="checkbox" checked={attach.has(o.id)} onChange={() => toggleAttach(o.id)} />
+                          <span>Load <b>{soOf(o)}</b> <span className="muted">· {n0(orderGot(o))} lbs · {o.lines.length} strain{o.lines.length === 1 ? '' : 's'}</span></span></label>
+                      : <div key={o.id} className="small muted">{soOf(o)} · {STATE_LABEL[o.state]} ({n0(orderGot(o))} of {n0(orderLbs(o))} lbs) · finish it in Fulfillment</div>)}
+                  </div>
+                })()}
               </div>
               <div className="stopbtns">
                 <button className="ghost small" disabled={i === 0} onClick={() => move(i, -1)}>↑</button>
                 <button className="ghost small" disabled={i === stops.length - 1} onClick={() => move(i, 1)}>↓</button>
-                <button className="ghost small" disabled={s.delivered} onClick={() => setStops(st => st.filter((_, j) => j !== i))}>✕</button>
+                <button className="ghost small" disabled={s.delivered} onClick={() => removeStop(i)}>✕</button>
               </div>
             </div>
           ))}
-          <select value={add} onChange={e => { const id = +e.target.value; if (id) setStops(s => [...s, { customer_id: id, manifest: '' }]); setAdd('') }}>
-            <option value="">+ Add a stop…</option>
-            <optgroup label="Lifted sites and labs">{customers.filter(c => c.kind === 'internal').map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</optgroup>
-            <optgroup label="Customers">{customers.filter(c => c.kind === 'external').map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</optgroup>
-          </select>
+          <StopSearch ctx={ctx} customers={customers} taken={new Set(stops.map(s => s.customer_id))} onPick={addStop} />
           {customers.filter(c => c.kind === 'external').length === 0 && <div className="muted small-note">No customers yet. Add them in Settings, Customers.</div>}
         </div>
         <div className="field"><label>Driver (optional)</label><input list="load-drivers" value={driver} onChange={e => setDriver(e.target.value)} placeholder="Pick or type a name" />
@@ -244,6 +286,12 @@ export function LoadView({ ctx, loadId, onBack, onEdit }: { ctx: LoadCtx; loadId
           const froms = [...new Set(its.map(i => { const p = ctx.pallet(i.pallet_id); return i.from_site ?? (p ? ctx.siteOf(p) : null) }).filter((x): x is string => !!x))].sort()
           const L = (st: string) => { const n = siteLicense(lics, st); return n ? `${st} ${n}` : st }
           const already = dest && froms.includes(dest)
+          // orders riding on this stop, ready orders that could, and pallets that belong to no order
+          const sOrders = (ctx.orders ?? []).filter(o => o.stop?.id === s.id)
+          const waiting = canEdit && s.status === 'pending' && c?.kind === 'external' ? notLoaded(ctx, s.customer_id) : []
+          const mine = new Set(sOrders.flatMap(palletIds))
+          const loose = c?.kind === 'external' ? its.filter(i => !mine.has(i.pallet_id)).length : 0
+          const carrying = site ? [...new Set(its.map(i => ctx.held(i.pallet_id)).filter((x): x is string => !!x))] : []
           return (
             <div key={s.id} className={`stopcard ${s.status}`} style={{ ['--sc' as string]: stopColor(s.seq) }}>
               <div className="row between">
@@ -255,6 +303,21 @@ export function LoadView({ ctx, loadId, onBack, onEdit }: { ctx: LoadCtx; loadId
                       'Delivered', async () => { await ctx.run(() => ctx.api.deliverStop(s.id), `Stop ${s.seq} delivered`) })}>Mark delivered</button>}
               </div>
               <div className="muted">{its.length} pallet{its.length === 1 ? '' : 's'} · {lbs(w)}</div>
+              {(sOrders.length > 0 || waiting.length > 0 || loose > 0 || carrying.length > 0) && <div className="stoporders">
+                {sOrders.map(o => {
+                  const ids = palletIds(o), on = its.filter(i => ids.includes(i.pallet_id))
+                  return <button key={o.id} className="sorder" onClick={() => ctx.openOrder?.(o.id)}>
+                    <span><b>{soOf(o)}</b> <span className="muted">· {n0(orderGot(o))} lbs · {o.lines.length} strain{o.lines.length === 1 ? '' : 's'}</span></span>
+                    <span className="muted">{s.status === 'delivered' ? 'shipped' : `${on.filter(i => i.loaded).length}/${ids.length} on truck`} ›</span>
+                  </button>
+                })}
+                {waiting.map(o => o.state === 'ready'
+                  ? <div key={o.id} className="sorder ready"><span><b>{soOf(o)}</b> <span className="muted">· ready · {n0(orderGot(o))} lbs</span></span>
+                      <button className="primary small" disabled={ctx.busy} onClick={() => ctx.run(() => attachOrders(ctx, l.id, [o.id]), `${soOf(o)} on ${l.code}`)}>+ Add to stop</button></div>
+                  : <button key={o.id} className="sorder" onClick={() => ctx.openOrder?.(o.id)}><span><b>{soOf(o)}</b> <span className="muted">· {STATE_LABEL[o.state]} · {n0(orderGot(o))} of {n0(orderLbs(o))} lbs</span></span><span className="muted">Fulfillment ›</span></button>)}
+                {loose > 0 && <div className="small-note warn-t">{loose} pallet{loose === 1 ? " isn't" : "s aren't"} on any order for {c?.name}, so {loose === 1 ? "it won't" : "they won't"} be invoiced. Put {loose === 1 ? 'it' : 'them'} on an order in Fulfillment.</div>}
+                {carrying.length > 0 && <div className="small-note muted">Carrying pallets held for {carrying.join(', ')}</div>}
+              </div>}
               {its.length > 0 && <div className={`small-note lic ${froms.length > 1 || already ? 'warn-t' : 'muted'}`}>
                 {dest ? <>Transfer: {froms.map(L).join(' + ') || '?'} → <b>{L(dest)}</b>{already ? ` · some of these are already at ${dest}` : ''}</>
                   : <>Ships from {froms.map(L).join(' and ') || '?'}{froms.length > 1 ? ' · two licenses means two METRC manifests' : ''}</>}
@@ -327,6 +390,50 @@ export function LoadView({ ctx, loadId, onBack, onEdit }: { ctx: LoadCtx; loadId
         <PalletPicker ctx={ctx} load={l} stops={stops.filter(s => s.status === 'pending')} initialStop={picker.stop} position={picker.position} pre={picker.pre}
           free={spaces - new Set(items.map(i => i.position)).size} onClose={() => setPicker(null)} />
       )}
+    </div>
+  )
+}
+
+/** type to find a stop: customers with ready orders first, then Lifted sites and labs, then everyone else */
+function StopSearch({ ctx, customers, taken, onPick }: { ctx: LoadCtx; customers: Customer[]; taken: Set<number>; onPick: (id: number) => void }) {
+  const [q, setQ] = useState('')
+  const [open, setOpen] = useState(false)
+  const [hi, setHi] = useState(0)
+  const ready = useMemo(() => {
+    const m = new Map<number, FOrder[]>()
+    for (const o of ctx.orders ?? []) if (o.state === 'ready' && !o.stop) m.set(o.customer_id, [...(m.get(o.customer_id) ?? []), o])
+    return m
+  }, [ctx.orders])
+  const ql = q.trim().toLowerCase()
+  const group = (c: Customer) => ready.has(c.id) ? 0 : c.kind === 'internal' ? 1 : 2
+  const GROUP = ['Ready orders', 'Lifted sites and labs', 'Customers']
+  const shown = customers
+    .filter(c => !taken.has(c.id) && (!ql || c.name.toLowerCase().includes(ql)))
+    .sort((a, b) => group(a) - group(b) || (ql ? Number(!a.name.toLowerCase().startsWith(ql)) - Number(!b.name.toLowerCase().startsWith(ql)) : 0) || a.name.localeCompare(b.name))
+    .slice(0, 60)
+  const pick = (c: Customer) => { onPick(c.id); setQ(''); setHi(0); setOpen(false) }
+  return (
+    <div className="stopsearch">
+      <input value={q} placeholder="+ Add a stop: type a customer or site" autoComplete="off" role="combobox" aria-expanded={open}
+        onFocus={() => { setOpen(true); setHi(0) }} onClick={() => setOpen(true)} onBlur={() => setTimeout(() => setOpen(false), 150)}
+        onChange={e => { setQ(e.target.value); setOpen(true); setHi(0) }}
+        onKeyDown={e => {
+          if (e.key === 'ArrowDown') { e.preventDefault(); setOpen(true); setHi(i => Math.min(i + 1, shown.length - 1)) }
+          else if (e.key === 'ArrowUp') { e.preventDefault(); setHi(i => Math.max(i - 1, 0)) }
+          else if (e.key === 'Enter') { e.preventDefault(); if (open && shown[hi]) pick(shown[hi]) }
+          else if (e.key === 'Escape') setOpen(false)
+        }} />
+      <button type="button" className="combo-arrow" tabIndex={-1} aria-label="Show stops" onMouseDown={e => { e.preventDefault(); setOpen(o => !o) }}>▾</button>
+      {open && <ul className="stoplist" role="listbox">
+        {shown.length === 0 && <li className="none muted">No match{ql ? ` for "${q.trim()}"` : ''}. Customers are added in Sales › Settings › Customers.</li>}
+        {shown.map((c, i) => {
+          const os = ready.get(c.id) ?? []
+          return <li key={c.id} role="option" aria-selected={i === hi} className={i === hi ? 'hi' : ''} onMouseEnter={() => setHi(i)} onMouseDown={e => { e.preventDefault(); pick(c) }}>
+            {(i === 0 || group(shown[i - 1]) !== group(c)) && <div className="sgroup">{GROUP[group(c)]}</div>}
+            <div className="sname">{c.name}{os.length > 0 && <span className="sready">{os.map(soOf).join(', ')} ready · {n0(os.reduce((a, o) => a + orderGot(o), 0))} lbs</span>}</div>
+          </li>
+        })}
+      </ul>}
     </div>
   )
 }

@@ -460,6 +460,8 @@ export default function App() {
   useEffect(() => { if (staff && cur !== mod && myMods.length) goMod(cur) }, [cur, mod, staff, myMods.length])
   // Fulfillment: open orders and the pallets held for them (Distribution and Sales)
   const [forders, setForders] = useState<FOrder[] | null>(null)
+  const [fOpen, setFOpen] = useState<number | null>(null)   // order open in Fulfillment (a load's stop can open one)
+  useEffect(() => { if (view !== 'fulfill') setFOpen(null) }, [view])
   const canFulfill = !!lv.distribution || !!lv.sales
   const [fErr, setFErr] = useState<string | null>(null)
   const [doc, setDoc] = useState<{ kind: 'invoice' | 'so'; id: number } | null>(null)
@@ -640,6 +642,9 @@ export default function App() {
     run: async (fn, ok) => { setBusy(true); try { await fn(); await reload(); setInvTick(t => t + 1); flash(ok); return true } catch (e) { flash((e as Error).message, true); await reload().catch(() => {}); return false } finally { setBusy(false) } },
     confirm: (text, ok, fn) => setConfirm({ text, ok, run: fn }),
     openPallet: id => setPalletId(id),
+    orders: forders ?? [],
+    openOrder: id => { setFOpen(id); go('fulfill') },
+    refreshOrders: refreshF,
     putBack: (item, p) => { setView('map'); startPlacing({ title: `Putting ${p.code} back in a freezer`, sub: 'Open a freezer and tap the slot.', run: slot => act(() => backend.unloadPallet(item.id, slot.id), `${p.code} back in ${slot.code}`) }) },
     api: backend,
   }
@@ -961,7 +966,7 @@ export default function App() {
         })()}
         {view === 'fulfill' && cur === 'dist' && <FulfillView err={fErr} backend={backend} orders={forders} reload={async () => { await reload(); await refreshF() }} flash={flash}
           pallets={snap.pallets} heldBy={heldBy} onLoad={id => ix.loadOf.has(id)} inRun={id => snap.inRun?.[id]} where={where} siteOf={siteOf} rank={p => (p.slot_id != null ? ix.slot.get(p.slot_id)?.front_rank : null) ?? 99}
-          canon={canonOf} loads={snap.loads ?? []} vehicles={snap.vehicles ?? []} isSales={isSales}
+          canon={canonOf} loads={snap.loads ?? []} vehicles={snap.vehicles ?? []} isSales={isSales} stops={snap.stops ?? []} customers={snap.customers ?? []} openId={fOpen} setOpenId={setFOpen}
           openLoad={id => { setLoadId(id); setView('load'); scrollTop() }} openPallet={setPalletId} />}
         {view === 'transit' && <TransitView ctx={ctx} onOpen={id => { setLoadId(id); setView('load'); scrollTop() }} onNew={() => setLoadForm({})} />}
         {view === 'load' && loadId != null && <LoadView ctx={ctx} loadId={loadId} onBack={() => setView('transit')} onEdit={() => setLoadForm({ load: (snap.loads ?? []).find(l => l.id === loadId) })} />}
