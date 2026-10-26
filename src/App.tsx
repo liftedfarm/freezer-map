@@ -732,12 +732,13 @@ export default function App() {
   // each module's settings, used in the module and again in Admin > Settings
   const distSettings = <SettingsView key="dist-set" backend={backend} flash={flash} onChanged={() => { reload() }} inventoryStrains={invStrains} title="Distribution settings" lists={['strains']}
     extra={[{ k: 'vehicles', l: 'Vehicles', node: <CompFleet sb={backend.client()} flash={flash} dept="distribution" /> }, { k: 'people', l: 'People', node: <ModulePeople sb={backend.client()} module="distribution" flash={flash} /> }]} />
-  const salesSettings = <SettingsView key="sales-set" backend={backend} flash={flash} onChanged={() => { reload() }} inventoryStrains={invStrains} title="Sales settings"
+  const salesSettings = <SettingsView key="sales-set" backend={backend} flash={flash} onChanged={() => { reload() }} inventoryStrains={invStrains} title="Sales settings" focus="sales"
     lists={['customers', 'strains']} canTerms={salesAdmin} extra={[{ k: 'terms', l: 'Payment terms', node: <TermsPanel backend={backend} flash={flash} canEdit={salesAdmin} /> },
       { k: 'deadlines', l: 'Reserve deadlines', node: <DeadlinesPanel backend={backend} flash={flash} /> },
       { k: 'people', l: 'People', node: <ModulePeople sb={backend.client()} module="sales" flash={flash} /> }]} />
   const cultSettings = <Suspense fallback={<p className="muted">Loading…</p>}><CultView backend={backend} flash={flash} tab="setup" go={setCultTab} onPalletsChanged={() => { reload() }} /></Suspense>
-  const strainSettings = <div className="modset"><SettingsView key="cult-strains" backend={backend} flash={flash} onChanged={() => { reload() }} inventoryStrains={invStrains} title="Strains" lists={['strains']} /></div>
+  const strainSettings = <div className="modset"><SettingsView key="cult-strains" backend={backend} flash={flash} onChanged={() => { reload() }} inventoryStrains={invStrains} title="Strains" lists={['strains']} focus="cult" /></div>
+  const nurStrainSettings = <div className="modset"><SettingsView key="nurs-strains" backend={backend} flash={flash} onChanged={() => { reload() }} inventoryStrains={invStrains} title="Strains" lists={['strains']} focus="nurs" /></div>
   const selWeight = sel.reduce((a, id) => { const p = ix.pallet.get(id); return a + (p ? weightOf(ix, p) : 0) }, 0)
 
   // ---------- navigation: the same shape in every module ----------
@@ -967,6 +968,7 @@ export default function App() {
         {view === 'cult' && inCult && <Suspense fallback={<p className="muted">Loading…</p>}><CultView backend={backend} flash={flash} tab={cultTab} go={setCultTab} onPalletsChanged={() => { reload() }} /></Suspense>}
         {view === 'cult' && inCult && cultTab === 'setup' && strainSettings}
         {view === 'nursery' && cur === 'nurs' && <Suspense fallback={<p className="muted">Loading…</p>}><NurseryView backend={backend} flash={flash} tab={nurTab} go={setNurTab} customers={snap.customers ?? []} isAdmin={isAdminOf('nurs')} sender={me?.display_name} me={me?.email} /></Suspense>}
+        {view === 'nursery' && cur === 'nurs' && nurTab === 'settings' && isAdminOf('nurs') && nurStrainSettings}
         {view === 'proc' && cur === 'proc' && procTab === 'activity' && <ActivityView ix={ix} module="processing" />}
         {view === 'proc' && cur === 'proc' && procTab !== 'activity' && <Suspense fallback={<p className="muted">Loading…</p>}><ProcessingView backend={backend} flash={flash} tab={procTab} go={setProcTab}
           isAdmin={isAdminOf('proc')} canEdit={lv.processing === 'user' || lv.processing === 'admin'} customers={snap.customers ?? []} strains={snap.strains ?? []} onChanged={() => { reload() }}
@@ -990,7 +992,7 @@ export default function App() {
           {adminSet === 'dist' && distSettings}
           {adminSet === 'sales' && salesSettings}
           {adminSet === 'cult' && <>{cultSettings}{strainSettings}</>}
-          {adminSet === 'nurs' && <Suspense fallback={<p className="muted">Loading…</p>}><NurseryView backend={backend} flash={flash} tab="settings" go={setNurTab} customers={snap.customers ?? []} isAdmin={isAdminOf('nurs')} sender={me?.display_name} me={me?.email} /></Suspense>}
+          {adminSet === 'nurs' && <Suspense fallback={<p className="muted">Loading…</p>}><NurseryView backend={backend} flash={flash} tab="settings" go={setNurTab} customers={snap.customers ?? []} isAdmin={isAdminOf('nurs')} sender={me?.display_name} me={me?.email} /></Suspense>}{adminSet === 'nurs' && nurStrainSettings}
           {adminSet === 'proc' && <Suspense fallback={<p className="muted">Loading…</p>}><ProcessingView backend={backend} flash={flash} tab="settings" go={setProcTab}
             isAdmin={isAdminOf('proc')} canEdit={isAdminOf('proc')} customers={snap.customers ?? []} strains={snap.strains ?? []} onChanged={() => { reload() }} /></Suspense>}
           {adminSet === 'acct' && <Suspense fallback={<p className="muted">Loading…</p>}><AccountingView backend={backend} flash={flash} tab="settings" go={setAcctTab}

@@ -1,5 +1,5 @@
 import { Fold } from './fold'
-import { StrainProfileEdit, loadProfiles, profileLine } from './strains'
+import { StrainProfileEdit, eff, loadProfiles, mmdd } from './strains'
 import type { StrainProfile } from './strains'
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
@@ -171,10 +171,12 @@ function downloadTemplate(list: ListName, rows: ListRow[]) {
 
 /** A module's Settings: the shared lists it uses (vehicles, customers, strains) plus any extra sections of its own.
  *  The Strains list is the same one in every module that shows it. */
-export function SettingsView({ backend, inventoryStrains, onChanged, flash, lists, title, extra, canTerms }: {
+export function SettingsView({ backend, inventoryStrains, onChanged, flash, lists, title, extra, canTerms, focus = 'dist' }: {
   backend: Backend; inventoryStrains: Map<string, number>
   onChanged: () => void; flash: (t: string, bad?: boolean) => void
   lists: ListName[]; title: string; extra?: { k: string; l: string; node: ReactNode }[]; canTerms?: boolean
+  /** which module is looking: decides which strain numbers lead the row */
+  focus?: StrainFocus
 }) {
   const [data, setData] = useState<Settings | null>(null)
   const [err, setErr] = useState<string | null>(null)
@@ -269,12 +271,12 @@ export function SettingsView({ backend, inventoryStrains, onChanged, flash, list
       {shown.length === 0 && <p className="muted">Nothing here yet. Add one, or import a spreadsheet.</p>}
       {groupsOf(tab, shown, inventoryStrains).map(([gk, gl, gr]) => gr.length > 0 && (
         <Fold key={gk} id={`set.${tab}.${gk}`} title={gl} count={gr.length} open={gk === 'main'} force={!!q}>
-          {gr.map(r => (
+          {tab === 'strains' ? <div className="strows">{gr.map(r => <StrainRow key={r.id} s={r as Strain} p={profiles.get(r.id)} pallets={palletsOf(r as Strain, inventoryStrains)} focus={focus} onOpen={() => setEdit(structuredClone(r))} />)}</div>
+          : gr.map(r => (
             <button key={r.id} className={`li setrow ${r.active ? '' : 'retired'}`} onClick={() => setEdit(structuredClone(r))}>
-              {tab === 'strains' && <span className="swatch" style={{ background: (r as Strain).color ?? 'transparent' }} />}
               <div className="grow">
                 <div><b>{r.name}</b>{!r.active && <span className="muted"> · retired</span>}</div>
-                <div className="muted">{[summary(tab, r, inventoryStrains), tab === 'strains' ? profileLine(profiles.get(r.id)) : ''].filter(Boolean).join(' · ')}</div>
+                <div className="muted">{summary(tab, r, inventoryStrains)}</div>
               </div>
             </button>
           ))}
@@ -287,6 +289,51 @@ export function SettingsView({ backend, inventoryStrains, onChanged, flash, list
       {plan && <ImportPreview list={tab} plan={plan} busy={busy} onClose={() => setPlan(null)} onApply={applyPlan} />}
       </>}
     </div>
+  )
+}
+
+export type StrainFocus = 'dist' | 'sales' | 'cult' | 'nurs'
+const palletsOf = (s: Strain, inv: Map<string, number>) =>
+  [s.name, ...(s.aliases ?? [])].reduce((a, x) => a + (inv.get(x) ?? [...inv.entries()].find(([k]) => k.toLowerCase() === x.toLowerCase())?.[1] ?? 0), 0)
+const r1 = (x: unknown, d = 1) => (x == null ? null : String(Math.round(Number(x) * 10 ** d) / 10 ** d))
+/** the order strain numbers show in, per module (first ones matter most there) */
+const STAT_ORDER: Record<StrainFocus, string[]> = {
+  nurs: ['rooting', 'cuts', 'harvest', 'yield', 'pallets'],
+  cult: ['yield', 'harvest', 'rooting', 'pallets', 'sl'],
+  dist: ['pallets', 'sl', 'yield', 'harvest', 'rooting'],
+  sales: ['pallets', 'sl', 'hc', 'harvest', 'yield'],
+}
+const initials = (n: string) => (n.replace(/[^A-Za-z0-9 ]/g, ' ').trim().split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('') || '?').toUpperCase()
+/** a steady pastel per strain when it has no color of its own */
+const hueOf = (n: string) => [...n].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7)
+
+/** one strain in the Settings list: photo (or initials), name and tags, then the numbers that matter in this module */
+function StrainRow({ s, p, pallets, focus, onOpen }: { s: Strain; p: StrainProfile | undefined; pallets: number; focus: StrainFocus; onOpen: () => void }) {
+  const photo = p?.set?.photo_url
+  const st: Record<string, ReactNode> = {}
+  st.pallets = pallets ? <><b>{pallets}</b> pallet{pallets === 1 ? '' : 's'}</> : <span className="none">none on hand</span>
+  const sl = r1(p?.set?.solventless_pct); if (sl) st.sl = <><b>{sl}%</b> solventless</>
+  const hc = r1(p?.set?.hydrocarbon_pct); if (hc) st.hc = <><b>{hc}%</b> hydrocarbon</>
+  const y = r1(eff(p, 'yield_lbs_plant'), 2); if (y) st.yield = <><b>{y}</b> lbs/plant</>
+  const ro = r1(eff(p, 'rooting_pct'), 0); if (ro) st.rooting = <><b>{ro}%</b> rooting</>
+  const cu = r1(eff(p, 'cuts_per_plant'), 0); if (cu) st.cuts = <><b>{cu}</b> cuts/plant</>
+  const hv = eff(p, 'harvest_mmdd'); if (hv) st.harvest = <>harvest <b>~{mmdd(hv as string)}</b></>
+  const stats = STAT_ORDER[focus].filter(k => st[k] != null)
+  const bg = s.color || `hsl(${hueOf(s.name)} 35% var(--thumb-l))`
+  return (
+    <button className={`strow ${s.active ? '' : 'retired'}`} onClick={onOpen}>
+      {photo ? <img className="sthumb" src={photo} alt="" loading="lazy" /> : <span className="sthumb init" style={{ background: bg }}>{initials(s.name)}</span>}
+      <span className="grow">
+        <span className="stname"><b>{s.name}</b>
+          {s.trial && <span className="pill s-trial">Trial</span>}
+          {s.show_on_menu === false && s.active && <span className="pill">Hidden</span>}
+          {!s.active && <span className="pill">Retired</span>}
+          {s.aliases?.length ? <span className="muted stalias">also: {s.aliases.join(', ')}</span> : null}
+        </span>
+        <span className="ststats">{stats.map((k, i) => <span key={k}>{i > 0 && <span className="sep"> · </span>}{st[k]}</span>)}</span>
+      </span>
+      <span className="chev" aria-hidden="true">›</span>
+    </button>
   )
 }
 

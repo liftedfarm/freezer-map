@@ -1013,3 +1013,25 @@ html:has(.app.shell), html:has(.app.shell) body { height: 100%; overflow: hidden
   .wx-rd .muted { font-size: 11px; }
   .wx-rw, .wx-rc { display: none; }
 }
+
+/* Strains list (Settings): flat rows with photo or initials and the module's key numbers */
+:root { --thumb-l: 86%; --thumb-ink: #18201b; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --thumb-l: 28%; --thumb-ink: #eef3ef; } }
+:root[data-theme="dark"] { --thumb-l: 28%; --thumb-ink: #eef3ef; }
+.strows { display: flex; flex-direction: column; }
+.strow { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; background: transparent; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; padding: 10px 4px; color: inherit; cursor: pointer; }
+.strow:last-child { border-bottom: 0; }
+.strow:hover { background: color-mix(in srgb, var(--brand) 5%, transparent); }
+.strow.retired { opacity: .55; }
+.strow .grow { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.sthumb { width: 44px; height: 44px; border-radius: 8px; flex: none; object-fit: cover; background: #fff; }
+.sthumb.init { display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; color: var(--thumb-ink); letter-spacing: .02em; }
+.stname { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; font-size: 15px; }
+.stname .pill { vertical-align: 0; }
+.pill.s-trial { background: #ede9fe; color: #5b21b6; }
+.stalias { font-size: 12px; }
+.ststats { font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ststats b { color: var(--ink); font-weight: 600; }
+.ststats .none { color: var(--ghost); }
+.strow .chev { color: var(--ghost); font-size: 20px; line-height: 1; flex: none; }
+@media (max-width: 600px) { .ststats { white-space: normal; } }
