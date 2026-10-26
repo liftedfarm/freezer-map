@@ -953,9 +953,14 @@ html:has(.app.shell), html:has(.app.shell) body { height: 100%; overflow: hidden
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .wx-pop { color: #93c5fd; } }
 :root[data-theme="dark"] .wx-pop { color: #93c5fd; }
 
-.wxscrim { align-items: center; }
-.sheet.wxpanel { max-width: 760px; border-radius: 16px; }
-@media (max-width: 600px) { .wxscrim { align-items: flex-end; } .sheet.wxpanel { border-radius: 16px 16px 0 0; max-height: 92vh; } }
+.wxscrim { align-items: center; z-index: 40; }
+.wxscrim .scrim { z-index: 41; }
+.sheet.wxpanel { max-width: 760px; border-radius: 16px; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+@media (max-width: 600px) {
+  .wxscrim { align-items: flex-end; }
+  .sheet.wxpanel { border-radius: 16px 16px 0 0; max-height: 92vh; max-height: calc(100dvh - 40px);
+    padding-bottom: calc(28px + env(safe-area-inset-bottom)); }
+}
 .wx-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 4px 0 10px; }
 .wx-addr { font-size: 12px; }
 .wx-alerts { display: grid; gap: 6px; margin-bottom: 10px; }

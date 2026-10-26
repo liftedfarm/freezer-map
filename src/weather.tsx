@@ -2,6 +2,7 @@
 // Data comes from the hourly /api/weather/refresh job (see supabase/067_weather.sql). Computer: 5 days; phone: today.
 // Click / tap opens the 10-day panel with hourly detail for today and tomorrow, NWS alerts and the flag settings.
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { t } from './i18n'
 
@@ -178,7 +179,7 @@ export function WeatherBar({ sb, canEdit, flash }: { sb: SupabaseClient | null; 
           })}
         </span>
       </button>
-      {open && <WeatherPanel sb={sb} w={w} siteId={siteId} setSiteId={setSiteId} canEdit={canEdit} flash={flash} onClose={() => setOpen(false)} />}
+      {open && createPortal(<WeatherPanel sb={sb} w={w} siteId={siteId} setSiteId={setSiteId} canEdit={canEdit} flash={flash} onClose={() => setOpen(false)} />, document.body)}
     </>
   )
 }
