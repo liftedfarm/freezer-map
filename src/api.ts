@@ -126,6 +126,9 @@ export interface Backend {
   fulfillmentOrders(): Promise<FOrder[]>
   pickPallet(lineId: number, palletId: number): Promise<void>
   pickPart(lineId: number, palletId: number, lbs: number, tag: string | null): Promise<void>
+  combineForLine(lineId: number, sources: { pallet_id: number; lbs: number | null }[], tag: string | null): Promise<void>
+  orderMixedPallet(orderId: number, palletIds: number[], into: number | null): Promise<void>
+  stackTop(itemId: number): Promise<void>
   unpick(pickId: number): Promise<void>
   cantFill(lineId: number, on: boolean): Promise<void>
   approveFill(orderId: number, note?: string): Promise<number>
@@ -269,6 +272,9 @@ class SupaBackend implements Backend {
     fail(error); return (data ?? []) as FOrder[]
   }
   async pickPallet(lineId: number, palletId: number) { const { error } = await this.sb.rpc('pick_pallet', { p_line: lineId, p_pallet: palletId }); fail(error) }
+  async combineForLine(lineId: number, sources: { pallet_id: number; lbs: number | null }[], tag: string | null) { const { error } = await this.sb.rpc('combine_for_line', { p_line: lineId, p_sources: sources, p_tag: tag, p_tag_pending: !tag }); fail(error, '068_order_packing') }
+  async orderMixedPallet(orderId: number, palletIds: number[], into: number | null) { const { error } = await this.sb.rpc('order_mixed_pallet', { p_order: orderId, p_pallets: palletIds, p_into: into }); fail(error, '068_order_packing') }
+  async stackTop(itemId: number) { const { error } = await this.sb.rpc('stack_top', { p_item: itemId }); fail(error, '068_order_packing') }
   async pickPart(lineId: number, palletId: number, lbs: number, tag: string | null) {
     const { error } = await this.sb.rpc('pick_part', { p_line: lineId, p_pallet: palletId, p_lbs: lbs, p_tag: tag, p_tag_pending: !tag }); fail(error)
   }
@@ -1070,6 +1076,9 @@ class DemoBackend implements Backend {
   async fulfillmentOrders() { return [] as FOrder[] }
   async pickPallet() { throw new Error('Not in demo') }
   async pickPart() { throw new Error('Not in demo') }
+  async combineForLine() { throw new Error('Not in demo') }
+  async orderMixedPallet() { throw new Error('Not in demo') }
+  async stackTop() { throw new Error('Not in demo') }
   async unpick() {}
   async cantFill() {}
   async approveFill() { return 0 }

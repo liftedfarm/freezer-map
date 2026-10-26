@@ -38,6 +38,7 @@ export interface LoadCtx {
     departLoad(l: number): Promise<void>
     deliverStop(s: number): Promise<void>
     cancelLoad(l: number): Promise<void>
+    stackTop(i: number): Promise<void>
     orderToLoad(orderId: number, loadId: number): Promise<void>
     stopManifest(s: number): Promise<StopManifest>
     client(): SupabaseClient | null
@@ -215,7 +216,7 @@ export function LoadForm({ ctx, load, onClose, onSaved }: { ctx: LoadCtx; load?:
 export function LoadView({ ctx, loadId, onBack, onEdit }: { ctx: LoadCtx; loadId: number; onBack: () => void; onEdit: () => void }) {
   const l = ctx.loads.find(x => x.id === loadId)
   const [placeItem, setPlaceItem] = useState<LoadItem | null>(null)
-  const [picker, setPicker] = useState<{ stop: number | null; position: number | null; pre?: number } | null>(null)
+  const [picker, setPicker] = useState<{ stop: number | null; position: number | null; pre?: number; stack?: boolean } | null>(null)
   const [posOpen, setPosOpen] = useState<number | null>(null)
   const [lics, setLics] = useState<Lic[]>([])
   const [making, setMaking] = useState<number | null>(null)
@@ -289,7 +290,8 @@ export function LoadView({ ctx, loadId, onBack, onEdit }: { ctx: LoadCtx; loadId
           // orders riding on this stop, ready orders that could, and pallets that belong to no order
           const sOrders = (ctx.orders ?? []).filter(o => o.stop?.id === s.id)
           const waiting = canEdit && s.status === 'pending' && c?.kind === 'external' ? notLoaded(ctx, s.customer_id) : []
-          const mine = new Set(sOrders.flatMap(palletIds))
+          const top = (id: number) => ctx.pallet(id)?.container_id ?? id
+          const mine = new Set(sOrders.flatMap(palletIds).flatMap(id => [id, top(id)]))
           const loose = c?.kind === 'external' ? its.filter(i => !mine.has(i.pallet_id)).length : 0
           const carrying = site ? [...new Set(its.map(i => ctx.held(i.pallet_id)).filter((x): x is string => !!x))] : []
           return (
@@ -305,10 +307,10 @@ export function LoadView({ ctx, loadId, onBack, onEdit }: { ctx: LoadCtx; loadId
               <div className="muted">{its.length} pallet{its.length === 1 ? '' : 's'} · {lbs(w)}</div>
               {(sOrders.length > 0 || waiting.length > 0 || loose > 0 || carrying.length > 0) && <div className="stoporders">
                 {sOrders.map(o => {
-                  const ids = palletIds(o), on = its.filter(i => ids.includes(i.pallet_id))
+                  const ids = palletIds(o), tops = new Set(ids.map(top)), on = its.filter(i => tops.has(i.pallet_id)), onTruck = ids.filter(id => on.some(i => i.loaded && i.pallet_id === top(id))).length
                   return <button key={o.id} className="sorder" onClick={() => ctx.openOrder?.(o.id)}>
                     <span><b>{soOf(o)}</b> <span className="muted">· {n0(orderGot(o))} lbs · {o.lines.length} strain{o.lines.length === 1 ? '' : 's'}</span></span>
-                    <span className="muted">{s.status === 'delivered' ? 'shipped' : `${on.filter(i => i.loaded).length}/${ids.length} on truck`} ›</span>
+                    <span className="muted">{s.status === 'delivered' ? 'shipped' : `${onTruck}/${ids.length} on truck`} ›</span>
                   </button>
                 })}
                 {waiting.map(o => o.state === 'ready'
@@ -348,18 +350,21 @@ export function LoadView({ ctx, loadId, onBack, onEdit }: { ctx: LoadCtx; loadId
           {Array.from({ length: rows * across }, (_, k) => {
             const pos = k + 1
             if (pos > spaces) return <div key={pos} />
-            const here = items.filter(i => i.position === pos)
+            const here = items.filter(i => i.position === pos).sort((a, b) => (b.layer ?? 1) - (a.layer ?? 1) || b.id - a.id)
+            // top comes off first: a lower layer for an earlier stop means unstacking at that stop
+            const blocked = here.some((u, k) => here.slice(k + 1).some(d => (stopOf(d.stop_id)?.seq ?? 0) < (stopOf(u.stop_id)?.seq ?? 0) && stopOf(d.stop_id)?.status !== 'delivered'))
             return (
-              <button key={pos} className={`tpos ${here.length ? 'full' : 'empty'} ${placeItem ? 'target' : ''}`} onClick={() => tapPos(pos)}
+              <button key={pos} className={`tpos ${here.length ? 'full' : 'empty'} ${here.length > 1 ? 'stacked' : ''} ${placeItem ? 'target' : ''}`} onClick={() => tapPos(pos)}
                 style={here.length ? { ['--sc' as string]: stopColor(stopOf(here[0].stop_id)?.seq ?? 1) } : undefined}>
-                <span className="code">{pos}</span>
+                <span className="code">{pos}{here.length > 1 && <span className="stackbadge">stack of {here.length}</span>}</span>
+                {blocked && <span className="small warn-t">Unstack at stop {Math.min(...here.map(i => stopOf(i.stop_id)?.seq ?? 99))}</span>}
                 {here.length === 0 && <span className="muted">{placeItem ? 'Here' : canEdit ? '+ Add' : 'empty'}</span>}
                 {here.map(i => {
                   const p = ctx.pallet(i.pallet_id)
                   const s = stopOf(i.stop_id)
                   return (
                     <span key={i.id} className={`titem ${s?.status === 'delivered' ? 'done' : ''}`} style={{ ['--sc' as string]: stopColor(s?.seq ?? 1) }}>
-                      <b>{p?.code}</b> <span className="tstop">{s?.seq}</span>
+                      <b>{p?.code}</b> <span className="tstop">{s?.seq}</span>{here.length > 1 && <span className="tlayer">{i === here[0] ? 'top' : i === here[here.length - 1] ? 'bottom' : 'middle'}</span>}
                       <span className="strain">{p ? label(ctx, p) : ''}</span>
                       <span className="w">{p ? lbs(ctx.weight(p)) : ''} · {s?.status === 'delivered' ? '✓ delivered' : i.loaded ? '✓ on truck' : p ? ctx.freezerSpot(p.slot_id) : ''}</span>
                     </span>
@@ -384,10 +389,11 @@ export function LoadView({ ctx, loadId, onBack, onEdit }: { ctx: LoadCtx; loadId
 
       {posOpen != null && (
         <PositionSheet ctx={ctx} load={l} pos={posOpen} items={items.filter(i => i.position === posOpen)} stops={stops}
-          onClose={() => setPosOpen(null)} onMove={it => { setPosOpen(null); setPlaceItem(it) }} />
+          onClose={() => setPosOpen(null)} onMove={it => { setPosOpen(null); setPlaceItem(it) }}
+          onStack={() => { const p = posOpen; setPosOpen(null); setPicker({ stop: null, position: p, stack: true }) }} />
       )}
       {picker && (
-        <PalletPicker ctx={ctx} load={l} stops={stops.filter(s => s.status === 'pending')} initialStop={picker.stop} position={picker.position} pre={picker.pre}
+        <PalletPicker ctx={ctx} load={l} stops={stops.filter(s => s.status === 'pending')} initialStop={picker.stop} position={picker.position} pre={picker.pre} stack={picker.stack}
           free={spaces - new Set(items.map(i => i.position)).size} onClose={() => setPicker(null)} />
       )}
     </div>
@@ -438,21 +444,23 @@ function StopSearch({ ctx, customers, taken, onPick }: { ctx: LoadCtx; customers
   )
 }
 
-function PositionSheet({ ctx, load, pos, items, stops, onClose, onMove }: {
-  ctx: LoadCtx; load: Load; pos: number; items: LoadItem[]; stops: LoadStop[]; onClose: () => void; onMove: (i: LoadItem) => void
+function PositionSheet({ ctx, load, pos, items: raw, stops, onClose, onMove, onStack }: {
+  ctx: LoadCtx; load: Load; pos: number; items: LoadItem[]; stops: LoadStop[]; onClose: () => void; onMove: (i: LoadItem) => void; onStack: () => void
 }) {
   const canEdit = editable(load)
+  const items = [...raw].sort((a, b) => (b.layer ?? 1) - (a.layer ?? 1) || b.id - a.id)   // top first
   return (
     <div className="scrim" onClick={onClose}>
       <div className="sheet form" onClick={e => e.stopPropagation()}>
-        <div className="sheet-h"><h2>Position {pos}</h2><button className="ghost" onClick={onClose}>✕</button></div>
-        {items.map(i => {
+        <div className="sheet-h"><h2>Position {pos}{items.length > 1 ? ` · stack of ${items.length}` : ''}</h2><button className="ghost" onClick={onClose}>✕</button></div>
+        {items.length > 1 && <p className="muted small-note">Top first. The top pallet comes off first, so it should be for the earliest stop.</p>}
+        {items.map((i, k) => {
           const p = ctx.pallet(i.pallet_id)
           if (!p) return null
           return (
             <div key={i.id} className="mixline">
               <div className="row between">
-                <div><a onClick={() => { onClose(); ctx.openPallet(p.id) }}><b>{p.code}</b></a> {label(ctx, p)} <span className="muted">· {lbs(ctx.weight(p))}</span></div>
+                <div>{items.length > 1 && <span className="tlayer">{k === 0 ? 'top' : k === items.length - 1 ? 'bottom' : 'middle'}</span>} <a onClick={() => { onClose(); ctx.openPallet(p.id) }}><b>{p.code}</b></a> {label(ctx, p)} <span className="muted">· {lbs(ctx.weight(p))}</span></div>
                 <span className={`pill ${i.loaded ? 's-in_transit' : 's-planning'}`}>{i.loaded ? 'On truck' : 'Planned'}</span>
               </div>
               {!i.loaded && <div className="muted">Pull from {p.slot_id != null ? ctx.freezerSpot(p.slot_id) : ctx.where(p)}</div>}
@@ -468,6 +476,7 @@ function PositionSheet({ ctx, load, pos, items, stops, onClose, onMove }: {
                 <div className="row">
                   {!i.loaded && <button className="primary" disabled={ctx.busy} onClick={async () => { if (await ctx.run(() => ctx.api.loadPallet(i.id), `${p.code} on the truck`)) onClose() }}>Pulled onto truck</button>}
                   <button className="ghost" disabled={ctx.busy} onClick={() => onMove(i)}>Move on truck</button>
+                  {items.length > 1 && k > 0 && <button className="ghost" disabled={ctx.busy} onClick={() => ctx.run(() => ctx.api.stackTop(i.id), `${p.code} on top`)}>Put on top</button>}
                   {!i.loaded
                     ? <button className="ghost" disabled={ctx.busy} onClick={async () => { if (await ctx.run(() => ctx.api.removeItem(i.id), `${p.code} removed from ${load.code}`)) onClose() }}>Remove from load</button>
                     : <button className="ghost" disabled={ctx.busy} onClick={() => { onClose(); ctx.putBack(i, p) }}>Put back in a freezer</button>}
@@ -476,13 +485,14 @@ function PositionSheet({ ctx, load, pos, items, stops, onClose, onMove }: {
             </div>
           )
         })}
+        {canEdit && <div className="row end"><button className="ghost" onClick={onStack}>+ Stack a pallet here</button></div>}
       </div>
     </div>
   )
 }
 
-function PalletPicker({ ctx, load, stops, initialStop, position, free, onClose, pre }: {
-  ctx: LoadCtx; load: Load; stops: LoadStop[]; initialStop: number | null; position: number | null; free: number; onClose: () => void; pre?: number
+function PalletPicker({ ctx, load, stops, initialStop, position, free, onClose, pre, stack }: {
+  ctx: LoadCtx; load: Load; stops: LoadStop[]; initialStop: number | null; position: number | null; free: number; onClose: () => void; pre?: number; stack?: boolean
 }) {
   const [stop, setStop] = useState<number | null>(initialStop ?? (stops.length === 1 ? stops[0].id : null))
   const [q, setQ] = useState('')
@@ -499,7 +509,7 @@ function PalletPicker({ ctx, load, stops, initialStop, position, free, onClose, 
   async function save() {
     let done = 0
     const ok = await ctx.run(async () => {
-      for (const id of picked) { await ctx.api.planPallet(load.id, stop!, id, single ? position : null, false); done++ }
+      for (const id of picked) { await ctx.api.planPallet(load.id, stop!, id, single ? position : null, !!stack); done++ }
       if (!single) await ctx.api.arrangeLoad(load.id)
     }, `${picked.length} pallet${picked.length === 1 ? '' : 's'} planned on ${load.code}`)
     if (ok || done) onClose()
@@ -507,7 +517,7 @@ function PalletPicker({ ctx, load, stops, initialStop, position, free, onClose, 
   return (
     <div className="scrim" onClick={onClose}>
       <div className="sheet form" onClick={e => e.stopPropagation()}>
-        <div className="sheet-h"><h2>{single ? `Add to position ${position}` : `Add pallets to ${load.code}`}</h2><button className="ghost" onClick={onClose}>✕</button></div>
+        <div className="sheet-h"><h2>{single ? `${stack ? 'Stack on' : 'Add to'} position ${position}` : `Add pallets to ${load.code}`}</h2><button className="ghost" onClick={onClose}>✕</button></div>
         {pre != null && <div className="infobox">{ctx.pallet(pre)?.code} isn't on {load.code} yet. Pick the stop and tap Add to load.{ctx.held(pre) ? ` It's held for ${ctx.held(pre)}.` : ''}</div>}
         <div className="field"><label>Stop</label>
           <div className="choices">
@@ -531,7 +541,7 @@ function PalletPicker({ ctx, load, stops, initialStop, position, free, onClose, 
           {q.trim() && results.length === 0 && <div className="muted small-note">Nothing available matches. Pallets already on a load, or packages on a mixed pallet, don't show here.</div>}
           <div className="muted small-note">A pallet held for an order can go to that customer, or to OHR/GVR on a transfer (it stays held).</div>
         </div>
-        {picked.length > 0 && <div className="muted">{picked.length} selected · {lbs(pickedW)}{!single && picked.length > free ? ` · only ${free} open positions, extra pallets need a shared position` : ''}</div>}
+        {picked.length > 0 && <div className="muted">{picked.length} selected · {lbs(pickedW)}{!single && picked.length > free ? ` · only ${free} open position${free === 1 ? '' : 's'}: the rest get stacked two high, earlier stop on top` : ''}</div>}
         <p className="muted small-note">Need part of a pallet? Split it first (or build a mixed pallet), then add the new piece here.</p>
         <div className="row end">
           <button className="ghost" onClick={onClose}>Cancel</button>

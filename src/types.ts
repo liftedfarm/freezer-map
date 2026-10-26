@@ -103,7 +103,7 @@ export interface Settings { vehicles: Vehicle[]; customers: Customer[]; strains:
 export type LoadStatus = 'planning' | 'loading' | 'in_transit' | 'delivered' | 'cancelled'
 export interface Load { id: number; code: string; load_date: string; vehicle_id: number; status: LoadStatus; driver: string | null; notes: string | null; created_by: string | null; created_at: string; departed_at: string | null; closed_at: string | null }
 export interface LoadStop { id: number; load_id: number; seq: number; customer_id: number; manifest: string | null; status: 'pending' | 'delivered'; delivered_at: string | null; delivered_by: string | null }
-export interface LoadItem { id: number; load_id: number; stop_id: number; pallet_id: number; position: number; loaded: boolean; from_slot: number | null; from_site?: string | null }
+export interface LoadItem { id: number; load_id: number; stop_id: number; pallet_id: number; position: number; loaded: boolean; from_slot: number | null; from_site?: string | null; layer?: number }
 export interface StopInput { id?: number; customer_id: number; manifest: string }
 
 export interface Snapshot {

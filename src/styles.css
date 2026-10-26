@@ -1053,3 +1053,14 @@ html:has(.app.shell), html:has(.app.shell) body { height: 100%; overflow: hidden
 .stoplist li.none { padding: 8px 12px; cursor: default; }
 .stoplist .sgroup { padding: 6px 12px 2px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); cursor: default; }
 .stoplist .sready { font-size: 12px; color: var(--brand); font-weight: 600; }
+
+/* 068: truck stacks, packing orders, combine */
+.tpos.stacked { box-shadow: inset 0 -3px 0 color-mix(in srgb, var(--ink) 25%, transparent); }
+.stackbadge { margin-left: 6px; font-size: 10px; font-weight: 600; padding: 0 5px; border-radius: 99px; background: var(--empty); color: var(--muted); }
+.tlayer { font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-left: 4px; }
+.dcard.pack { display: grid; gap: 6px; }
+.packm { border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; background: var(--empty); display: grid; gap: 2px; }
+.pick.combine { display: flex; align-items: center; gap: 8px; }
+.pick.combine .grow { flex: 1; cursor: pointer; }
+.pick.combine .lbsin { gap: 4px; }
+.pick.combine .lbsin input { width: 90px; }

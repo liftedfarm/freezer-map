@@ -79,6 +79,8 @@ function OrderPage({ o, back, backend, reload, flash, pallets, heldBy, onLoad, i
   const [busy, setBusy] = useState(false)
   const [loadPick, setLoadPick] = useState(false)
   const [sendTo, setSendTo] = useState<string | null>(null)
+  const [combine, setCombine] = useState<FLine | null>(null)
+  const [packSel, setPackSel] = useState<number[]>([])
   const [scanRes, setScanRes] = useState<{ p: Pallet; msg: string; line?: FLine } | null>(null)
   const editable = o.state === 'open' || o.state === 'needs_ok' || o.state === 'ready'
   const run = async (f: () => Promise<unknown>, ok: string) => {
@@ -103,7 +105,8 @@ function OrderPage({ o, back, backend, reload, flash, pallets, heldBy, onLoad, i
         ? `Wrong product: this is ${PRODUCT_LABEL[prod(p) as keyof typeof PRODUCT_LABEL] ?? prod(p)}, and the ${p.strain} line wants ${o.lines.filter(l => canon(l.strain) === canon(p.strain)).map(l => PRODUCT_LABEL[prod(l) as keyof typeof PRODUCT_LABEL]).join(' or ')}.`
         : `Wrong strain: ${p.strain ?? 'this pallet has no strain'}${p.strain ? " isn't on this order" : ''}. This order is ${[...new Set(o.lines.map(l => l.strain))].join(', ')}.`)
       : p.kind === 'mixed' ? 'This is a mixed pallet. Scan the tag on the package you want instead.'
-      : p.container_id ? 'This package is on a mixed pallet. Take it off on the freezer map first.'
+      : p.container_id && pallets.some(x => x.container_id === p.container_id && x.id !== p.id && heldBy.get(x.id)?.customer_id !== o.customer_id)
+        ? `This package is on ${pallets.find(x => x.id === p.container_id)?.code ?? 'a mixed pallet'} with packages that aren't for ${o.customer}. Take it off on the freezer map first.`
       : onLoad(p.id) ? 'Already on a load.'
       : inRun?.(p.id) ? `In a processing run (${inRun(p.id)}).`
       : p.status !== 'in_freezer' ? `Not in a freezer: ${where(p)}.`
@@ -167,7 +170,7 @@ function OrderPage({ o, back, backend, reload, flash, pallets, heldBy, onLoad, i
                     <button className="linkbtn" onClick={() => openPallet(pk.pallet_id)}><b>{pk.code}</b></button>
                     <span className="grow muted">{p ? where(p) : ''}{pk.tag ? ` · ${pk.tag.slice(-6)}` : pk.tag_pending ? ' · tag pending' : ''}{p?.origin_site ? ` · grown at ${p.origin_site}` : ''}</span>
                     <b>{n0(Number(pk.lbs))} lbs</b>
-                    {editable && <button className="ghost small" disabled={busy} title="Unassign" onClick={() => run(() => backend.unpick(pk.id), `${pk.code} unassigned`)}>✕</button>}
+                    {editable && !(p?.container_id && pallets.some(x => x.container_id === p.container_id && x.id !== p.id)) && <button className="ghost small" disabled={busy} title="Unassign" onClick={() => run(() => backend.unpick(pk.id), `${pk.code} unassigned`)}>✕</button>}
                   </div>
                 )
               })}
@@ -175,6 +178,7 @@ function OrderPage({ o, back, backend, reload, flash, pallets, heldBy, onLoad, i
                 {editable && <button className="ghost small" disabled={busy} onClick={() => run(() => backend.cantFill(l.id, false), 'Line back on')}>Undo</button>}</div>}
               {editable && !l.cant_fill && adding !== l.id && <div className="row">
                 <button className="ghost small grow" disabled={busy} onClick={() => setAdding(l.id)}>+ {g ? 'Add another pallet' : 'Assign pallets'}</button>
+                <button className="ghost small" disabled={busy} title="Pull from several pallets of this strain into one new METRC tag" onClick={() => setCombine(l)}>Combine into one tag</button>
                 {g === 0 && <button className="ghost small" disabled={busy} onClick={() => run(() => backend.cantFill(l.id, true), `${l.strain} marked can't fill`)}>Can't fill</button>}</div>}
               {editable && adding === l.id && <Pick line={l} need={Math.max(0, Number(l.lbs) - g)} busy={busy} close={() => setAdding(null)}
                 cands={pallets.filter(p => p.status === 'in_freezer' && p.pushed !== false && !p.container_id && p.kind !== 'mixed' && (p.current_weight ?? 0) > 0
@@ -186,6 +190,43 @@ function OrderPage({ o, back, backend, reload, flash, pallets, heldBy, onLoad, i
           </section>
         )
       })}
+
+      {editable && (() => {
+        // packing: build mixed pallets from this order's packages (they stay held), or add to one already started for this customer
+        const mine = o.lines.flatMap(l => l.picks.map(pk => pal.get(pk.pallet_id))).filter((p): p is Pallet => !!p)
+        const loose = mine.filter(p => !p.container_id && p.status === 'in_freezer')
+        const mixedIds = [...new Set(pallets.filter(x => x.container_id && heldBy.get(x.id)?.customer_id === o.customer_id).map(x => x.container_id!))]
+        const tops = new Set(mine.map(p => p.container_id ?? p.id)).size
+        if (!mine.length) return null
+        const toggle = (id: number) => setPackSel(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id])
+        const sel = packSel.filter(id => loose.some(p => p.id === id))
+        const selW = sel.reduce((a, id) => a + Number(pal.get(id)?.current_weight ?? 0), 0)
+        const mix = (into: number | null) => run(() => backend.orderMixedPallet(o.id, sel, into), into ? `Added to ${pal.get(into)?.code}` : 'Mixed pallet made').then(() => setPackSel([]))
+        return <section className="dcard pack">
+          <div className="row between wrap"><b>Pack for the truck</b><span className="muted">{tops} truck position{tops === 1 ? '' : 's'}</span></div>
+          {mixedIds.map(mid => {
+            const m = pal.get(mid), cs = pallets.filter(x => x.container_id === mid)
+            const others = [...new Set(cs.map(x => heldBy.get(x.id)).filter(h => h && h.id !== o.id).map(h => h!.so ?? `order #${h!.id}`))]
+            return <div key={mid} className="packm">
+              <div className="row between"><button className="linkbtn" onClick={() => openPallet(mid)}><b>{m?.code ?? 'Mixed'}</b></button>
+                <span className="muted">{cs.length} pkg{cs.length === 1 ? '' : 's'} · {n0(cs.reduce((a, x) => a + Number(x.current_weight ?? 0), 0))} lbs{m ? ` · ${where(m)}` : ''}</span></div>
+              <div className="muted small">{cs.map(x => `${x.code} ${x.strain ?? ''}`).join(' · ')}</div>
+              {others.length > 0 && <div className="small-note warn-t">Also carries {others.join(', ')}: they go on the truck together.</div>}
+            </div>
+          })}
+          {loose.length > 0 && <>
+            <div className="muted small-note">{loose.length > 1 ? 'Tick packages to put on one mixed pallet (each keeps its own tag).' : 'This package can go on a mixed pallet with this customer\'s other packages.'}</div>
+            {loose.map(p => <label key={p.id} className={`pick ${sel.includes(p.id) ? 'on' : ''}`}>
+              <input type="checkbox" checked={sel.includes(p.id)} onChange={() => toggle(p.id)} />
+              <b>{p.code}</b><span>{p.strain} · {n0(Number(p.current_weight ?? 0))} lbs</span><span className="muted">{where(p)}</span></label>)}
+            {sel.length > 0 && <div className="row wrap">
+              {sel.length > 1 && <button className="primary small" disabled={busy} onClick={() => mix(null)}>Build mixed pallet ({sel.length} · {n0(selW)} lbs)</button>}
+              {mixedIds.map(mid => <button key={mid} className="ghost small" disabled={busy} onClick={() => mix(mid)}>Add to {pal.get(mid)?.code}</button>)}
+            </div>}
+            {sel.length > 1 && <p className="muted small-note">The mixed pallet goes in the slot of the first one ticked (stacked). Move it on the freezer map if you need to.</p>}
+          </>}
+        </section>
+      })()}
 
       {moving && at.size > 0 && <section className="dcard">
         <div className="row between wrap">
@@ -210,6 +251,9 @@ function OrderPage({ o, back, backend, reload, flash, pallets, heldBy, onLoad, i
           <div className="row"><button className="ghost small" onClick={() => openLoad(o.stop!.load_id)}>Open load</button>
             {(o.stop.load_status === 'planning' || o.stop.load_status === 'loading') && <button className="ghost small" disabled={busy} onClick={() => run(() => backend.orderOffLoad(o.id), 'Taken off the load')}>Take off load</button>}</div></div>}
         {o.state === 'shipped' && <span>Shipped {fmt(o.shipped_date)}{o.stop ? ` on ${o.stop.load}` : ''}.</span>}
+        {combine && <Combine o={o} line={combine} pallets={pallets} heldBy={heldBy} onLoad={onLoad} inRun={inRun} where={where} rank={rank} canon={canon} busy={busy}
+          close={() => setCombine(null)}
+          submit={(src, tag) => run(() => backend.combineForLine(combine.id, src, tag), `Combined into one ${combine.strain} package${tag ? '' : ' (tag pending)'}`).then(() => setCombine(null))} />}
         {o.state === 'open' && <span className="muted">Assign pallets to every line. If a line ends up over or short, Sales OKs the amount before it can go on a load.</span>}
         {o.state === 'needs_ok' && <span className="muted">Waiting on Sales to OK the amounts that differ.</span>}
       </section>
@@ -283,6 +327,61 @@ function LoadChooser({ o, loads, vehicles, stops = [], customers = [], busy, clo
         <select value={v ?? ''} onChange={e => setV(Number(e.target.value))}>{vs.map(x => <option key={x.id} value={x.id}>{x.name}</option>)}</select>
         <input type="date" value={d} onChange={e => setD(e.target.value)} />
         <button className="primary small" disabled={busy || v == null} onClick={() => onNew(v!, d)}>Make load</button></div>
+    </div>
+  )
+}
+
+/** pull from several pallets of one strain (whole or part of each) into one new METRC package for this line */
+function Combine({ o, line, pallets, heldBy, onLoad, inRun, where, rank, canon, busy, close, submit }: {
+  o: FOrder; line: FLine; pallets: Pallet[]; heldBy: Map<number, FOrder>; onLoad: (id: number) => boolean; inRun?: (id: number) => string | undefined
+  where: (p: Pallet) => string; rank: (p: Pallet) => number; canon: (s: string | null | undefined) => string; busy: boolean
+  close: () => void; submit: (src: { pallet_id: number; lbs: number | null }[], tag: string | null) => void
+}) {
+  const w = (p: Pallet) => Number(p.current_weight ?? 0)
+  const prod = (x: { product?: string | null }) => x.product ?? 'fresh_frozen'
+  const cands = pallets.filter(p => p.status === 'in_freezer' && p.pushed !== false && !p.container_id && p.kind !== 'mixed' && w(p) > 0
+    && canon(p.strain) === canon(line.strain) && prod(p) === prod(line) && (p.crop_year == null || p.crop_year === line.crop_year)
+    && (!heldBy.has(p.id) || heldBy.get(p.id)!.id === o.id) && !onLoad(p.id) && !inRun?.(p.id))
+  const onLine = new Set(line.picks.map(pk => pk.pallet_id))
+  const [sel, setSel] = useState<Map<number, string>>(() => new Map(cands.filter(p => onLine.has(p.id)).map(p => [p.id, String(w(p))])))
+  const [tag, setTag] = useState('')
+  // what the line still needs from the pallets picked here (other picks on the line stay)
+  const kept = line.picks.filter(pk => !sel.has(pk.pallet_id)).reduce((a, pk) => a + Number(pk.lbs), 0)
+  const need = Math.max(0, Number(line.lbs) - kept)
+  const total = [...sel.values()].reduce((a, v) => a + (Number(v) || 0), 0)
+  const toggle = (p: Pallet) => setSel(m => {
+    const n = new Map(m)
+    if (n.has(p.id)) n.delete(p.id)
+    else { const rest = need - [...n.values()].reduce((a, v) => a + (Number(v) || 0), 0); n.set(p.id, String(rest > 0 ? Math.min(w(p), Math.round(rest * 100) / 100) : w(p))) }
+    return n
+  })
+  const sorted = [...cands].sort((a, b) => Number(sel.has(b.id)) - Number(sel.has(a.id)) || Number(onLine.has(b.id)) - Number(onLine.has(a.id)) || rank(a) - rank(b) || w(a) - w(b))
+  const bad = [...sel.entries()].some(([id, v]) => { const p = cands.find(x => x.id === id); return !p || !(Number(v) > 0) || Number(v) > w(p) + 0.001 })
+  return (
+    <div className="scrim" onClick={close}>
+      <div className="sheet form" onClick={e => e.stopPropagation()}>
+        <div className="sheet-h"><div><h2>Combine into one tag</h2><div className="muted">{line.strain} · {PRODUCT_LABEL[prod(line) as keyof typeof PRODUCT_LABEL] ?? prod(line)} · {line.crop_year}</div></div><button className="ghost" onClick={close}>✕</button></div>
+        <p className="muted small-note">Tick the pallets to pull from and how much from each. They become one new package for {o.so ?? 'this order'}; what's left stays on each pallet.</p>
+        <div className={total > 0 && Math.abs(total - need) > 0.5 ? 'warnbox' : 'okbox'}>Line needs <b>{n0(need)}</b> lbs from these · picked <b>{n0(total)}</b> lbs{total > 0 && Math.abs(total - need) > 0.5 ? ` (${total > need ? `${n0(total - need)} over` : `${n0(need - total)} short`})` : ''}</div>
+        {!cands.length && <p className="muted">No free {line.strain} pallets for {line.crop_year}.</p>}
+        <div className="picklist">
+          {sorted.slice(0, 30).map(p => (
+            <div key={p.id} className={`pick combine ${sel.has(p.id) ? 'on' : ''}`}>
+              <input type="checkbox" checked={sel.has(p.id)} onChange={() => toggle(p)} />
+              <span className="grow" onClick={() => toggle(p)}><b>{p.code}</b> <span className="muted">{n0(w(p))} lbs · {where(p)}{onLine.has(p.id) ? ' · on this line' : ''}</span></span>
+              {sel.has(p.id) && <span className="row lbsin"><input type="number" inputMode="decimal" value={sel.get(p.id)} onChange={e => setSel(m => new Map(m).set(p.id, e.target.value))} />
+                <button className="ghost small" onClick={() => setSel(m => new Map(m).set(p.id, String(w(p))))}>All</button></span>}
+            </div>
+          ))}
+        </div>
+        <div className="field"><label>New METRC tag <span className="muted">(blank = tag pending)</span></label><div className="row tagrow"><input className="grow-in" value={tag} onChange={e => setTag(e.target.value.toUpperCase().replace(/\s/g, ''))} placeholder="Scan or type later" /><ScanButton onScan={setTag} /></div></div>
+        <div className="metrcnote"><b>METRC</b> Goes on the METRC to-do as Combine packages: one new package from {sel.size || 'these'} source{sel.size === 1 ? '' : 's'}.</div>
+        <div className="row end">
+          <button className="ghost" onClick={close}>Cancel</button>
+          <button className="primary" disabled={busy || sel.size < 2 || bad} onClick={() => submit([...sel.entries()].map(([id, v]) => { const p = cands.find(x => x.id === id)!; return { pallet_id: id, lbs: Number(v) >= w(p) - 0.001 ? null : Number(v) } }), tag.trim() || null)}>
+            Combine {sel.size > 1 ? `${sel.size} pallets` : ''} · {n0(total)} lbs</button>
+        </div>
+      </div>
     </div>
   )
 }
