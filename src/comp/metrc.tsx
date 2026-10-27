@@ -31,6 +31,49 @@ export function Metrc({ c }: { c: Ctx }) {
   </div>
 }
 
+// progress bar on each to-do line
+//   plants (harvest, planting, flip): how many plants are in METRC so far
+//   waste / finish with a wait: time until it can go
+//   everything else: queued, sending, waiting on an earlier to-do, failed, sent
+const STEPPED = new Set(['harvest_plants', 'planting', 'flower'])
+const n0b = (x: number) => Math.round(x).toLocaleString()
+function MetrcBar({ r, now }: { r: MAction; now: number }) {
+  if (r.status === 'skipped') return null
+  const prog = (r.push_response as { progress?: { done?: number } } | null | undefined)?.progress
+  const total = Number(r.details?.plants ?? 0)
+  const done = r.status === 'done' || r.push_state === 'sent'
+  const err = r.status === 'error' || r.push_state === 'failed'
+  const sending = r.push_state === 'sending'
+  const blocked = r.push_state === 'waiting' && /earlier to-do/i.test(r.push_error ?? '')
+  let pct = 0, cls = '', left = '', right = ''
+  if (r.kind && STEPPED.has(r.kind) && total > 0) {
+    const d = done ? total : Math.min(Number(prog?.done ?? 0), total)
+    pct = (d / total) * 100
+    left = `${n0b(d)} of ${n0b(total)} plants`
+    right = `${Math.floor(pct)}%`
+  } else if (done) { pct = 100; left = 'In METRC' }
+  else if (r.due_at && new Date(r.due_at).getTime() > now) {
+    const a = new Date(r.at).getTime(), b = new Date(r.due_at).getTime()
+    pct = Math.max(0, Math.min(100, ((now - a) / Math.max(1, b - a)) * 100)); cls = 'due'
+    const m = Math.max(1, Math.ceil((b - now) / 60000))
+    left = 'Waiting to send'; right = m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m left` : `${m}m left`
+  } else if (sending) { cls = 'spin'; left = 'Sending to METRC…' }
+  else if (err) { pct = 100; cls = 'bad'; left = 'Stopped' }
+  else if (blocked) { pct = 100; cls = 'wait'; left = 'Waiting on an earlier to-do' }
+  else if (r.push_state === 'waiting') { pct = 0; left = 'Next run' }
+  else left = 'Queued'
+  if (STEPPED.has(r.kind ?? '') && total > 0) {
+    if (done) cls = ''
+    else if (sending) cls = 'go'
+    else if (err) cls = 'bad'
+    else if (blocked) cls = 'wait'
+  }
+  return <div className={`mbar ${cls}`} role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(pct)} aria-label={left}>
+    <div className="mbar-track"><div className="mbar-fill" style={{ width: `${pct}%` }} /></div>
+    <div className="mbar-label"><span>{left}</span><span>{right}</span></div>
+  </div>
+}
+
 // ---------- to do: every app action METRC needs ----------
 function Todo({ c }: { c: Ctx }) {
   const [status, setStatus] = useState<string | null>('todo')
@@ -42,6 +85,13 @@ function Todo({ c }: { c: Ctx }) {
   const sel = useSel()
   const load = async () => { try { setRows(await c.api.actions(status)) } catch (e) { c.flash(errText(e), true); setRows([]) } }
   useEffect(() => { load(); sel.stop() }, [status])
+  // while anything is on its way to METRC, refresh every 5 seconds so the bars move
+  const [now, setNow] = useState(Date.now())
+  const moving = (rows ?? []).some(r => (r.status === 'todo' || r.status === 'error') && (r.push_state === 'sending' || r.push_state === 'waiting'))
+  useEffect(() => {
+    const t = setInterval(() => { setNow(Date.now()); if (moving && !document.hidden) load() }, moving ? 5000 : 60000)
+    return () => clearInterval(t)
+  }, [moving, status])
   useEffect(() => {
     c.api.pushKinds().then(k => setKinds(Object.fromEntries(k.map(x => [x.kind, x])))).catch(() => {})
     c.api.sb.from('app_settings').select('value').eq('key', 'comp.metrc_live').maybeSingle().then(r => setLive(r.data?.value === 'true'))
@@ -95,7 +145,8 @@ function Todo({ c }: { c: Ctx }) {
           <td><b>{r.action}</b>{r.due_at && r.status === 'todo' && <div className={`small ${new Date(r.due_at) < new Date() ? 'neg' : 'muted'}`}>{new Date(r.due_at) > new Date() ? 'Not before' : 'Due'} {when(r.due_at)}</div>}{r.summary && <div className="muted small">{r.summary}</div>}{r.note && <div className={`small ${r.push_state === 'sent' ? 'muted' : 'neg'}`}>{r.note}</div>}
             {r.push_state && <div className="small" style={{ marginTop: 2 }}><span className={`pill ${PS[r.push_state][1]}`}>{PS[r.push_state][0]}</span>
               {r.push_state !== 'sent' && r.push_error && <span className={r.push_state === 'failed' ? 'neg' : 'muted'}> {r.push_error}</span>}
-              {r.push_at && <span className="muted"> {when(r.push_at)}</span>}</div>}</td>
+              {r.push_at && <span className="muted"> {when(r.push_at)}</span>}</div>}
+            <MetrcBar r={r} now={now} /></td>
           <td>{r.code ?? ''}</td><td className="mono small hide-s" title={r.tag ?? ''}>{short(r.tag)}</td><td className="num">{n2(r.lbs)}</td>
           <td className="mono small hide-s">{r.license ?? ''}</td>
           <td><span className={`pill ${ST[r.status][1]}`}>{ST[r.status][0]}</span>{r.done_by && <div className="muted small">{r.done_by.split('@')[0]}</div>}</td>
