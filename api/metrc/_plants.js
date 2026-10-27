@@ -346,8 +346,13 @@ export async function sendHarvestPackage(job, ctx) {
   if (!pal) throw new Error('The pallet is gone from the app')
   const tag = up(pal.package_tag ?? job.tag)
   if (!tag) throw new Wait(`${pal.code} has no METRC tag yet (tag pending)`)
-  if (await packageByTag(lic, tag)) throw new Skip(`METRC already has ${tag}`)
   const name = d.batch
+  const ex = await packageByTag(lic, tag)
+  if (ex) {
+    // only "already done" when that package came from this harvest; otherwise the tag is on something else
+    if (lc(ex.sourceHarvestNames ?? '').split(/,\s*/).includes(lc(name))) throw new Skip(`METRC already has ${tag} from ${name}`)
+    throw new Error(`${tag} is already a different METRC package (${ex.item?.name ?? '?'}, ${ex.quantity} ${ex.unitOfMeasureAbbreviation ?? ''}, from ${ex.sourceHarvestNames || 'another package'}). Give ${pal.code} a different tag, then send again.`)
+  }
   const hv = await first('/v2/harvests/create/packages/source-harvests', { licenseNumber: lic, filter: `name__eq:${name}` }).catch(() => null)
   if (!hv || lc(hv.name) !== lc(name)) throw new Wait(`Harvest ${name} isn't in METRC on ${lic} yet (harvest the plants first)`)
   const want = (await one(`items?id=eq.${pal.item_id ?? 0}&select=metrc_name`))?.metrc_name
