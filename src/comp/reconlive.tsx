@@ -22,7 +22,8 @@ export function LiveReconcile({ c }: { c: Ctx }) {
   const [rows, setRows] = useState<Record<string, LiveRecon[]>>({})
   const [busy, setBusy] = useState<string | null>(null)
   const [open, setOpen] = useState<Set<string>>(new Set(['weight', 'not_in_metrc']))
-  const loadSt = async () => { try { const s = await c.api.syncStatus(); setSt(s); setLic(l => l ?? s.find(x => x.active > 0)?.license ?? s[0]?.license ?? null); return s } catch (e) { c.flash(errText(e), true); return [] } }
+  // 1PN is all nursery plant packages: not tracked as pallets until Phase 2
+  const loadSt = async () => { try { const s = (await c.api.syncStatus()).filter(x => x.site !== '1PN'); setSt(s); setLic(l => l ?? s.find(x => x.active > 0)?.license ?? s[0]?.license ?? null); return s } catch (e) { c.flash(errText(e), true); return [] } }
   const loadRows = async (l: string) => { try { const r = await c.api.reconcileLive(l); setRows(m => ({ ...m, [l]: r })); return r } catch (e) { c.flash(errText(e), true); return [] } }
   useEffect(() => { loadSt() }, [])
   useEffect(() => { if (lic && !rows[lic]) loadRows(lic) }, [lic])
@@ -63,6 +64,7 @@ export function LiveReconcile({ c }: { c: Ctx }) {
 
   return <>
     <p className="muted">METRC is pulled through T3 every night (and when you tap Pull), then compared with every package in the app. Each gap says what METRC did with the package: split, shipped on which manifest, finished. Export to Excel, fill in Action and Reason, and drop it back here to fix the app in bulk.</p>
+    <p className="muted small">1PN (nursery) is pulled too, but left out of this report until the app tracks plant packages (Phase 2).</p>
     <div className="tablewrap"><table className="ct"><thead><tr><th>License</th><th className="num">Active in METRC</th><th>Last pull</th><th /></tr></thead>
       <tbody>{st.map(s => <tr key={s.license} className={`tap ${lic === s.license ? 'sel' : ''}`} onClick={() => setLic(s.license)}>
         <td><b>{s.site}</b> <span className="mono small">{s.license}</span></td><td className="num">{s.active.toLocaleString()}</td>

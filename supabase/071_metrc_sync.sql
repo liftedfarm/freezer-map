@@ -101,16 +101,23 @@ grant usage, select on sequence metrc_sync_runs_id_seq to service_role;
 /** packages made from this tag (any license) and the manifests this tag or those went out on */
 create or replace function metrc_trail(p_tag text) returns jsonb
 language sql stable security definer set search_path = public as $$
-  with kids as (
-    select k.label, k.license, k.state, k.lbs, k.packaged_on, k.item from metrc_packages k
-     where upper(p_tag) = any(k.source_labels) and k.label <> upper(p_tag)
-  ), ships as (
-    select tp.label, tp.shipped_lbs, t.manifest, t.recipient_name, t.recipient_license, coalesce(t.departed_at, t.created_at) as shipped_at, t.voided
+  with ships as (
+    select distinct on (tp.label, t.manifest) tp.label, tp.shipped_lbs, t.manifest, t.recipient_name, t.recipient_license,
+           coalesce(t.departed_at, t.received_at, t.created_at) as shipped_at
       from metrc_transfer_packages tp join metrc_transfers t on t.delivery_id = tp.delivery_id
-     where (tp.label = upper(p_tag) or tp.label in (select label from kids)) and not t.voided
+     where not t.voided
+       and (tp.label = upper(p_tag) or tp.label in (select k.label from metrc_packages k where upper(p_tag) = any(k.source_labels)))
+     order by tp.label, t.manifest
+  ), kids as (
+    -- one line per package made from this tag (a package moved between our licenses is in METRC twice)
+    select distinct on (k.label) k.label, k.license, k.state, k.lbs, k.packaged_on, k.item from metrc_packages k
+     where upper(p_tag) = any(k.source_labels) and k.label <> upper(p_tag)
+     order by k.label, (k.state in ('active', 'intransit')) desc, k.last_modified desc nulls last
   )
   select jsonb_build_object(
-    'kids', coalesce((select jsonb_agg(jsonb_build_object('tag', k.label, 'license', k.license, 'state', k.state, 'lbs', k.lbs, 'packaged_on', k.packaged_on,
+    'kids', coalesce((select jsonb_agg(jsonb_build_object('tag', k.label, 'license', k.license, 'state', k.state,
+              'lbs', coalesce((select s.shipped_lbs from ships s where s.label = k.label order by s.shipped_at limit 1), k.lbs),
+              'packaged_on', k.packaged_on,
               'ship', (select jsonb_build_object('manifest', s.manifest, 'to', s.recipient_name, 'to_license', s.recipient_license, 'lbs', s.shipped_lbs, 'on', s.shipped_at::date)
                          from ships s where s.label = k.label order by s.shipped_at desc limit 1)) order by k.packaged_on, k.label) from kids k), '[]'),
     'ship', (select jsonb_build_object('manifest', s.manifest, 'to', s.recipient_name, 'to_license', s.recipient_license, 'lbs', s.shipped_lbs, 'on', s.shipped_at::date)
