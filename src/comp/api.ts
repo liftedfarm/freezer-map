@@ -5,6 +5,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 function fail(error: { message: string } | null) {
   if (!error) return
   if (/metrc_push|metrc_connection|metrc_set_mode|metrc_me|push_state/i.test(error.message)) throw new Error(`${error.message} (run 070_metrc_push.sql in Supabase)`)
+  if (/reconcile_live|metrc_sync|metrc_packages|metrc_trail/i.test(error.message)) throw new Error(`${error.message} (run 071_metrc_sync.sql in Supabase)`)
   if (/comp_|pallet_trace|test_files|customer_license_status|does not exist|schema cache/i.test(error.message) && /function|relation|column/i.test(error.message))
     throw new Error(`${error.message} (run 055_compliance.sql and 056_ccof_list.sql in Supabase)`)
   throw new Error(error.message)
@@ -64,6 +65,14 @@ export interface T3Conn {
   licenses: { license: string; name: string | null; in_t3: boolean; in_app: boolean; site: string | null; permissions: string[]; permissions_error?: string; reasons_error?: string }[] | null
   reasons: Record<string, { id: number; name: string; requiresNote: boolean }[]> | null
 }
+export interface LiveRecon {
+  issue: 'weight' | 'not_in_metrc' | 'not_in_app' | 'closed_in_app' | 'other_license' | 'item' | 'on_hold' | 'tag_pending' | 'stale'
+  tag: string | null; pallet_id: number | null; code: string | null; strain: string | null; app_lbs: number | null; metrc_lbs: number | null
+  app_item: string | null; metrc_item: string | null; app_license: string | null; metrc_location: string | null; app_spot: string | null
+  metrc_changed: string | null; explain: string | null; trail: unknown; note: string | null
+}
+export interface SyncStatus { license: string; site: string | null; last_pull: string | null; complete: boolean; active: number; error: string | null }
+export interface SyncResult { done: boolean; closed: number; results: { license: string; complete: boolean; error?: string | null; active?: number; transfers?: number; left?: boolean }[]; error?: string }
 export interface PushResult { id: number; state: 'checked' | 'sent' | 'failed' | 'waiting'; info?: string; error?: string }
 export interface Upload { id: number; license: string; file_name: string | null; rows: number; uploaded_by: string | null; uploaded_at: string }
 export interface Recon {
@@ -218,6 +227,15 @@ export class CompApi {
     const j = await r.json().catch(() => ({ error: `The server didn't answer (${r.status})` }))
     if (!r.ok) throw new Error(j.error ?? `Error ${r.status}`)
     return j as T
+  }
+  reconcileLive(license: string) { return this.rpc<LiveRecon[]>('comp_reconcile_live', { p_license: license }) }
+  syncStatus() { return this.rpc<SyncStatus[]>('metrc_sync_status') }
+  async pullMetrc(licenses?: string[]) {
+    const { data } = await this.sb.auth.getSession()
+    const r = await fetch('/api/metrc/sync', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${data.session?.access_token ?? ''}` }, body: JSON.stringify({ licenses }) })
+    const j = await r.json().catch(() => ({ error: `The server didn't answer (${r.status})` }))
+    if (!r.ok) throw new Error(j.error ?? `Error ${r.status}`)
+    return j as SyncResult
   }
   testT3() { return this.metrc<T3Conn>({ action: 'test' }) }
   sendMetrc(ids: number[]) { return this.metrc<{ live: boolean; results: PushResult[]; not_sent: number[] }>({ action: 'send', ids }) }

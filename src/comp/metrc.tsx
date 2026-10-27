@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { MAction, MError, Play, PushKind, PushResult, Recon, Upload } from './api'
 import type { Ctx } from './ctx'
 import { DocList, DropZone, fmtD, today } from './files'
+import { LiveReconcile } from './reconlive'
 import { FIELD_LABEL, download, mapColumns, readTable, toCsv, toRows } from './csv'
 import type { Field, MRow } from './csv'
 import { DateIn, F, Pick, SaveBar, Sheet, TextIn, errText, useSel, SelBox, SelAll, SelBar } from '../cult/ui'
@@ -116,6 +117,15 @@ const ISSUE: Record<Recon['issue'], [string, string]> = {
 const ORDER: Recon['issue'][] = ['closed_in_app', 'not_in_app', 'not_in_metrc', 'other_license', 'weight', 'item', 'on_hold', 'tag_pending', 'stale']
 
 function Reconcile({ c }: { c: Ctx }) {
+  const [mode, setMode] = useState<'live' | 'file'>('live')
+  return <>
+    <div className="chips" style={{ marginBottom: 8 }}>{([['live', 'From METRC (live)'], ['file', 'Upload an export']] as const).map(([k, l]) =>
+      <button key={k} className={mode === k ? 'on' : ''} onClick={() => setMode(k)}>{l}</button>)}</div>
+    {mode === 'live' ? <LiveReconcile c={c} /> : <UploadReconcile c={c} />}
+  </>
+}
+
+function UploadReconcile({ c }: { c: Ctx }) {
   const [ups, setUps] = useState<Upload[]>([])
   const [lic, setLic] = useState<string | null>(c.ov.licenses[0] ?? null)
   const [parsed, setParsed] = useState<{ file: string; rows: MRow[]; cols: Partial<Record<Field, number>> } | null>(null)
