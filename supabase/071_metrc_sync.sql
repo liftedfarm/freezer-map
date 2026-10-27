@@ -154,7 +154,7 @@ begin
   ), m as (select * from metrc_packages x where x.license = p_license and x.state in ('active', 'intransit')),
   bytag as (select distinct on (upper(p.package_tag)) p.* from pallets p join m on upper(p.package_tag) = m.label
              order by upper(p.package_tag), (p.status in ('in_freezer','unslotted')) desc, p.id desc),
-  spot as (select p.id, concat_ws(' ', f.site, f.name, s.code) as where_ from pallets p left join slots s on s.id = p.slot_id left join freezers f on f.id = s.freezer_id),
+  spot as (select p.id, concat_ws(' ', f.site, s.code) as where_ from pallets p left join slots s on s.id = p.slot_id left join freezers f on f.id = s.freezer_id),
   rows_ as (
     select 'not_in_app'::text as issue, m.label as tag, null::bigint as pallet_id, null::text as code, m.item as strain, null::numeric as app_lbs, m.lbs as metrc_lbs,
            null::text as app_item, m.item as metrc_item, null::text as app_license, m.location as metrc_location, m.last_modified, m.source_harvests as note
