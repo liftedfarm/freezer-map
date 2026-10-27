@@ -130,12 +130,19 @@ async function sendAdjust(job, ctx) {
   const d = job.details || {}
   if (!job.license) throw new Error('No license on this to-do')
   if (!job.tag) throw new Error('This package has no METRC tag yet')
-  const target = r4(d.to ?? job.lbs)
-  if (!(target >= 0)) throw new Error('No new weight on this to-do')
   const p = await packageByTag(job.license, job.tag)
   if (!p) throw new Error(`Tag ${job.tag} isn't an active package under ${job.license} in METRC`)
   if (!LB.test(p.unitOfMeasureAbbreviation || '')) throw new Error(`METRC has this package in ${p.unitOfMeasureAbbreviation || '?'}, not pounds. Adjust it by hand.`)
   const cur = r4(p.quantity)
+  // The app's weight now, not the weight written on this to-do: later splits, picks and adjustments change it.
+  const pal = job.pallet_id ? (await db(`pallets?id=eq.${job.pallet_id}&select=current_weight,status`))?.[0] : null
+  const now = pal?.current_weight != null ? r4(pal.current_weight) : null
+  if (now != null && Math.abs(now - cur) < 0.0001) throw new Skip(`METRC already shows ${cur} lb, same as the app`)
+  // Later to-dos for this package still waiting (a split not sent yet, say): replay just this step so they still line up.
+  const later = await db(`comp_metrc_actions?select=id&tag=eq.${encodeURIComponent(job.tag)}&status=in.(todo,error)&id=gt.${job.id}&limit=1`)
+  const step = r4(d.to ?? job.lbs)
+  const target = later?.length || now == null ? step : now
+  if (!(target >= 0)) throw new Error('No new weight on this to-do')
   const delta = r4(target - cur)
   if (Math.abs(delta) < 0.0001) throw new Skip(`METRC already shows ${target} lb`)
   const reason = await reasonFor(ctx, job.license, d.reason)
