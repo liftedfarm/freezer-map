@@ -319,6 +319,17 @@ export async function sendHarvestPlants(job, ctx) {
   const per = Math.floor((wet / plants) * 10000) / 10000
   if (!(per > 0)) throw new Error('Wet weight per plant rounds to 0')
   const deadline = ctx.deadline ?? Date.now() + 40000
+  // METRC is the truth for how many plants are in: if a run was cut off right after a write (before the app saved its
+  // progress), the count still comes out right and no plant gets harvested twice
+  if (ctx.live) {
+    const ex = await harvestByName(lic, name)
+    if (prog.base == null) { prog.base = Number(ex?.plantCount ?? 0); prog.baseWet = Number(ex?.totalWetWeight ?? 0); await saveProgress(job, prog) }
+    else if (ex) {
+      const real = Number(ex.plantCount ?? 0) - prog.base
+      if (real > prog.done) { prog.done = Math.min(real, plants); prog.wet = r4(Number(ex.totalWetWeight ?? 0) - prog.baseWet); await saveProgress(job, prog) }
+    }
+    if (prog.done >= plants) return { state: 'sent', request: null, response: { progress: prog }, info: `METRC: ${plants} plants, ${wet} lb wet into ${name}` }
+  }
   let lastBody = null, lastResp = null
   while (prog.done < plants) {
     if (Date.now() > deadline) break

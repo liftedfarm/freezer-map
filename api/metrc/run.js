@@ -15,7 +15,7 @@ import { incoming, loadChecklist, receiveDelivery } from './_xfer.js'
 import { enc, t3file, up } from './_core.js'
 import { checkRun, suggestRun } from './_tagrange.js'
 
-export const config = { maxDuration: 60 }
+export const config = { maxDuration: 300 }
 
 async function ours() {
   const conn = (await db('metrc_connection?id=eq.1&select=licenses'))?.[0]
