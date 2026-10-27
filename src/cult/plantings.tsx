@@ -147,7 +147,7 @@ function PlantingSheet({ d, c, p, api, flash, onClose, onSaved }: { d: CultData;
         <TagRunBox sb={api.sb} plantingId={p.id} purpose="batch" need={Math.ceil((p.plants ?? 0) / 100)} held={held.get('batch')} onChange={held.reload} />
         {!p.flipped_on && <TagRunBox sb={api.sb} plantingId={p.id} purpose="flower" need={Math.max(0, (p.plants ?? 0) - (p.plant_loss ?? 0))} held={held.get('flower')} onChange={held.reload} />}
       </div>}
-      {p.id && <FlipBox p={p as Planting} busy={busy} run={held.get('flower')} onFlip={on => run(() => api.flip(p.id!, on), 'Flipped to flowering. METRC gets it on the overnight run.')} />}
+      {p.id && <FlipBox p={p as Planting} busy={busy} run={held.get('flower')} onFlip={on => run(() => api.flip(p.id!, on), 'Flipped to flowering. It is on the METRC to-do list.')} />}
       <SaveBar busy={busy} disabled={!x.strain?.trim() || !x.site} onCancel={onClose}
         onSave={() => run(() => api.save('cult_plantings', { ...x, license: x.license ?? site?.license ?? null }), p.id ? 'Saved' : 'Planting added')}
         onDelete={p.id ? () => run(() => api.remove('cult_plantings', p.id!), 'Planting deleted') : undefined} />
@@ -163,7 +163,7 @@ function FlipBox({ p, busy, run, onFlip }: { p: Planting; busy: boolean; run: He
   const ready = !!run && run.tags === left
   return <div className="cnote row wrap" style={{ alignItems: 'center', gap: 8 }}>
     <span>Flip {n0(left)} plants to flowering on</span><DateIn value={on} onChange={setOn} />
-    <button className="ghost small" disabled={busy || left <= 0 || !ready} onClick={() => { if (confirm(`Flip ${n0(left)} ${p.strain} plants to flowering with tags ${run!.first_label} – ${run!.last_label.slice(-9)}? METRC gets it on the overnight run.`)) onFlip(on) }}>Flip to flowering</button>
+    <button className="ghost small" disabled={busy || left <= 0 || !ready} onClick={() => { if (confirm(`Flip ${n0(left)} ${p.strain} plants to flowering with tags ${run!.first_label} – ${run!.last_label.slice(-9)}? ${left > 2000 ? 'This many goes on the overnight run.' : 'Compliance can send it right away.'}`)) onFlip(on) }}>Flip to flowering</button>
     {!ready && left > 0 && <span className="muted">Pick the flowering tags first ({n0(left)}, one per plant).</span>}
   </div>
 }

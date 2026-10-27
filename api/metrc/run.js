@@ -15,6 +15,7 @@ import { enc, t3file, up } from './_core.js'
 import { checkRun, suggestRun } from './_tagrange.js'
 
 export const config = { maxDuration: 60 }
+const FLIP_NOW_MAX = 2000   // one promote call; anything bigger waits for the night run
 
 async function ours() {
   const conn = (await db('metrc_connection?id=eq.1&select=licenses'))?.[0]
@@ -47,8 +48,9 @@ export default async function handler(req, res) {
       const ids = (Array.isArray(body.ids) ? body.ids : []).map(Number).filter(Boolean).slice(0, 50)
       if (!ids.length) return send(res, 400, { error: 'Which to-dos?' })
       const live = await isLive()
-      // flips to flowering are big: they go on the overnight run
-      const night = (await db(`comp_metrc_actions?select=id&id=in.(${ids.join(',')})&kind=eq.flower`)).map(x => x.id)
+      // big flips to flowering (thousands of plants, many promote calls) go on the overnight run; small ones send now
+      const night = (await db(`comp_metrc_actions?select=id,details&id=in.(${ids.join(',')})&kind=eq.flower`))
+        .filter(x => Number(x.details?.plants ?? 0) > FLIP_NOW_MAX).map(x => x.id)
       if (night.length) await asUser(req, 'metrc_queue_night', { p_ids: night })
       const jobs = await rpc('metrc_claim', { p_ids: ids.filter(i => !night.includes(i)), p_limit: ids.length })
       const ctx = { live, by: me.email, deadline: t0 + 45000 }
