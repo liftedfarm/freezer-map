@@ -47,6 +47,9 @@ function transferRow(license, t, now) {
 }
 
 async function upsert(table, rows, conflict) {
+  // one row per key in a batch (a package shipped, returned and shipped again shows up twice): the last one wins
+  const keys = conflict.split(',')
+  rows = [...new Map(rows.map(r => [keys.map(k => r[k]).join('|'), r])).values()]
   for (let i = 0; i < rows.length; i += 500) {
     await db(`${table}?on_conflict=${conflict}`, { method: 'POST', body: JSON.stringify(rows.slice(i, i + 500)), headers: { Prefer: 'resolution=merge-duplicates,return=minimal' } })
   }
@@ -114,6 +117,7 @@ async function syncLicense(license, by, t0) {
             shipped_lbs: toLbs(p.shippedQuantity, p.shippedUnitOfMeasureAbbreviation), received_lbs: toLbs(p.receivedQuantity, p.receivedUnitOfMeasureAbbreviation),
             uom: p.shippedUnitOfMeasureAbbreviation ?? null, state: p.shipmentPackageStateName ?? p.shipmentPackageState ?? null, source_labels: labels(p.sourcePackageLabels) })
         }
+        pk.sort((a, b) => String(a.last_modified ?? '').localeCompare(String(b.last_modified ?? '')))
         await upsert('metrc_packages', pk, 'license,label')
         if (tr.size) await upsert('metrc_transfers', [...tr.values()], 'delivery_id')
         if (tp.length) await upsert('metrc_transfer_packages', tp, 'delivery_id,label')
