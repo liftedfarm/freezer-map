@@ -5,6 +5,7 @@ import type { Ctx } from './ctx'
 import { DocList, DropZone, fmtD, today } from './files'
 import { LiveReconcile } from './reconlive'
 import { NurseryReconcile } from './nurseryrecon'
+import { FarmReconcile } from './farmrecon'
 import { Mapping } from './mapping'
 import { FIELD_LABEL, download, mapColumns, readTable, toCsv, toRows } from './csv'
 import type { Field, MRow } from './csv'
@@ -121,11 +122,11 @@ const ISSUE: Record<Recon['issue'], [string, string]> = {
 const ORDER: Recon['issue'][] = ['closed_in_app', 'not_in_app', 'not_in_metrc', 'other_license', 'weight', 'item', 'on_hold', 'tag_pending', 'stale']
 
 function Reconcile({ c }: { c: Ctx }) {
-  const [mode, setMode] = useState<'live' | 'nursery' | 'file'>('live')
+  const [mode, setMode] = useState<'live' | 'farm' | 'nursery' | 'file'>('live')
   return <>
-    <div className="chips" style={{ marginBottom: 8 }}>{([['live', 'From METRC (live)'], ['nursery', 'Nursery (1PN)'], ['file', 'Upload an export']] as const).map(([k, l]) =>
+    <div className="chips" style={{ marginBottom: 8 }}>{([['live', 'From METRC (live)'], ['farm', 'Farm plants'], ['nursery', 'Nursery (1PN)'], ['file', 'Upload an export']] as const).map(([k, l]) =>
       <button key={k} className={mode === k ? 'on' : ''} onClick={() => setMode(k)}>{l}</button>)}</div>
-    {mode === 'live' ? <LiveReconcile c={c} /> : mode === 'nursery' ? <NurseryReconcile c={c} /> : <UploadReconcile c={c} />}
+    {mode === 'live' ? <LiveReconcile c={c} /> : mode === 'farm' ? <FarmReconcile c={c} /> : mode === 'nursery' ? <NurseryReconcile c={c} /> : <UploadReconcile c={c} />}
   </>
 }
 

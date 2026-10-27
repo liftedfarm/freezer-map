@@ -145,7 +145,7 @@ function PlantingSheet({ d, c, p, api, flash, onClose, onSaved }: { d: CultData;
       {x.plants && x.est_lbs_per_plant ? <p className="cnote">Projected {n0(x.plants * x.est_lbs_per_plant)} lbs fresh frozen.</p> : null}
       {p.id && <div className="cnote">
         <TagRunBox sb={api.sb} plantingId={p.id} purpose="batch" need={Math.ceil((p.plants ?? 0) / 100)} held={held.get('batch')} onChange={held.reload} />
-        {!p.flipped_on && <TagRunBox sb={api.sb} plantingId={p.id} purpose="flower" need={Math.max(0, (p.plants ?? 0) - (p.plant_loss ?? 0))} held={held.get('flower')} onChange={held.reload} />}
+        {!p.flipped_on && <TagRunBox sb={api.sb} plantingId={p.id} purpose="flower" need={Math.max(0, p.plants ?? 0)} held={held.get('flower')} onChange={held.reload} />}
       </div>}
       {p.id && <FlipBox p={p as Planting} busy={busy} run={held.get('flower')} onFlip={on => run(() => api.flip(p.id!, on), 'Flipped to flowering. It is on the METRC to-do list.')} />}
       <SaveBar busy={busy} disabled={!x.strain?.trim() || !x.site} onCancel={onClose}
@@ -159,7 +159,7 @@ function PlantingSheet({ d, c, p, api, flash, onClose, onSaved }: { d: CultData;
 function FlipBox({ p, busy, run, onFlip }: { p: Planting; busy: boolean; run: HeldRun | null; onFlip: (on: string | null) => void }) {
   const [on, setOn] = useState<string | null>(today())
   if (p.flipped_on) return <p className="cnote">Flipped to flowering {fmtD(p.flipped_on)}{p.flipped_by ? ` by ${p.flipped_by.split('@')[0]}` : ''}{run ? `, tags ${run.first_label} – ${run.last_label.slice(-9)}` : ''}.</p>
-  const left = (p.plants ?? 0) - (p.plant_loss ?? 0)
+  const left = p.plants ?? 0   // Plants in field is already net of loss
   const ready = !!run && run.tags === left
   return <div className="cnote row wrap" style={{ alignItems: 'center', gap: 8 }}>
     <span>Flip {n0(left)} plants to flowering on</span><DateIn value={on} onChange={setOn} />

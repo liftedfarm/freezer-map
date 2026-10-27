@@ -249,6 +249,16 @@ export class CompApi {
     return j as T
   }
   reconcileNursery() { return this.rpc<NurseryRecon[]>('comp_reconcile_nursery', {}) }
+  farmLicenses() { return this.rpc<{ license: string; site: string }[]>('comp_farm_licenses', {}) }
+  reconcilePlants(license: string) { return this.rpc<PlantRecon[]>('comp_reconcile_plants', { p_license: license }) }
+  reconcileFarmHarvests(license: string) { return this.rpc<HarvestRecon[]>('comp_reconcile_farm_harvests', { p_license: license }) }
+  async countPlants(license: string) {
+    const { data } = await this.sb.auth.getSession()
+    const r = await fetch('/api/metrc/sync', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${data.session?.access_token ?? ''}` }, body: JSON.stringify({ licenses: [license], only: 'plants' }) })
+    const j = await r.json().catch(() => ({ error: `The server didn't answer (${r.status})` }))
+    if (!r.ok) throw new Error(j.error ?? `Error ${r.status}`)
+    return j as { done: boolean; results: { license: string; complete: boolean; error: string | null; plants: number; calls: number; notes: string[] }[] }
+  }
   reconcileLive(license: string) { return this.rpc<LiveRecon[]>('comp_reconcile_view', { p_license: license }) }
   reconApply(rows: { key: string; action: string; reason: string }[], dry: boolean) {
     return this.rpc<{ dry: boolean; done: number; skipped: number; rows: { key: string; action: string; ok: boolean; msg: string | null; code: string | null; issue: string }[] }>('comp_recon_apply', { p_rows: rows, p_dry: dry })
@@ -297,3 +307,10 @@ export class CompApi {
     return j as { copied?: number; archived?: number; failed?: number; left_over?: number; skipped?: string; error?: string }
   }
 }
+
+export interface PlantRecon { strain: string; metrc_strain: string | null; fields: string | null; metrc_locations: string | null; plantings: number
+  planted: number; app_harvested: number; app_live: number; metrc_immature: number; metrc_flowering: number | null; metrc_live: number; metrc_harvested: number
+  metrc_counted: string | null; diff: number; issue: 'ok' | 'not_counted' | 'not_in_app' | 'not_in_metrc' | 'harvest_count' | 'harvest_behind' | 'not_flipped' | 'short' | 'over'; note: string | null }
+export interface HarvestRecon { harvest_id: number | null; metrc_id: number | null; name: string | null; strain: string | null; field: string | null; harvested_on: string | null; kind: string | null
+  app_plants: number | null; metrc_plants: number | null; app_wet: number | null; metrc_wet: number | null; metrc_left: number | null; metrc_packaged: number | null; metrc_finished: boolean | null
+  issue: 'ok' | 'not_in_app' | 'no_name' | 'not_in_metrc' | 'plants' | 'weight' | 'open'; note: string | null }

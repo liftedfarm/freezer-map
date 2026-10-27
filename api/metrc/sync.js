@@ -242,7 +242,14 @@ async function syncPlants(license, out, now) {
       const total = Number(head?.total ?? list(head).length)
       const run = `r${Date.parse(now)}`
       if (total > PLANT_DETAIL_MAX) {
-        await rpc('metrc_plant_counts_add', { p_license: license, p_phase: phase, p_run: run, p_rows: [{ location_id: 0, location: '(all, too many to break down nightly)', strain: '', plants: total }] })
+        // too many to page: count them by strain (one call each), then by field for each strain with plants.
+        // That takes a few hundred calls, so only the plants-only pull does it (its own nightly run, or Count plants now)
+        if (!out.byStrain) {
+          const kept = await db(`metrc_plant_counts?license=eq.${encodeURIComponent(license)}&phase=eq.${phase}&run=eq.live&strain=neq.&select=plants`)
+          if (kept.length) { out.notes.push(`${phase}: ${total.toLocaleString()} plants (kept the last count by strain)`); out.plants += total; return true }
+        }
+        const rows = out.byStrain ? await countByStrain(license, phase, total, out) : [{ location_id: 0, location: '(strain not counted)', strain: '', plants: total }]
+        if (rows.length) await rpc('metrc_plant_counts_add', { p_license: license, p_phase: phase, p_run: run, p_rows: rows })
         await rpc('metrc_plant_counts_swap', { p_license: license, p_phase: phase, p_run: run })
         out.plants += total
         return true
@@ -270,9 +277,66 @@ async function syncPlants(license, out, now) {
   return true
 }
 
+/** plants of a phase counted by strain and location without paging them all: T3 gives the total for any filter.
+ *  Strains with up to SMALL_STRAIN plants are paged (location + planted dates); bigger ones are counted per location. */
+const SMALL_STRAIN = 2500
+async function pool(items, k, fn) {
+  let i = 0
+  await Promise.all(Array.from({ length: Math.min(k, items.length) }, async () => { while (i < items.length) await fn(items[i++]) }))
+}
+async function countByStrain(license, phase, total, out) {
+  const path = `/v2/plants/${phase}`
+  const count = async filter => { out.calls++; return Number((await t3('GET', path, { query: { licenseNumber: license, filter, filterLogic: 'and', page: 1, pageSize: 1 } }))?.total ?? 0) }
+  const strains = (await db(`metrc_strains?license=eq.${encodeURIComponent(license)}&archived=is.false&select=name`)).map(x => x.name)
+  const locs = (await db(`metrc_locations?license=eq.${encodeURIComponent(license)}&archived=is.false&select=id,name`))
+  const byStrain = new Map()
+  await pool(strains, 8, async n => { if (out.timeUp()) return; const c = await count(`strainName__eq:${n}`); if (c > 0) byStrain.set(n, c) })
+  const locTotals = new Map()
+  await pool(locs, 8, async l => { if (out.timeUp()) return; const c = await count(`locationName__eq:${l.name}`); if (c > 0) locTotals.set(l.name, { id: l.id, n: c }) })
+  const rows = []
+  await pool([...byStrain], 4, async ([n, c]) => {
+    if (out.timeUp()) { rows.push({ location_id: 0, location: '(field not counted)', strain: n, plants: c }); return }
+    if (c <= SMALL_STRAIN) {
+      const agg = new Map()
+      for (let page = 1; page <= Math.ceil(c / PAGE); page++) {
+        out.calls++
+        const j = await t3('GET', path, { query: { licenseNumber: license, filter: `strainName__eq:${n}`, page, pageSize: PAGE } })
+        for (const p of list(j)) {
+          const k = p.locationId ?? 0
+          const a = agg.get(k) ?? { location_id: k, location: p.locationName ?? null, strain: n, plants: 0, oldest: null, newest: null }
+          a.plants++
+          const d = day(p.plantedDate)
+          if (d && (!a.oldest || d < a.oldest)) a.oldest = d
+          if (d && (!a.newest || d > a.newest)) a.newest = d
+          agg.set(k, a)
+        }
+      }
+      rows.push(...agg.values()); return
+    }
+    let seen = 0
+    for (const [ln, l] of locTotals) {
+      const k = await count([`strainName__eq:${n}`, `locationName__eq:${ln}`])
+      if (k > 0) { rows.push({ location_id: l.id, location: ln, strain: n, plants: k }); seen += k }
+    }
+    if (seen < c) rows.push({ location_id: 0, location: '(field not counted)', strain: n, plants: c - seen })
+  })
+  const counted = [...byStrain.values()].reduce((a, b) => a + b, 0)
+  if (counted < total) rows.push({ location_id: 0, location: '(strain not counted)', strain: '', plants: total - counted })
+  return rows
+}
+
+/** plants only: plant batches and plant counts (Reconcile > Farm plants > Count plants now) */
+async function syncPlantsOnly(license, t0) {
+  const out = { calls: 0, locations: 0, strains: 0, plant_batches: 0, harvests: 0, plants: 0, notes: [], byStrain: true, timeUp: () => Date.now() - t0 > BUDGET_MS }
+  let complete = false, error = null
+  try { complete = await syncPlants(license, out, new Date().toISOString()) } catch (e) { error = String(e.message || e).slice(0, 500) }
+  return { license, complete, error, plants: out.plants, plant_batches: out.plant_batches, harvests: out.harvests, calls: out.calls, notes: out.notes }
+}
+
 export default async function handler(req, res) {
   const t0 = Date.now()
   let by = 'nightly'
+  const only = req.body?.only ?? new URL(req.url ?? '/', 'http://x').searchParams.get('only')
   if (req.method === 'GET') {
     const secret = process.env.CRON_SECRET
     if (!secret || req.headers.authorization !== `Bearer ${secret}`) return send(res, 401, { error: 'no' })
@@ -284,16 +348,20 @@ export default async function handler(req, res) {
   if (missing().length) return send(res, 200, { skipped: `missing ${missing().join(', ')}` })
   try {
     // one pull at a time
-    const busy = await db(`metrc_sync_runs?finished_at=is.null&started_at=gt.${encodeURIComponent(new Date(Date.now() - 6 * 60000).toISOString())}&select=id&limit=1`)
+    const busy = only ? [] : await db(`metrc_sync_runs?finished_at=is.null&started_at=gt.${encodeURIComponent(new Date(Date.now() - 6 * 60000).toISOString())}&select=id&limit=1`)
     if (busy.length) return send(res, 409, { error: 'A METRC pull is already running. Try again in a few minutes.' })
     const conn = (await db('metrc_connection?id=eq.1&select=licenses'))?.[0]
     const reach = (conn?.licenses ?? []).filter(l => l.in_t3).map(l => l.license)
-    const want = Array.isArray(req.body?.licenses) && req.body.licenses.length ? req.body.licenses.filter(l => reach.includes(l)) : reach
+    let want = Array.isArray(req.body?.licenses) && req.body.licenses.length ? req.body.licenses.filter(l => reach.includes(l)) : reach
+    if (only === 'plants' && !req.body?.licenses?.length) {   // farm licenses only
+      const farms = (await db('licenses?select=license_no&kind=eq.cultivation&active=is.true')).map(l => l.license_no)
+      want = want.filter(l => farms.includes(l))
+    }
     if (!want.length) return send(res, 400, { error: 'No licenses to pull. Test the METRC connection in Compliance > Settings first.' })
     const results = []
     for (const lic of want) {
       if (Date.now() - t0 > BUDGET_MS) { results.push({ license: lic, complete: false, left: true }); continue }
-      results.push(req.body?.only === 'tags' ? await syncTagsOnly(lic, t0) : await syncLicense(lic, by, t0))
+      results.push(only === 'tags' ? await syncTagsOnly(lic, t0) : only === 'plants' ? await syncPlantsOnly(lic, t0) : await syncLicense(lic, by, t0))
     }
     let closed = 0
     try { closed = await rpc('metrc_autoclose', {}) } catch { /* 071 missing */ }

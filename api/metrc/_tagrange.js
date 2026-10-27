@@ -125,7 +125,7 @@ export async function plantingNeeds(id) {
   if (!pl) throw new Error('Planting not found')
   const lic = await rpc('planting_license', { p_planting: pl.id })
   if (!lic) throw new Error(`No cultivation license for ${pl.site}`)
-  const left = Math.max(0, Number(pl.plants ?? 0) - Number(pl.plant_loss ?? 0))
+  const left = Math.max(0, Number(pl.plants ?? 0))   // Plants in field is already net of loss
   return { pl, lic, need: { batch: Math.ceil(Number(pl.plants ?? 0) / 100), flower: left } }
 }
 
