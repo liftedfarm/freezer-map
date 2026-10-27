@@ -297,7 +297,7 @@ export class CompApi {
   }
   mapLocation(kind: LocMap['app_kind'], ref: string, license: string, locationId: number | null) { return this.rpc<void>('metrc_map_location', { p_kind: kind, p_ref: ref, p_license: license, p_location_id: locationId }) }
   mapStrain(strain: string, license: string, strainId: number | null) { return this.rpc<void>('metrc_map_strain', { p_strain: strain, p_license: license, p_strain_id: strainId }) }
-  sendMetrc(ids: number[]) { return this.metrc<{ live: boolean; results: PushResult[]; not_sent: number[] }>({ action: 'send', ids }) }
+  sendMetrc(ids: number[]) { return this.metrc<{ live: boolean; results: PushResult[]; not_sent: number[]; out_of_time?: number[] }>({ action: 'send', ids }) }
   /** start the SharePoint backup now (server function) */
   async runBackup() {
     const { data } = await this.sb.auth.getSession()

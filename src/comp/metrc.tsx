@@ -106,7 +106,8 @@ function Todo({ c }: { c: Ctx }) {
       const r = await c.api.sendMetrc(go)
       const n = (s: PushResult['state']) => r.results.filter(x => x.state === s).length
       const first = r.results.find(x => x.state === 'failed')
-      const held = r.not_sent?.length ? `. ${r.not_sent.length} not sent (kind off, or before the site's METRC cutover date)` : ''
+      const held = (r.not_sent?.length ? `. ${r.not_sent.length} not sent (kind off, or before the site's METRC cutover date)` : '')
+        + (r.out_of_time?.length ? `. ${r.out_of_time.length} not reached yet: Auto ones go on the next run; send the others again` : '')
       c.flash((r.live ? `${n('sent')} sent, ${n('failed')} failed${n('waiting') ? `, ${n('waiting')} waiting` : ''}${first ? `: ${first.error}` : ''}`
         : `Dry run: ${n('checked')} OK, ${n('failed')} failed${n('waiting') ? `, ${n('waiting')} waiting` : ''}${first ? `: ${first.error}` : ''}`) + held, n('failed') > 0)
       sel.stop(); await load(); await c.reload()

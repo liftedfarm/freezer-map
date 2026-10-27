@@ -331,12 +331,19 @@ export async function sendHarvestPlants(job, ctx) {
     if (prog.done >= plants) return { state: 'sent', request: null, response: { progress: prog }, info: `METRC: ${plants} plants, ${wet} lb wet into ${name}` }
   }
   let lastBody = null, lastResp = null
+  // plants come from the field; once the field has none left, from the drying location (plants already moved in from the field)
+  const places = [...new Set([loc.location, dry.location].filter(Boolean))]
+  let at = 0
   while (prog.done < plants) {
     if (Date.now() > deadline) break
     const n = Math.min(WRITE_MAX, plants - prog.done)   // METRC takes 25 entries per call
-    const src = list(await t3('GET', '/v2/harvests/create/source-plants', { query: { licenseNumber: lic, pageSize: n, filter: [`locationName__eq:${loc.location}`, `strainName__eq:${strain.name}`], filterLogic: 'and', sort: 'label:asc' } }))
-      .filter(p => Number(p.harvestCount ?? 0) === 0 && lc(p.locationName) === lc(loc.location))
-    if (!src.length) throw new Error(`No flowering ${strain.name} plants left in ${loc.location} on ${lic} (${prog.done} of ${plants} harvested)`)
+    const where = places[at]
+    const src = list(await t3('GET', '/v2/harvests/create/source-plants', { query: { licenseNumber: lic, pageSize: n, filter: [`locationName__eq:${where}`, `strainName__eq:${strain.name}`], filterLogic: 'and', sort: 'label:asc' } }))
+      .filter(p => Number(p.harvestCount ?? 0) === 0 && lc(p.locationName) === lc(where))
+    if (!src.length) {
+      if (++at < places.length) continue
+      throw new Error(`No flowering ${strain.name} plants left in ${places.join(' or ')} on ${lic} (${prog.done} of ${plants} harvested)`)
+    }
     const body = src.slice(0, n).map((p, i) => {
       const last = prog.done + i + 1 === plants
       return { actualDate: day(h.harvested_on, job), harvestName: name, id: p.id, weight: last ? r4(wet - prog.wet - per * i) : per, dryingLocationId: dry.location_id, unitOfWeightId: lb }

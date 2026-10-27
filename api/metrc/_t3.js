@@ -110,3 +110,34 @@ export async function runJob(job, ctx) {
     return { id: job.id, state, error: e.message }
   }
 }
+
+/** Send to-dos until the time budget is used: one at a time (metrc_claim_next), so only the one actually going to METRC shows
+ *  Sending and the rest stay queued. ids = the to-dos to send (Send button), or null for every Auto to-do that's due.
+ *  Falls back to claiming them all up front when the database doesn't have metrc_claim_next yet (082 not run). */
+export async function sendQueue(ctx, ids, t0, budgetMs) {
+  const tried = [], out = []
+  let timedOut = false
+  try {
+    for (;;) {
+      if (Date.now() - t0 > budgetMs) { timedOut = true; break }
+      const jobs = await rpc('metrc_claim_next', { p_ids: ids, p_skip: tried })
+      if (!jobs?.length) break
+      tried.push(jobs[0].id)
+      out.push(await runJob(jobs[0], ctx))
+    }
+    return { out, tried, timedOut }
+  } catch (e) {
+    if (tried.length || !/metrc_claim_next|function|schema cache|404/i.test(String(e?.message ?? e))) throw e
+  }
+  const jobs = await rpc('metrc_claim', { p_ids: ids, p_limit: ids ? ids.length : 40 })
+  for (const j of jobs.sort((a, b) => a.id - b.id)) {
+    tried.push(j.id)
+    if (Date.now() - t0 > budgetMs) {
+      timedOut = true
+      await rpc('metrc_result', { p_id: j.id, p_state: 'waiting', p_by: ctx.by, p_request: null, p_response: null, p_error: ids ? 'Out of time: send again' : 'Next run' }).catch(() => {})
+      continue
+    }
+    out.push(await runJob(j, ctx))
+  }
+  return { out, tried, timedOut }
+}
