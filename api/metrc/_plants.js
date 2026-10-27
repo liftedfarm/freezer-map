@@ -358,8 +358,12 @@ export async function sendHarvestPackage(job, ctx) {
   const want = (await one(`items?id=eq.${pal.item_id ?? 0}&select=metrc_name`))?.metrc_name
   const items = await all('/v2/harvests/create/packages/source-items', { licenseNumber: lic }, 5)
   const fin = { fresh_frozen: /fresh frozen/i, wet: /(dry harvest|wet)/i, unbucked: /unbucked/i }[pal.product] ?? /./
-  const item = (want && items.find(i => lc(i.name) === lc(want))) ?? items.find(i => (lc(i.strainName) === lc(pal.strain) || lc(i.name).includes(lc(pal.strain))) && fin.test(i.name))
-  if (!item) throw new Error(`No METRC item ${want ? `"${want}"` : `for ${pal.strain} ${pal.product}`} on ${lic}`)
+  // the strain as METRC knows it (the strain map, or one of the strain's other names), e.g. Violet Torque = Newport Punch #6
+  const ms = (await rpc('metrc_strain_for', { p_strain: pal.strain, p_license: lic }).catch(() => null))?.name
+  const names = [pal.strain, ms].filter(Boolean).map(lc)
+  const item = (want && items.find(i => lc(i.name) === lc(want)))
+    ?? items.find(i => (names.includes(lc(i.strainName)) || names.some(n => lc(i.name).includes(n))) && fin.test(i.name))
+  if (!item) throw new Error(`No METRC item ${want ? `"${want}"` : `for ${pal.strain}${ms && lc(ms) !== lc(pal.strain) ? ` (${ms} in METRC)` : ''} ${pal.product}`} on ${lic}`)
   const inp = await inputs(ctx, lic, '/v2/harvests/create/packages/inputs')
   const lb = uomFrom(inp, 'lb')
   const qty = r4(d.type === 'proc_wet' ? job.lbs : (pal.og_weight ?? job.lbs))
