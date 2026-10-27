@@ -89,10 +89,11 @@ async function syncLicense(license, by, t0) {
         { method: 'PATCH', body: JSON.stringify({ state: 'gone' }), headers: { Prefer: 'return=minimal' } })
     }
     // 2) inactive and transferred since the last pull (2 days overlap)
-    for (const [step, path, state] of [['inactive', '/v2/packages/inactive', 'inactive'], ['transferred', '/v2/packages/transferred', 'transferred']]) {
+    // (T3 filters transferred packages by departure, not lastModified)
+    for (const [step, path, state, field] of [['inactive', '/v2/packages/inactive', 'inactive', 'lastModified'], ['transferred', '/v2/packages/transferred', 'transferred', 'actualDepartureDateTime']]) {
       if (!full) break
       const since = (await cursor(license, step)) ?? SEASON_START
-      const ok = await pages(path, { licenseNumber: license, filter: `lastModified__gte:${since}`, sort: 'lastModified:asc' }, async rows => {
+      const ok = await pages(path, { licenseNumber: license, filter: `${field}__gte:${since}` }, async rows => {
         await upsert('metrc_packages', rows.map(p => pkgRow(license, p, state, now)).filter(r => r.label), 'license,label'); out[step] += rows.length
       }, out)
       if (ok) await setCursor(license, step, new Date(Date.parse(now) - 2 * 86400000).toISOString())
