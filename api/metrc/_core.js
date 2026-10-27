@@ -126,6 +126,8 @@ export async function tol() { return Number(await setting('comp.weight_tol', '0.
 export class Wait extends Error {}
 /** nothing to send: METRC already matches (or a check passed) */
 export class Skip extends Error {}
+/** someone pressed Stop on the to-do: stop after the step it's on, keep what's in METRC, hold the rest */
+export class Held extends Error {}
 
 // ---------- METRC lookups (cached per run in ctx.cache) ----------
 export function cached(ctx, key, fn) {

@@ -59,7 +59,7 @@ export interface AppLog {
 export interface MAction {
   id: number; at: string; due_at?: string | null; harvest_id?: number | null; license: string | null; action: string; pallet_id: number | null; code: string | null; tag: string | null; lbs: number | null
   summary: string | null; details: Record<string, unknown> | null; status: 'todo' | 'done' | 'error' | 'skipped'; note: string | null; done_by: string | null; done_at: string | null
-  kind?: string | null; push_state?: 'checked' | 'sending' | 'sent' | 'failed' | 'waiting' | null; push_attempts?: number; push_at?: string | null
+  kind?: string | null; push_state?: 'checked' | 'sending' | 'sent' | 'failed' | 'waiting' | 'held' | null; stop_requested?: boolean; push_attempts?: number; push_at?: string | null
   push_by?: string | null; push_error?: string | null; push_request?: unknown; push_response?: unknown
 }
 export interface PushKind { kind: string; label: string; phase: number; sort: number; ready: boolean; mode: 'off' | 'approve' | 'auto'; updated_by: string | null; updated_at: string }
@@ -215,6 +215,9 @@ export class CompApi {
     if (status) q = q.eq('status', status)
     const { data, error } = await q; fail(error); return (data ?? []) as MAction[]
   }
+  /** Stop: hold a queued to-do, stop a long send after its batch, or (waste / finish) cancel both and reopen the harvest */
+  stopMetrc(id: number) { return this.rpc<string>('metrc_stop', { p_id: id }) }
+  releaseMetrc(id: number) { return this.rpc<null>('metrc_release', { p_id: id }) }
   setActions(ids: number[], status: MAction['status'], note?: string) { return this.rpc<number>('comp_metrc_set', { p_ids: ids, p_status: status, p_note: note ?? null }) }
   async uploads() { const { data, error } = await this.sb.from('comp_metrc_uploads').select('*').order('uploaded_at', { ascending: false }).limit(60); fail(error); return (data ?? []) as Upload[] }
   uploadMetrc(license: string, file: string, rows: object[]) { return this.rpc<number>('comp_metrc_upload', { p_license: license, p_file: file, p_rows: rows }) }

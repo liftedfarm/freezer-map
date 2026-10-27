@@ -2,7 +2,7 @@
 // losses, the flip to flowering (overnight, plant tags), and the harvest chain (harvest plants, packages from harvest, waste, finish).
 // Every one of these waits for its site's cutover date (Compliance > METRC > Mapping); before that they're done by hand.
 import {
-  WRITE_MAX, Skip, Wait, all, db, enc, first, inputs, list, lc, mappedLocation, one, packageByTag, r4, reasonFrom, rpc, setting, strainFor,
+  WRITE_MAX, Held, Skip, Wait, all, db, enc, first, inputs, list, lc, mappedLocation, one, packageByTag, r4, reasonFrom, rpc, setting, strainFor,
   t3, tagIdFor, uomFrom, up, write, ymd, adjustReasons,
 } from './_core.js'
 import { heldRun } from './_tagrange.js'
@@ -10,6 +10,8 @@ import { heldRun } from './_tagrange.js'
 const day = (v, job) => (v ? String(v).slice(0, 10) : ymd(job.at))
 const progressOf = job => ({ ...(job.push_response?.progress ?? {}) })
 const saveProgress = (job, p) => rpc('metrc_progress', { p_id: job.id, p_progress: p })
+/** Stop pressed on this to-do (checked between batches of a long send) */
+const stopAsked = async job => !!(await one(`comp_metrc_actions?id=eq.${job.id}&select=stop_requested`).catch(() => null))?.stop_requested
 
 async function plantBatch(license, name, path = '/v2/plantbatches/active') {
   for (const f of [`name__eq:${name}`, `label__eq:${up(name)}`]) {
@@ -274,6 +276,7 @@ export async function sendFlower(job, ctx) {
     let left = Number(b.untrackedCount)
     while (left > 0 && prog.done + sentNow < want) {
       if (Date.now() > deadline) break
+      if (await stopAsked(job)) throw new Held(`Stopped: ${prog.done + sentNow} of ${want} plants flipped. Release to carry on.`)
       const run = await next(Math.min(left, want - prog.done - sentNow, 2000))
       if (!run) throw new Error(`Out of plant tags on ${lic} (${prog.done + sentNow} of ${want} flipped). Order more tags, then it continues.`)
       const body = [{ growthDate: date, growthPhase: 'Flowering', id: b.id, newLocationId: loc.location_id, plantsCount: run.count, startingTagId: run.start, endingTagId: run.end }]
@@ -337,6 +340,7 @@ export async function sendHarvestPlants(job, ctx) {
   let at = 0
   while (prog.done < plants) {
     if (Date.now() > deadline) break
+    if (await stopAsked(job)) throw new Held(`Stopped: ${prog.done} of ${plants} plants harvested into ${name}. Release to carry on.`)
     const n = Math.min(WRITE_MAX, plants - prog.done)   // METRC takes 25 entries per call
     const where = places[at]
     const src = list(await t3('GET', '/v2/harvests/create/source-plants', { query: { licenseNumber: lic, pageSize: n, filter: [`locationName__eq:${where}`, `strainName__eq:${strain.name}`], filterLogic: 'and', sort: 'label:asc' } }))

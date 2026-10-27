@@ -1,6 +1,6 @@
 // METRC through T3: the connection test and runJob (one to-do, sent or dry-run checked). Plumbing is in _core.js,
 // the senders in _pkg.js (packages), _xfer.js (transfers, manifests, receiving) and _plants.js (nursery, plantings, harvests).
-import { Skip, Wait, adjustReasons, all, db, enc, list, rpc, t3 } from './_core.js'
+import { Held, Skip, Wait, adjustReasons, all, db, enc, list, rpc, t3 } from './_core.js'
 import { sendAdjust, sendCombine, sendFinish, sendNewPackageCheck, sendShipCheck, sendSplit, sendTagCheck } from './_pkg.js'
 import { sendReceive, sendTransfer_ } from './_xfer.js'
 import {
@@ -105,7 +105,7 @@ export async function runJob(job, ctx) {
       await rpc('metrc_result', { p_id: job.id, p_state: st, p_by: by, p_request: null, p_response: null, p_error: e.message })
       return { id: job.id, state: st, info: e.message }
     }
-    const state = e instanceof Wait ? 'waiting' : 'failed'
+    const state = e instanceof Held ? 'held' : e instanceof Wait ? 'waiting' : 'failed'
     await rpc('metrc_result', { p_id: job.id, p_state: state, p_by: by, p_request: null, p_response: e.body ?? null, p_error: e.message }).catch(() => {})
     return { id: job.id, state, error: e.message }
   }

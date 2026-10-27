@@ -14,7 +14,7 @@ import { DateIn, F, Pick, SaveBar, Sheet, TextIn, errText, useSel, SelBox, SelAl
 const when = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '')
 const short = (t: string | null | undefined) => (t ? (t.length > 10 ? `…${t.slice(-8)}` : t) : '')
 const n2 = (x: number | null | undefined) => (x == null ? '' : (Math.round(Number(x) * 100) / 100).toLocaleString())
-const PS: Record<NonNullable<MAction['push_state']>, [string, string]> = { checked: ['Dry run OK', 'cp-ok'], sending: ['Sending…', 'cp-warn'], sent: ['Sent by the app', 'cp-ok'], failed: ['Send failed', 'cp-bad'], waiting: ['Waiting', 'cp-mute'] }
+const PS: Record<NonNullable<MAction['push_state']>, [string, string]> = { checked: ['Dry run OK', 'cp-ok'], sending: ['Sending…', 'cp-warn'], sent: ['Sent by the app', 'cp-ok'], failed: ['Send failed', 'cp-bad'], waiting: ['Waiting', 'cp-mute'], held: ['Held', 'cp-warn'] }
 const ST: Record<MAction['status'], [string, string]> = { todo: ['To do', 'cp-warn'], done: ['Done', 'cp-ok'], error: ['Problem', 'cp-bad'], skipped: ['Skipped', 'cp-mute'] }
 
 export function Metrc({ c }: { c: Ctx }) {
@@ -36,6 +36,7 @@ export function Metrc({ c }: { c: Ctx }) {
 //   waste / finish with a wait: time until it can go
 //   everything else: queued, sending, waiting on an earlier to-do, failed, sent
 const STEPPED = new Set(['harvest_plants', 'planting', 'flower'])
+const STOPPABLE = new Set(['harvest_plants', 'flower'])   // long sends that can stop between batches
 const n0b = (x: number) => Math.round(x).toLocaleString()
 function MetrcBar({ r, now }: { r: MAction; now: number }) {
   if (r.status === 'skipped') return null
@@ -49,7 +50,7 @@ function MetrcBar({ r, now }: { r: MAction; now: number }) {
   if (r.kind && STEPPED.has(r.kind) && total > 0) {
     const d = done ? total : Math.min(Number(prog?.done ?? 0), total)
     pct = (d / total) * 100
-    left = `${n0b(d)} of ${n0b(total)} plants`
+    left = `${n0b(d)} of ${n0b(total)} plants${r.push_state === 'held' ? ' · held' : sending && r.stop_requested ? ' · stopping after this batch' : ''}`
     right = `${Math.floor(pct)}%`
   } else if (done) { pct = 100; left = 'In METRC' }
   else if (r.due_at && new Date(r.due_at).getTime() > now) {
@@ -57,14 +58,16 @@ function MetrcBar({ r, now }: { r: MAction; now: number }) {
     pct = Math.max(0, Math.min(100, ((now - a) / Math.max(1, b - a)) * 100)); cls = 'due'
     const m = Math.max(1, Math.ceil((b - now) / 60000))
     left = 'Waiting to send'; right = m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m left` : `${m}m left`
-  } else if (sending) { pct = 100; cls = 'wait'; left = 'Sending to METRC…' }
+  } else if (r.push_state === 'held') { pct = 100; cls = 'wait'; left = 'Held: press Release to send' }
+  else if (sending) { pct = 100; cls = 'wait'; left = r.stop_requested ? 'Stopping after this batch…' : 'Sending to METRC…' }
   else if (err) { pct = 100; cls = 'bad'; left = 'Stopped' }
   else if (blocked) { pct = 100; cls = 'wait'; left = 'Waiting on an earlier to-do' }
   else if (r.push_state === 'waiting') { pct = 0; left = 'Next run' }
   else left = 'Queued'
   if (STEPPED.has(r.kind ?? '') && total > 0) {
     if (done) cls = ''
-    else if (sending) cls = 'go'
+    else if (sending && !r.stop_requested) cls = 'go'
+    else if (sending || r.push_state === 'held') cls = 'wait'
     else if (err) cls = 'bad'
     else if (blocked) cls = 'wait'
   }
@@ -96,7 +99,7 @@ function Todo({ c }: { c: Ctx }) {
     c.api.pushKinds().then(k => setKinds(Object.fromEntries(k.map(x => [x.kind, x])))).catch(() => {})
     c.api.sb.from('app_settings').select('value').eq('key', 'comp.metrc_live').maybeSingle().then(r => setLive(r.data?.value === 'true'))
   }, [])
-  const sendable = (r: MAction) => (r.status === 'todo' || r.status === 'error') && r.push_state !== 'sending' && !!r.kind && !!kinds[r.kind]?.ready && kinds[r.kind]?.mode !== 'off'
+  const sendable = (r: MAction) => (r.status === 'todo' || r.status === 'error') && r.push_state !== 'sending' && r.push_state !== 'held' && !!r.kind && !!kinds[r.kind]?.ready && kinds[r.kind]?.mode !== 'off'
   async function push(ids: number[]) {
     const go = ids.filter(id => { const r = rows?.find(x => x.id === id); return r && sendable(r) })
     if (!go.length) { c.flash('None of those can be sent by the app (turn the kind on in Settings > METRC through T3)', true); return }
@@ -120,6 +123,28 @@ function Todo({ c }: { c: Ctx }) {
     if (s === 'error') { note = prompt('What went wrong? (optional)') ?? undefined }
     setBusy(true)
     try { const n = await c.api.setActions(ids, s, note); c.flash(`${n} marked ${ST[s][0].toLowerCase()}`); sel.stop(); await load(); await c.reload() } catch (e) { c.flash(errText(e), true) } finally { setBusy(false) }
+  }
+  // one Stop button; what it does depends on where the to-do is (see metrc_stop)
+  const stoppable = (r: MAction) => (r.status === 'todo' || r.status === 'error') && !!r.kind && r.push_state !== 'held' && !r.stop_requested
+    && (r.push_state !== 'sending' || STOPPABLE.has(r.kind))
+  async function stop(r: MAction) {
+    const reopen = r.kind === 'harvest_waste' || r.kind === 'harvest_finish'
+    const ask = reopen ? `Stop the waste and finish for ${String(r.details?.batch ?? 'this harvest')} and reopen the harvest in the app?\n\nFix it, then press Finish again (that starts a new wait).`
+      : r.push_state === 'sending' ? 'Stop after the batch it is on? What is already in METRC stays. Release carries on from there.'
+      : 'Hold this one? It won\'t go to METRC (and nothing that depends on it will) until you press Release.'
+    if (!confirm(ask)) return
+    setBusy(true)
+    try {
+      const res = await c.api.stopMetrc(r.id)
+      c.flash(res.startsWith('reopened') ? `Harvest reopened; its waste and finish are cancelled${res.length > 9 ? `. ${res.slice(10)}` : ''}`
+        : res === 'stopping' ? 'Stopping after the batch it is on' : 'Held', res.length > 9)
+      await load(); await c.reload()
+    } catch (e) { c.flash(errText(e), true) } finally { setBusy(false) }
+  }
+  async function release(r: MAction) {
+    setBusy(true)
+    try { await c.api.releaseMetrc(r.id); c.flash(kinds[r.kind ?? '']?.mode === 'auto' ? 'Released: goes on the next run' : 'Released: press Send when ready'); await load() }
+    catch (e) { c.flash(errText(e), true) } finally { setBusy(false) }
   }
   const exportCsv = () => download(`METRC to do ${today()}.csv`, toCsv(['When', 'License', 'Action', 'Package', 'Tag', 'Lbs', 'Details', 'Status', 'Note'],
     shown.map(r => [when(r.at), r.license, r.action, r.code, r.tag, r.lbs, r.summary, ST[r.status][0], r.note])))
@@ -152,6 +177,8 @@ function Todo({ c }: { c: Ctx }) {
           <td className="mono small hide-s">{r.license ?? ''}</td>
           <td><span className={`pill ${ST[r.status][1]}`}>{ST[r.status][0]}</span>{r.done_by && <div className="muted small">{r.done_by.split('@')[0]}</div>}</td>
           {c.canEdit && !sel.on && <td className="nowrap">{sendable(r) && <button className={live ? 'primary small' : 'ghost small'} disabled={busy} onClick={e => { e.stopPropagation(); push([r.id]) }}>{live ? 'Send' : 'Check'}</button>}
+            {r.push_state === 'held' && (r.status === 'todo' || r.status === 'error') && <button className="primary small" disabled={busy} onClick={e => { e.stopPropagation(); release(r) }}>Release</button>}
+            {stoppable(r) && <button className="ghost small danger" disabled={busy} onClick={e => { e.stopPropagation(); stop(r) }}>Stop</button>}
             {r.status === 'todo' ? <button className="ghost small" disabled={busy} onClick={e => { e.stopPropagation(); setTo('done', [r.id]) }}>Done</button>
             : <button className="ghost small" disabled={busy} onClick={e => { e.stopPropagation(); setTo('todo', [r.id]) }}>Undo</button>}</td>}
         </tr>)}</tbody></table></div>}

@@ -141,7 +141,7 @@ function LogPage({ h, d, c, api, flash, onSaved, back }: { h: Harvest; d: CultDa
       {done && !canFix && <p className="cnote">Finished. Only a Production Admin can change a finished harvest.</p>}
       {done && canFix && !editing && <div className="row hfin"><button className="ghost" onClick={() => setEditing(true)}>Edit finished harvest…</button>
         <span className="muted">Fix totals, add a forgotten bin or pallet, or remove one logged by mistake.</span></div>}
-      {done && canFix && editing && <FixTotals h={h} api={api} busy={busy} run={run} k={k} onDone={() => setEditing(false)} />}
+      {done && canFix && editing && <FixTotals flash={flash} h={h} api={api} busy={busy} run={run} k={k} onDone={() => setEditing(false)} />}
       {d.year !== d.currentYear && <p className="cnote">This is the {d.year} season.</p>}
     </div>
   )
@@ -463,7 +463,7 @@ function BulkPallets({ h, api, busy, run, prefix, pallets }: { h: Harvest; api: 
 }
 
 /** Production Admins: fix a finished harvest's totals, or reopen it */
-function FixTotals({ h, api, busy, run, k, onDone }: { h: Harvest; api: CultApi; busy: boolean; run: (f: () => Promise<unknown>, ok: string) => Promise<void>; k: ReturnType<typeof calcHarvest>; onDone: () => void }) {
+function FixTotals({ h, api, busy, run, k, onDone, flash }: { h: Harvest; api: CultApi; flash: Flash; busy: boolean; run: (f: () => Promise<unknown>, ok: string) => Promise<void>; k: ReturnType<typeof calcHarvest>; onDone: () => void }) {
   const [x, setX] = useState<Partial<Harvest>>(h)
   const set = (v: Partial<Harvest>) => setX(s => ({ ...s, ...v }))
   return (
@@ -481,10 +481,14 @@ function FixTotals({ h, api, busy, run, k, onDone }: { h: Harvest; api: CultApi;
       <div className="row wrap">
         <button className="primary" disabled={busy} onClick={() => run(() => api.save<Harvest>('cult_harvests', { id: h.id, harvested_on: x.harvested_on, plants_harvested: x.plants_harvested ?? null, metrc_name: x.metrc_name ?? null,
           raw_lbs: x.raw_lbs ?? null, ff_lbs: x.ff_lbs ?? null, bucked_lbs: x.bucked_lbs ?? null, trim_lbs: x.trim_lbs ?? null, mold_lbs: x.mold_lbs ?? null }), 'Harvest fixed')}>Save totals</button>
-        <button className="ghost" disabled={busy} onClick={() => run(() => api.reopen(h.id), 'Reopened: back to Harvesting')}>Reopen harvest</button>
+        <button className="ghost" disabled={busy} onClick={async () => {
+          let w: string | null = null
+          await run(async () => { w = await api.reopen(h.id) }, 'Reopened: back to Harvesting. Waste and finish that hadn\'t gone to METRC yet are cancelled')
+          if (w) flash(w, true)
+        }}>Reopen harvest</button>
         <button className="ghost" onClick={onDone}>Done editing</button>
       </div>
-      <p className="cnote">Bins and pallets above are unlocked while you're editing. Reopen puts it back under Harvesting so the crew can keep logging, then Finish it again.</p>
+      <p className="cnote">Bins and pallets above are unlocked while you're editing. Reopen puts it back under Harvesting so the crew can keep logging, then Finish it again. Waste and finish still waiting to go to METRC are cancelled; Finish makes new ones.</p>
     </section>
   )
 }
