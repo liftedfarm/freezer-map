@@ -140,11 +140,23 @@ function PlantingSheet({ d, c, p, api, flash, onClose, onSaved }: { d: CultData;
         onChange={e => set({ trial: e.target.checked })} /> <span>Trial planting <span className="muted">(its pallets are T pallets; on by default for trial strains)</span></span></label>
       <F label="Notes"><textarea value={x.notes ?? ''} onChange={e => set({ notes: e.target.value || null })} /></F>
       {x.plants && x.est_lbs_per_plant ? <p className="cnote">Projected {n0(x.plants * x.est_lbs_per_plant)} lbs fresh frozen.</p> : null}
+      {p.id && <FlipBox p={p as Planting} busy={busy} onFlip={on => run(() => api.flip(p.id!, on), 'Flipped to flowering. METRC gets it on the overnight run.')} />}
       <SaveBar busy={busy} disabled={!x.strain?.trim() || !x.site} onCancel={onClose}
         onSave={() => run(() => api.save('cult_plantings', { ...x, license: x.license ?? site?.license ?? null }), p.id ? 'Saved' : 'Planting added')}
         onDelete={p.id ? () => run(() => api.remove('cult_plantings', p.id!), 'Planting deleted') : undefined} />
     </Sheet>
   )
+}
+
+/** flip to flowering: the METRC to-do promotes the planting's immature plants with plant tags (overnight, Compliance) */
+function FlipBox({ p, busy, onFlip }: { p: Planting; busy: boolean; onFlip: (on: string | null) => void }) {
+  const [on, setOn] = useState<string | null>(today())
+  if (p.flipped_on) return <p className="cnote">Flipped to flowering {fmtD(p.flipped_on)}{p.flipped_by ? ` by ${p.flipped_by.split('@')[0]}` : ''}.</p>
+  const left = (p.plants ?? 0) - (p.plant_loss ?? 0)
+  return <div className="cnote row wrap" style={{ alignItems: 'center', gap: 8 }}>
+    <span>Flip {n0(left)} plants to flowering on</span><DateIn value={on} onChange={setOn} />
+    <button className="ghost small" disabled={busy || left <= 0} onClick={() => { if (confirm(`Flip ${n0(left)} ${p.strain} plants to flowering? METRC tags each plant (overnight run).`)) onFlip(on) }}>Flip to flowering</button>
+  </div>
 }
 
 function ReceiptSheet({ d, r, api, flash, onClose, onSaved }: { d: CultData; r: Partial<Receipt>; api: CultApi; flash: Flash; onClose: () => void; onSaved: (m: string) => Promise<void> }) {

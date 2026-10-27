@@ -3,6 +3,7 @@
 // GET = nightly cron (vercel.json, needs CRON_SECRET). POST { licenses?: [...] } = "Pull from METRC" in Compliance > METRC > Reconcile.
 // Runs out of time gracefully: what's left is picked up by the next call (the app calls again until done).
 import { caller, db, missing, rpc, send, t3 } from './_t3.js'
+import { list } from './_core.js'
 
 export const config = { maxDuration: 300 }
 const BUDGET_MS = 240000
@@ -77,7 +78,7 @@ async function pages(path, query, onPage, out) {
 
 async function syncLicense(license, by, t0) {
   const run = (await db('metrc_sync_runs', { method: 'POST', body: JSON.stringify({ license, started_by: by }), headers: { Prefer: 'return=representation' } }))[0]
-  const out = { calls: 0, active: 0, intransit: 0, inactive: 0, transferred: 0, transfers: 0, delivery_packages: 0, live: new Set(), timeUp: () => Date.now() - t0 > BUDGET_MS }
+  const out = { calls: 0, active: 0, intransit: 0, inactive: 0, transferred: 0, transfers: 0, delivery_packages: 0, locations: 0, strains: 0, plant_batches: 0, harvests: 0, plants: 0, live: new Set(), timeUp: () => Date.now() - t0 > BUDGET_MS }
   const now = new Date().toISOString()
   let complete = false, error = null
   try {
@@ -147,11 +148,79 @@ async function syncLicense(license, by, t0) {
       if (ok) await setCursor(license, 'transfers', new Date(Date.parse(now) - 2 * 86400000).toISOString())
       full = full && ok
     }
+    // 5) Phase 2: locations, strains, plant batches, harvests, plant counts by location and strain
+    if (full) full = await syncPlants(license, out, now)
     complete = full
   } catch (e) { error = String(e.message || e).slice(0, 800) }
   const { timeUp, live, ...counts } = out
   await db(`metrc_sync_runs?id=eq.${run.id}`, { method: 'PATCH', body: JSON.stringify({ finished_at: new Date().toISOString(), counts, complete, error }), headers: { Prefer: 'return=minimal' } })
   return { license, complete, error, ...counts }
+}
+
+const PLANT_DETAIL_MAX = 60000   // more plants than this on a license: just the total (paging 1M+ plants nightly takes too long)
+
+async function syncPlants(license, out, now) {
+  const isoDay = v => (real(v) ? String(v).slice(0, 10) : null)
+  let ok = await pages('/v2/locations/active', { licenseNumber: license }, async rows => {
+    await upsert('metrc_locations', rows.map(l => ({ license, id: l.id, name: l.name, type_name: l.locationTypeName ?? null, for_plants: l.forPlants ?? null,
+      for_plant_batches: l.forPlantBatches ?? null, for_harvests: l.forHarvests ?? null, for_packages: l.forPackages ?? null, archived: !!l.isArchived, seen_at: now })), 'license,id')
+    out.locations += rows.length
+  }, out)
+  ok = ok && await pages('/v2/strains', { licenseNumber: license }, async rows => {
+    await upsert('metrc_strains', rows.map(x => ({ license, id: x.id, name: x.name, archived: !!x.isArchived, seen_at: now })), 'license,id')
+    out.strains += rows.length
+  }, out)
+  if (!ok) return false
+  ok = await pages('/v2/plantbatches/active', { licenseNumber: license }, async rows => {
+    await upsert('metrc_plant_batches', rows.map(b => ({ license, id: b.id, name: b.name ?? b.label, type: b.plantBatchTypeName ?? b.typeName ?? null, strain: b.strainName ?? null,
+      strain_id: b.strainId ?? null, location_id: b.locationId ?? null, location: b.locationName ?? null, untracked: b.untrackedCount ?? null, tracked: b.trackedCount ?? null,
+      packaged: b.packagedCount ?? null, destroyed: b.destroyedCount ?? null, planted_on: isoDay(b.plantedDate), source_package: b.sourcePackageLabel ?? null,
+      source_plant: b.sourcePlantLabel ?? null, state: 'active', last_modified: real(b.lastModified), seen_at: now })), 'license,id')
+    out.plant_batches += rows.length
+  }, out)
+  if (!ok) return false
+  await db(`metrc_plant_batches?license=eq.${license}&state=eq.active&seen_at=lt.${encodeURIComponent(now)}`, { method: 'PATCH', body: JSON.stringify({ state: 'gone' }), headers: { Prefer: 'return=minimal' } })
+  const hrow = (h, state) => ({ license, id: h.id, name: h.name, strains: h.sourceStrainNames ?? null, location: h.dryingLocationName ?? null, plant_count: h.plantCount ?? null,
+    wet: h.totalWetWeight ?? null, current: h.currentWeight ?? null, waste: h.totalWasteWeight ?? null, packaged: h.totalPackagedWeight ?? null, uom: h.unitOfWeightAbbreviation ?? null,
+    started: isoDay(h.harvestStartDate), finished: !!h.isFinished, finished_on: isoDay(h.finishedDate), state, last_modified: real(h.lastModified), seen_at: now })
+  ok = await pages('/v2/harvests/active', { licenseNumber: license }, async rows => { await upsert('metrc_harvests', rows.map(h => hrow(h, 'active')), 'license,id'); out.harvests += rows.length }, out)
+  if (!ok) return false
+  const since = (await cursor(license, 'harvests_inactive')) ?? SEASON_START
+  ok = await pages('/v2/harvests/inactive', { licenseNumber: license, filter: `lastModified__gte:${since}` }, async rows => {
+    await upsert('metrc_harvests', rows.map(h => hrow(h, 'inactive')), 'license,id'); out.harvests += rows.length
+  }, out)
+  if (!ok) return false
+  await setCursor(license, 'harvests_inactive', new Date(Date.parse(now) - 2 * 86400000).toISOString())
+  // plant counts by location and strain (vegetative, flowering)
+  for (const phase of ['vegetative', 'flowering']) {
+    if (out.timeUp()) return false
+    const head = await t3('GET', `/v2/plants/${phase}`, { query: { licenseNumber: license, page: 1, pageSize: 5 } })
+    const total = Number(head?.total ?? list(head).length)
+    const run = `r${Date.parse(now)}`
+    if (total > PLANT_DETAIL_MAX) {
+      await rpc('metrc_plant_counts_add', { p_license: license, p_phase: phase, p_run: run, p_rows: [{ location_id: 0, location: '(all, too many to break down nightly)', strain: '', plants: total }] })
+      await rpc('metrc_plant_counts_swap', { p_license: license, p_phase: phase, p_run: run })
+      out.plants += total
+      continue
+    }
+    const agg = new Map()
+    const done = await pages(`/v2/plants/${phase}`, { licenseNumber: license }, async rows => {
+      for (const p of rows) {
+        const k = `${p.locationId ?? 0}|${p.strainName ?? ''}`
+        const a = agg.get(k) ?? { location_id: p.locationId ?? 0, location: p.locationName ?? null, strain: p.strainName ?? '', plants: 0, oldest: null, newest: null }
+        a.plants++
+        const d = isoDay(p.plantedDate)
+        if (d && (!a.oldest || d < a.oldest)) a.oldest = d
+        if (d && (!a.newest || d > a.newest)) a.newest = d
+        agg.set(k, a)
+      }
+    }, out)
+    if (!done) return false
+    if (agg.size) await rpc('metrc_plant_counts_add', { p_license: license, p_phase: phase, p_run: run, p_rows: [...agg.values()] })
+    await rpc('metrc_plant_counts_swap', { p_license: license, p_phase: phase, p_run: run })
+    out.plants += total
+  }
+  return true
 }
 
 export default async function handler(req, res) {

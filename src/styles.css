@@ -1082,3 +1082,11 @@ html:has(.app.shell), html:has(.app.shell) body { height: 100%; overflow: hidden
 .combo-list .sel-group { padding: 6px 12px 2px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); cursor: default; }
 .sorderrow { gap: 6px; width: 100%; flex-wrap: nowrap; }
 .sorderrow .sorder { flex: 1; min-width: 0; }
+
+/* METRC status pills used outside Compliance (loads, Inbound, plantings) */
+.pill.m-ok { background: color-mix(in srgb, var(--brand) 16%, var(--panel)); color: var(--brand); }
+.pill.m-warn { background: color-mix(in srgb, var(--warn) 18%, var(--panel)); color: var(--warn); }
+.pill.m-bad { background: color-mix(in srgb, var(--bad) 16%, var(--panel)); color: var(--bad); }
+.pill.m-mute { background: var(--empty); color: var(--muted); }
+.mlist { margin: 6px 0 2px; padding: 6px 8px; border-left: 3px solid var(--line); font-size: 13px; line-height: 1.45; }
+.mlist .neg { color: var(--bad); }

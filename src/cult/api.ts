@@ -197,6 +197,8 @@ export class CultApi {
     return this.rpc<{ pushed: number; wet_lbs: number; packed_lbs: number; new_wet: number; new_plants: number }>('cult_push', { p_harvest: harvestId, p_pallets: pallets, p_allow_pending: allowPending })
   }
   unpush(palletId: number) { return this.rpc('cult_unpush', { p_pallet: palletId }) }
+  /** flip a planting to flowering (075): METRC promotes its immature plants with plant tags, overnight */
+  flip(plantingId: number, on: string | null) { return this.rpc('cult_flip', { p_planting: plantingId, p_on: on }) }
   continueTomorrow(harvestId: number, plants: number | null, on: string | null, notes: string | null) {
     return this.rpc<number>('cult_continue', { p_harvest: harvestId, p_plants: plants, p_on: on, p_notes: notes })
   }

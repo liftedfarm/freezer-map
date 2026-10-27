@@ -18,6 +18,7 @@ export interface Planting {
   nursery: string | null; planted_on: string | null; plants: number | null; plant_loss: number | null; spacing_in: number | null
   beds: number | null; acres: number | null; license: string | null; first_flower: string | null; est_lbs_per_plant: number | null
   seed_lbs: number | null; notes: string | null; trial?: boolean; updated_by?: string | null; updated_at?: string
+  flipped_on?: string | null; flipped_by?: string | null
 }
 export interface Harvest {
   id: number; crop_year: number; site: SiteCode; field_id: number | null; strain: string; planting_id: number | null

@@ -4,6 +4,7 @@ import type { MAction, MError, Play, PushKind, PushResult, Recon, Upload } from 
 import type { Ctx } from './ctx'
 import { DocList, DropZone, fmtD, today } from './files'
 import { LiveReconcile } from './reconlive'
+import { Mapping } from './mapping'
 import { FIELD_LABEL, download, mapColumns, readTable, toCsv, toRows } from './csv'
 import type { Field, MRow } from './csv'
 import { DateIn, F, Pick, SaveBar, Sheet, TextIn, errText, useSel, SelBox, SelAll, SelBar } from '../cult/ui'
@@ -15,13 +16,14 @@ const PS: Record<NonNullable<MAction['push_state']>, [string, string]> = { check
 const ST: Record<MAction['status'], [string, string]> = { todo: ['To do', 'cp-warn'], done: ['Done', 'cp-ok'], error: ['Problem', 'cp-bad'], skipped: ['Skipped', 'cp-mute'] }
 
 export function Metrc({ c }: { c: Ctx }) {
-  const view = (['todo', 'reconcile', 'errors', 'playbook'] as const).find(v => v === c.sub) ?? 'todo'
+  const view = (['todo', 'reconcile', 'mapping', 'errors', 'playbook'] as const).find(v => v === c.sub) ?? 'todo'
   return <div className="list">
     <div className="row between wrap toolbar"><h2>METRC</h2>
-      <div className="seg">{([['todo', `To do${c.ov.metrc_todo ? ` (${c.ov.metrc_todo})` : ''}`], ['reconcile', 'Reconcile'], ['errors', `Errors${c.ov.errors_open ? ` (${c.ov.errors_open})` : ''}`], ['playbook', 'Playbook']] as const).map(([k, l]) =>
+      <div className="seg">{([['todo', `To do${c.ov.metrc_todo ? ` (${c.ov.metrc_todo})` : ''}`], ['reconcile', 'Reconcile'], ['mapping', 'Mapping'], ['errors', `Errors${c.ov.errors_open ? ` (${c.ov.errors_open})` : ''}`], ['playbook', 'Playbook']] as const).map(([k, l]) =>
         <button key={k} className={view === k ? 'on' : ''} onClick={() => c.go('metrc', k)}>{l}</button>)}</div></div>
     {view === 'todo' && <Todo c={c} />}
     {view === 'reconcile' && <Reconcile c={c} />}
+    {view === 'mapping' && <Mapping c={c} />}
     {view === 'errors' && <Errors c={c} />}
     {view === 'playbook' && <Playbook c={c} />}
   </div>
@@ -52,8 +54,9 @@ function Todo({ c }: { c: Ctx }) {
       const r = await c.api.sendMetrc(go)
       const n = (s: PushResult['state']) => r.results.filter(x => x.state === s).length
       const first = r.results.find(x => x.state === 'failed')
-      c.flash(r.live ? `${n('sent')} sent, ${n('failed')} failed${n('waiting') ? `, ${n('waiting')} waiting` : ''}${first ? `: ${first.error}` : ''}`
-        : `Dry run: ${n('checked')} OK, ${n('failed')} failed${n('waiting') ? `, ${n('waiting')} waiting` : ''}${first ? `: ${first.error}` : ''}`, n('failed') > 0)
+      const held = r.not_sent?.length ? `. ${r.not_sent.length} not sent (kind off, or before the site's METRC cutover date)` : ''
+      c.flash((r.live ? `${n('sent')} sent, ${n('failed')} failed${n('waiting') ? `, ${n('waiting')} waiting` : ''}${first ? `: ${first.error}` : ''}`
+        : `Dry run: ${n('checked')} OK, ${n('failed')} failed${n('waiting') ? `, ${n('waiting')} waiting` : ''}${first ? `: ${first.error}` : ''}`) + held, n('failed') > 0)
       sel.stop(); await load(); await c.reload()
     } catch (e) { c.flash(errText(e), true) } finally { setBusy(false) }
   }

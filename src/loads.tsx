@@ -2,6 +2,8 @@ import { ListInput, Select } from './combo'
 import { ScanButton } from './scan'
 import { sameTag, useScanHandler } from './scanroute'
 import { useEffect, useMemo, useState } from 'react'
+import { metrcRun } from './metrcCall'
+import type { AppTransfer, StopCheckRow } from './metrcCall'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { lbs } from './forms'
 import type { Customer, FOrder, Load, LoadDriver, LoadItem, LoadStop, Pallet, StopInput, StopManifest, Vehicle } from './types'
@@ -222,10 +224,43 @@ export function LoadView({ ctx, loadId, onBack, onEdit }: { ctx: LoadCtx; loadId
   const [posOpen, setPosOpen] = useState<number | null>(null)
   const [lics, setLics] = useState<Lic[]>([])
   const [making, setMaking] = useState<number | null>(null)
+  const [checks, setChecks] = useState<StopCheckRow[]>([])
+  const [xfers, setXfers] = useState<AppTransfer[]>([])
+  const [modes, setModes] = useState<Record<string, string>>({})
+  const [checking, setChecking] = useState(false)
+  const [openCheck, setOpenCheck] = useState<number | null>(null)
   useEffect(() => {
     const sb = ctx.api.client(); if (!sb) return
     sb.from('licenses').select('license_no, kind, site, hub, sort, active').then(({ data }) => setLics((data ?? []) as Lic[]))
+    sb.from('metrc_push_kinds').select('kind,mode').in('kind', ['transfer', 'manifest']).then(({ data }) => setModes(Object.fromEntries((data ?? []).map(k => [k.kind, k.mode]))))
   }, [ctx.api])
+  const stopIds = ctx.stops.filter(s => s.load_id === loadId).map(s => s.id)
+  const loadMetrc = async () => {
+    const sb = ctx.api.client(); if (!sb || !stopIds.length) return
+    const [a, b] = await Promise.all([sb.from('metrc_stop_checks').select('*').in('stop_id', stopIds), sb.from('metrc_app_transfers').select('*').in('stop_id', stopIds)])
+    setChecks((a.data ?? []) as StopCheckRow[]); setXfers((b.data ?? []) as AppTransfer[])
+  }
+  useEffect(() => { loadMetrc() }, [loadId, stopIds.join(',')])
+  async function runChecks() {
+    const sb = ctx.api.client(); if (!sb || !l) return
+    setChecking(true)
+    await ctx.run(async () => { await metrcRun(sb, { action: 'checklist', load_id: l.id }); await loadMetrc() }, 'METRC check done')
+    setChecking(false)
+  }
+  async function depart() {
+    if (!l) return
+    if (await ctx.run(() => ctx.api.departLoad(l.id), `${l.code} in transit`)) {
+      const sb = ctx.api.client()
+      if (sb && (modes.transfer === 'auto' || modes.manifest === 'auto')) {
+        await ctx.run(async () => {
+          const r = await metrcRun<{ live: boolean; results: { state: string; info?: string; error?: string }[] }>(sb, { action: 'depart', load_id: l.id })
+          await loadMetrc()
+          const bad = r.results.find(x => x.state === 'failed')
+          if (bad) throw new Error(`METRC manifest not made: ${bad.error}`)
+        }, 'METRC manifests made')
+      }
+    }
+  }
   // Scan while loading: a planned pallet is marked on the truck; one that isn't on this load can be added
   useScanHandler(l && editable(l) ? tag => {
     const its = ctx.items.filter(i => i.load_id === l.id)
@@ -251,6 +286,12 @@ export function LoadView({ ctx, loadId, onBack, onEdit }: { ctx: LoadCtx; loadId
   const canEdit = editable(l)
   const spaces = v?.spaces ?? 0, across = v?.across ?? 2
   const rows = Math.ceil(spaces / across)
+  // stops the app sends to METRC need a green checklist from the last hour before Depart (depart_load checks it too)
+  const internalStop = (s: LoadStop) => { const c = cust(s); return c?.kind === 'internal' && ['OHR', 'GVR'].includes((c?.name ?? '').toUpperCase()) }
+  const fresh = (iso: string) => Date.now() - new Date(iso).getTime() < 60 * 60000
+  const metrcOn = stops.some(s => s.status === 'pending' && (modes[internalStop(s) ? 'transfer' : 'manifest'] ?? 'off') !== 'off')
+  const metrcBlock = stops.filter(s => s.status === 'pending' && items.some(i => i.stop_id === s.id) && (modes[internalStop(s) ? 'transfer' : 'manifest'] ?? 'off') !== 'off')
+    .filter(s => { const cs = checks.filter(x => x.stop_id === s.id); return !cs.length || cs.some(x => !x.ok || !fresh(x.checked_at)) }).map(s => s.seq)
 
   function tapPos(pos: number) {
     const here = items.filter(i => i.position === pos)
@@ -331,6 +372,8 @@ export function LoadView({ ctx, loadId, onBack, onEdit }: { ctx: LoadCtx; loadId
                 {dest ? <>Transfer: {froms.map(L).join(' + ') || '?'} → <b>{L(dest)}</b>{already ? ` · some of these are already at ${dest}` : ''}</>
                   : <>Ships from {froms.map(L).join(' and ') || '?'}{froms.length > 1 ? ' · two licenses means two METRC manifests' : ''}</>}
               </div>}
+              {its.length > 0 && <StopMetrc checks={checks.filter(x => x.stop_id === s.id)} xfers={xfers.filter(x => x.stop_id === s.id)}
+                on={modes[site ? 'transfer' : 'manifest'] ?? 'off'} open={openCheck === s.id} onToggle={() => setOpenCheck(o => o === s.id ? null : s.id)} pending={s.status === 'pending'} />}
               <div className="row">
                 {canEdit && <button className="ghost small" onClick={() => setPicker({ stop: s.id, position: null })}>+ Add pallets</button>}
                 {its.length > 0 && <button className="ghost small" disabled={making === s.id} onClick={async () => {
@@ -386,10 +429,11 @@ export function LoadView({ ctx, loadId, onBack, onEdit }: { ctx: LoadCtx; loadId
 
       <div className="row actions">
         {canEdit && <button className="ghost" disabled={ctx.busy || !items.length} onClick={() => ctx.run(() => ctx.api.arrangeLoad(l.id), 'Arranged: last stop at the nose')}>Auto-arrange</button>}
-        {canEdit && <button className="primary" disabled={ctx.busy || !items.length || unloaded > 0}
-          title={unloaded ? `${unloaded} not loaded yet` : ''}
-          onClick={() => ctx.confirm(`Truck is leaving with ${items.length} pallet${items.length === 1 ? '' : 's'}?`, 'Depart', async () => { await ctx.run(() => ctx.api.departLoad(l.id), `${l.code} in transit`) })}>
-          {unloaded ? `Depart (${unloaded} not loaded)` : 'Depart'}</button>}
+        {canEdit && items.length > 0 && <button className="ghost" disabled={ctx.busy || checking} onClick={runChecks}>{checking ? 'Checking METRC…' : 'Check METRC'}</button>}
+        {canEdit && <button className="primary" disabled={ctx.busy || !items.length || unloaded > 0 || metrcBlock.length > 0}
+          title={unloaded ? `${unloaded} not loaded yet` : metrcBlock.length ? `METRC checklist not green: stop ${metrcBlock.join(', ')}` : ''}
+          onClick={() => ctx.confirm(`Truck is leaving with ${items.length} pallet${items.length === 1 ? '' : 's'}?${metrcOn ? ' The app makes the METRC manifests now.' : ''}`, 'Depart', depart)}>
+          {unloaded ? `Depart (${unloaded} not loaded)` : metrcBlock.length ? 'Depart (METRC check)' : 'Depart'}</button>}
         {canEdit && <button className="ghost" disabled={ctx.busy} onClick={() => ctx.confirm(`Cancel ${l.code}? Planned pallets stay where they are${(ctx.orders ?? []).some(o => o.stop?.load_id === l.id) ? ', and its orders go back to Ready in Fulfillment' : ''}.`, 'Cancel load', async () => { if (await ctx.run(async () => { await ctx.api.cancelLoad(l.id); await ctx.refreshOrders?.() }, `${l.code} cancelled`)) onBack() })}>Cancel load</button>}
       </div>
       {canEdit && <p className="muted">Planned pallets stay in their freezer until someone taps "Pulled onto truck" (or scans the pallet's tag with Scan). Depart unlocks when everything is loaded.</p>}
@@ -405,6 +449,25 @@ export function LoadView({ ctx, loadId, onBack, onEdit }: { ctx: LoadCtx; loadId
       )}
     </div>
   )
+}
+
+/** the METRC side of a stop: the checklist (Check METRC) and the manifest the app made */
+function StopMetrc({ checks, xfers, on, open, onToggle, pending }: { checks: StopCheckRow[]; xfers: AppTransfer[]; on: string; open: boolean; onToggle: () => void; pending: boolean }) {
+  const made = xfers.filter(x => x.state !== 'voided')
+  const fresh = (iso: string) => Date.now() - new Date(iso).getTime() < 60 * 60000
+  const ok = checks.length > 0 && checks.every(c => c.ok && fresh(c.checked_at))
+  const bad = checks.flatMap(c => c.checks.filter(x => !x.ok).map(x => ({ ...x, license: c.license })))
+  if (!made.length && !checks.length && (!pending || on === 'off')) return null
+  return <div className="small-note">
+    {made.map(x => <div key={x.id}><b>METRC manifest {x.manifest ?? '(number pending)'}</b> <span className="muted">· made by the app · {x.transfer_type ?? ''}{x.state === 'received' ? ' · received' : ''}</span></div>)}
+    {pending && !made.length && <button className="linkbtn" onClick={onToggle}>
+      <span className={`pill ${!checks.length ? 'm-mute' : ok ? 'm-ok' : 'm-bad'}`}>{!checks.length ? 'METRC: not checked' : ok ? 'METRC: ready' : !bad.length ? 'METRC: check again (over an hour old)' : `METRC: ${bad.length} to fix`}</span>
+      {on === 'off' && <span className="muted"> (done by hand in METRC)</span>} {open ? '▴' : '▾'}</button>}
+    {open && checks.map(c => <div key={c.license} className="mlist">
+      <div className="muted small">From {c.license} · checked {new Date(c.checked_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</div>
+      {c.checks.map(x => <div key={x.key} className={x.ok ? '' : 'neg'}>{x.ok ? '✓' : '✗'} {x.label}{x.detail ? <span className={x.ok ? 'muted' : ''}>: {x.detail}</span> : null}</div>)}
+    </div>)}
+  </div>
 }
 
 /** type to find a stop: customers with ready orders first, then Lifted sites and labs, then everyone else */
@@ -584,7 +647,7 @@ export function PickLoad({ ctx, ps, onClose }: { ctx: LoadCtx; ps: Pallet[]; onC
             </div>
           )
         })}
-        <div className="metrcnote"><b>METRC</b> When the stop is delivered it goes on the METRC to-do list: a transfer manifest to the customer or the other license.</div>
+        <div className="metrcnote"><b>METRC</b> At Depart each stop gets its METRC transfer manifest (to the customer or the other license): made by the app when Compliance has it switched on, otherwise on the METRC to-do list.</div>
       </div>
     </div>
   )

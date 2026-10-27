@@ -13,7 +13,7 @@ export default async function handler(req, res) {
   try {
     if (!(await isLive())) return send(res, 200, { skipped: 'dry run (not live)' })
     const jobs = await rpc('metrc_claim', { p_ids: null, p_limit: 40 })
-    const ctx = { live: true, by: 'auto', reasons: {} }
+    const ctx = { live: true, by: 'auto', deadline: t0 + BUDGET_MS }
     const out = []
     for (const j of jobs.sort((a, b) => a.id - b.id)) {
       if (Date.now() - t0 > BUDGET_MS) {   // out of time: hand the rest back for the next run

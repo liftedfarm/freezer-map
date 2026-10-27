@@ -4,6 +4,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 
 function fail(error: { message: string } | null) {
   if (!error) return
+  if (/metrc_locations|metrc_strains|metrc_location_map|metrc_strain_map|metrc_plant|metrc_map_|metrc_app_transfers|metrc_stop_checks|touch_tags/i.test(error.message)) throw new Error(`${error.message} (run 075_metrc_phase12.sql in Supabase)`)
   if (/metrc_push|metrc_connection|metrc_set_mode|metrc_me|push_state/i.test(error.message)) throw new Error(`${error.message} (run 070_metrc_push.sql in Supabase)`)
   if (/reconcile_view|recon_apply|recon_ignores/i.test(error.message)) throw new Error(`${error.message} (run 074_recon_apply.sql in Supabase)`)
   if (/reconcile_live|metrc_sync|metrc_packages|metrc_trail/i.test(error.message)) throw new Error(`${error.message} (run 071_metrc_sync.sql in Supabase)`)
@@ -65,6 +66,21 @@ export interface T3Conn {
   ok: boolean | null; tested_at: string | null; tested_by: string | null; error: string | null; who: Record<string, unknown> | null
   licenses: { license: string; name: string | null; in_t3: boolean; in_app: boolean; site: string | null; permissions: string[]; permissions_error?: string; reasons_error?: string }[] | null
   reasons: Record<string, { id: number; name: string; requiresNote: boolean }[]> | null
+  transfer?: Record<string, { types: { id: number; name: string; wholesale: boolean }[]; drivers: string[]; vehicles: string[]; phone: string | null }> | null
+}
+export interface MLoc { license: string; id: number; name: string; type_name: string | null; for_plants: boolean | null; for_plant_batches: boolean | null; for_harvests: boolean | null; for_packages: boolean | null; archived: boolean }
+export interface MStrain { license: string; id: number; name: string; archived: boolean }
+export interface MBatch { license: string; id: number; name: string | null; type: string | null; strain: string | null; location: string | null; location_id: number | null; untracked: number | null; planted_on: string | null; state: string }
+export interface MCount { license: string; phase: string; location_id: number; location: string | null; strain: string; plants: number; oldest: string | null; newest: string | null }
+export interface LocMap { app_kind: 'field' | 'room' | 'drying' | 'packages'; app_ref: string; license: string; location_id: number; location: string | null }
+export interface StrainMap { app_strain: string; license: string; strain_id: number; strain: string | null }
+export interface MapData {
+  locs: MLoc[]; strains: MStrain[]; batches: MBatch[]; counts: MCount[]; locMap: LocMap[]; strainMap: StrainMap[]
+  fields: { id: number; site: string; code: string | null; name: string; active: boolean }[]
+  rooms: { id: number; site: string; name: string; active: boolean }[]
+  appStrains: string[]
+  licenses: { license_no: string; kind: string; site: string | null; active: boolean }[]
+  nurserySites: { code: string; license: string | null }[]
 }
 export interface LiveRecon {
   issue: 'weight' | 'not_in_metrc' | 'not_in_app' | 'closed_in_app' | 'other_license' | 'item' | 'on_hold' | 'tag_pending' | 'stale'
@@ -242,6 +258,31 @@ export class CompApi {
     return j as SyncResult
   }
   testT3() { return this.metrc<T3Conn>({ action: 'test' }) }
+  // ----- Phase 2 mapping -----
+  async mapData(): Promise<MapData> {
+    const all = async <T,>(q: (a: number, b: number) => PromiseLike<{ data: unknown; error: { message: string } | null }>) => {
+      const out: T[] = []
+      for (let a = 0; ; a += 1000) { const { data, error } = await q(a, a + 999); fail(error); const d = (data ?? []) as T[]; out.push(...d); if (d.length < 1000) break }
+      return out
+    }
+    const sb = this.sb
+    const [locs, strains, batches, counts, locMap, strainMap, fields, rooms, st, licenses, nurserySites] = await Promise.all([
+      all<MLoc>((a, b) => sb.from('metrc_locations').select('*').eq('archived', false).order('name').range(a, b)),
+      all<MStrain>((a, b) => sb.from('metrc_strains').select('*').eq('archived', false).order('name').range(a, b)),
+      all<MBatch>((a, b) => sb.from('metrc_plant_batches').select('license,id,name,type,strain,location,location_id,untracked,planted_on,state').eq('state', 'active').order('name').range(a, b)),
+      all<MCount>((a, b) => sb.from('metrc_plant_counts').select('*').eq('run', 'live').range(a, b)),
+      all<LocMap>((a, b) => sb.from('metrc_location_map').select('*').range(a, b)),
+      all<StrainMap>((a, b) => sb.from('metrc_strain_map').select('*').range(a, b)),
+      all<MapData['fields'][number]>((a, b) => sb.from('fields').select('id,site,code,name,active').order('site').order('sort').range(a, b)),
+      all<MapData['rooms'][number]>((a, b) => sb.from('nursery_rooms').select('id,site,name,active').order('site').order('sort').range(a, b)),
+      all<{ name: string }>((a, b) => sb.from('strains').select('name').eq('active', true).order('name').range(a, b)),
+      all<MapData['licenses'][number]>((a, b) => sb.from('licenses').select('license_no,kind,site,active').range(a, b)),
+      all<MapData['nurserySites'][number]>((a, b) => sb.from('nursery_sites').select('code,license').range(a, b)),
+    ])
+    return { locs, strains, batches, counts, locMap, strainMap, fields, rooms, appStrains: st.map(x => x.name), licenses, nurserySites }
+  }
+  mapLocation(kind: LocMap['app_kind'], ref: string, license: string, locationId: number | null) { return this.rpc<void>('metrc_map_location', { p_kind: kind, p_ref: ref, p_license: license, p_location_id: locationId }) }
+  mapStrain(strain: string, license: string, strainId: number | null) { return this.rpc<void>('metrc_map_strain', { p_strain: strain, p_license: license, p_strain_id: strainId }) }
   sendMetrc(ids: number[]) { return this.metrc<{ live: boolean; results: PushResult[]; not_sent: number[] }>({ action: 'send', ids }) }
   /** start the SharePoint backup now (server function) */
   async runBackup() {
