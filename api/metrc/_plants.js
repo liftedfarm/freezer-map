@@ -2,7 +2,7 @@
 // losses, the flip to flowering (overnight, plant tags), and the harvest chain (harvest plants, packages from harvest, waste, finish).
 // Every one of these waits for its site's cutover date (Compliance > METRC > Mapping); before that they're done by hand.
 import {
-  Skip, Wait, all, db, enc, first, inputs, list, lc, mappedLocation, one, packageByTag, r4, reasonFrom, rpc, setting, strainFor,
+  WRITE_MAX, Skip, Wait, all, db, enc, first, inputs, list, lc, mappedLocation, one, packageByTag, r4, reasonFrom, rpc, setting, strainFor,
   t3, tagIdFor, uomFrom, up, write, ymd, adjustReasons,
 } from './_core.js'
 import { heldRun } from './_tagrange.js'
@@ -322,7 +322,7 @@ export async function sendHarvestPlants(job, ctx) {
   let lastBody = null, lastResp = null
   while (prog.done < plants) {
     if (Date.now() > deadline) break
-    const n = Math.min(250, plants - prog.done)
+    const n = Math.min(WRITE_MAX, plants - prog.done)   // METRC takes 25 entries per call
     const src = list(await t3('GET', '/v2/harvests/create/source-plants', { query: { licenseNumber: lic, pageSize: n, filter: [`locationName__eq:${loc.location}`, `strainName__eq:${strain.name}`], filterLogic: 'and', sort: 'label:asc' } }))
       .filter(p => Number(p.harvestCount ?? 0) === 0 && lc(p.locationName) === lc(loc.location))
     if (!src.length) throw new Error(`No flowering ${strain.name} plants left in ${loc.location} on ${lic} (${prog.done} of ${plants} harvested)`)

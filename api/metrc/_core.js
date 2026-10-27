@@ -83,8 +83,14 @@ export async function t3(method, path, { query, body } = {}) {
 export const list = j => (Array.isArray(j) ? j : j?.data ?? [])
 export const unhtml = s => String(s ?? '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
 /** a METRC write: dry run unless live */
-export const write = (ctx, path, license, body) =>
-  t3('POST', path, { query: { licenseNumber: license, submit: ctx.live ? 'true' : undefined, applyDynamicValidation: 'true' }, body })
+export const WRITE_MAX = 25   // METRC (through T3) takes at most 25 entries in one write
+export async function write(ctx, path, license, body) {
+  const one = b => t3('POST', path, { query: { licenseNumber: license, submit: ctx.live ? 'true' : undefined, applyDynamicValidation: 'true' }, body: b })
+  if (!Array.isArray(body) || body.length <= WRITE_MAX) return one(body)
+  const out = []
+  for (let i = 0; i < body.length; i += WRITE_MAX) out.push(await one(body.slice(i, i + WRITE_MAX)))
+  return out
+}
 
 /** every row of a T3 collection (stops after maxPages) */
 export async function all(path, query, maxPages = 20, pageSize = 500) {
