@@ -170,17 +170,27 @@ async function syncLicense(license, by, t0) {
   return { license, complete, error, ...counts }
 }
 
-/** METRC's available tags for a license (package and plant), replacing the last pull's list */
+/** METRC's available tags for a license, replacing the last pull's list. Package tags always; plant tags only when a license
+ *  has a manageable number (OHR has 400k+ plant tags for the biomass: the flip reads those from METRC as it goes). */
+const PLANT_TAGS_MAX = 30000
 async function syncTags(license, out, now) {
-  const ok = await pages('/v2/tags/available', { licenseNumber: license }, async rows => {
-    const r = rows.filter(t => t.label && !t.isUsed && !t.isArchived).map(t => ({
-      license, label: up(t.label), tag_type: /plant/i.test(`${t.tagTypeName ?? ''} ${t.groupTagTypeName ?? ''} ${t.tagInventoryTypeName ?? ''}`) ? 'plant' : 'package',
-      type_name: t.tagTypeName ?? null, seen_at: now }))
-    if (r.length) await upsert('metrc_tags', r, 'license,label')
-    out.tags += r.length
-  }, out)
-  if (ok) await db(`metrc_tags?license=eq.${license}&seen_at=lt.${encodeURIComponent(now)}`, { method: 'DELETE', headers: { Prefer: 'return=minimal' } })
-  return ok
+  let all = true
+  for (const [type, inv] of [['package', 'CannabisPackage'], ['plant', 'CannabisPlant']]) {
+    const filter = `tagInventoryTypeName__eq:${inv}`
+    if (type === 'plant') {
+      const head = await t3('GET', '/v2/tags/available', { query: { licenseNumber: license, filter, page: 1, pageSize: 5 } })
+      const total = Number(head?.total ?? 0)
+      if (total > PLANT_TAGS_MAX) { out.notes.push(`plant tags: ${total.toLocaleString()} available, too many to keep (suggestions for plant tags come from METRC live)`); continue }
+    }
+    const ok = await pages('/v2/tags/available', { licenseNumber: license, filter }, async rows => {
+      const r = rows.filter(t => t.label && !t.isUsed && !t.isArchived).map(t => ({ license, label: up(t.label), tag_type: type, type_name: t.tagTypeName ?? null, seen_at: now }))
+      if (r.length) await upsert('metrc_tags', r, 'license,label')
+      out.tags += r.length
+    }, out)
+    if (ok) await db(`metrc_tags?license=eq.${license}&tag_type=eq.${type}&seen_at=lt.${encodeURIComponent(now)}`, { method: 'DELETE', headers: { Prefer: 'return=minimal' } })
+    all = all && ok
+  }
+  return all
 }
 
 const PLANT_DETAIL_MAX = 60000   // more plants than this on a license: just the total (paging 1M+ plants nightly takes too long)
