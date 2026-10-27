@@ -46,6 +46,11 @@ export function T3More({ c, conn, set, save }: { c: Ctx; conn: T3Conn | null; se
     </div>
     {Object.keys(tr).length > 0 && <p className="muted small">Drivers METRC knows: {[...new Set(Object.values(tr).flatMap(x => x.drivers))].join(', ') || 'none'} · Vehicles: {[...new Set(Object.values(tr).flatMap(x => x.vehicles))].join(', ') || 'none'}. The app uses METRC's employee ID for a driver whose name matches; otherwise the driver's license number from Compliance &gt; Vehicles.</p>}
 
+    <h3 style={{ marginTop: 14 }}>METRC tags</h3>
+    <label className="check"><input type="checkbox" checked={(set['comp.tag_autofill'] ?? 'true') === 'true'} disabled={!c.isAdmin}
+      onChange={e => save('comp.tag_autofill', e.target.checked ? 'true' : 'false')} /> <span>Autofill the next available tag <span className="muted">(new tag boxes start filled in; suggestions show either way)</span></span></label>
+    <p className="muted small">Tags come from METRC's available list for each license (pulled nightly, or Admin › Settings › Licenses › Pull tags from METRC). Ranges blocked off for a purpose there are kept for that purpose.</p>
+
     <h3 style={{ marginTop: 14 }}>Plants and harvests (Phase 2)</h3>
     <div className="grid2">
       <div className="field"><label>Used up (Remove) reason</label>

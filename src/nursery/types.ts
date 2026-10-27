@@ -13,7 +13,7 @@ export interface Mother {
 export type Stage = 'rooting' | 'ready' | 'done' | 'cancelled'
 export interface Batch {
   id: number; site: string; room_id: number | null; strain: string; name: string | null; order_id: number | null; cut_on: string
-  cuttings: number; lost: number; ready_on: string | null; stage: Stage; tags: string[]; notes: string | null; created_at: string
+  cuttings: number; lost: number; ready_on: string | null; stage: Stage; tags: string[]; package_tag?: string | null; notes: string | null; created_at: string
   gen: 1 | 2 | 3 | 4; season: number | null; mother_id: number | null; trays: number | null; emerged_on: string | null; moved_out_on: string | null
   sort1_on: string | null; s1_vigorous: number | null; s1_minimal: number | null; s1_none: number | null; s1_dead: number | null
   sort2_on: string | null; s2_vigorous: number | null; s2_minimal: number | null; s2_none: number | null; s2_dead: number | null

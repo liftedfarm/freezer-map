@@ -21,7 +21,7 @@ export function T3Settings({ c }: { c: Ctx }) {
   const load = async () => {
     try {
       const [k, cn, s] = await Promise.all([c.api.pushKinds(), c.api.t3Conn(),
-        c.api.sb.from('app_settings').select('key,value').like('key', 'comp.metrc_%').then(r => r.data ?? [])])
+        c.api.sb.from('app_settings').select('key,value').or('key.like.comp.metrc_%,key.eq.comp.tag_autofill').then(r => r.data ?? [])])
       setKinds(k); setConn(cn); setSet(Object.fromEntries(s.map(x => [x.key, x.value]))); setErr(null)
     } catch (e) { setErr(errText(e)) }
   }

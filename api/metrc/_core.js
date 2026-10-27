@@ -189,3 +189,12 @@ export async function adjustReasons(license) {
   const j = await t3('GET', '/v2/packages/adjust/inputs', { query: { licenseNumber: license } })
   return (j?.actionReasons ?? []).filter(r => r.forPackageAdjustments !== false).map(r => ({ id: r.id, name: unhtml(r.name), requiresNote: !!r.requiresNote }))
 }
+
+/** a T3 file (PDF), as base64 */
+export async function t3file(path, query) {
+  const qs = new URLSearchParams(Object.entries(query || {}).filter(([, v]) => v != null && v !== '')).toString()
+  const r = await fetch(`${T3}${path}${qs ? `?${qs}` : ''}`, { headers: { 'X-T3-API-Key': process.env.T3_SECRET_KEY, Accept: 'application/pdf' } })
+  const buf = Buffer.from(await r.arrayBuffer())
+  if (!r.ok) { let m = buf.toString('utf8').slice(0, 400); try { const j = JSON.parse(m); m = j.message || j.error?.message || m } catch { /* text */ } throw new T3Error(m || `T3 answered ${r.status}`, r.status) }
+  return { type: r.headers.get('content-type') || 'application/pdf', base64: buf.toString('base64') }
+}

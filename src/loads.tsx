@@ -2,7 +2,7 @@ import { ListInput, Select } from './combo'
 import { ScanButton } from './scan'
 import { sameTag, useScanHandler } from './scanroute'
 import { useEffect, useMemo, useState } from 'react'
-import { metrcRun } from './metrcCall'
+import { metrcRun, openMetrcManifest } from './metrcCall'
 import type { AppTransfer, StopCheckRow } from './metrcCall'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { lbs } from './forms'
@@ -386,6 +386,10 @@ export function LoadView({ ctx, loadId, onBack, onEdit }: { ctx: LoadCtx; loadId
                     setTimeout(() => URL.revokeObjectURL(url), 30000)
                   } catch (e) { await ctx.run(() => Promise.reject(e), '') } finally { setMaking(null) }
                 }}>{making === s.id ? 'Making…' : 'Manifest sheet'}</button>}
+                {s.manifest && /^\d{6,}$/.test(s.manifest.trim()) && froms.length > 0 && <button className="ghost small" onClick={() => {
+                  const sb = ctx.api.client(); const lic = siteLicense(lics, froms[0])
+                  if (sb && lic) openMetrcManifest(sb, lic, s.manifest!.trim()).catch(e => ctx.run(() => Promise.reject(e), ''))
+                }}>METRC manifest</button>}
               </div>
             </div>
           )

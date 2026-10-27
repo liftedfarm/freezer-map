@@ -249,10 +249,10 @@ async function sendNurseryRun(job, ctx) {
   const key = `nurs:${d.ref}`
   const made = await one(`metrc_app_transfers?key=eq.${enc(key)}&state=neq.voided&select=manifest`)
   if (made) throw new Skip(`Already on METRC manifest ${made.manifest ?? '(number pending)'}`)
-  const batches = await db(`nursery_batches?id=in.(${Object.keys(d.per_batch ?? {}).filter(k => k !== '0').map(Number).join(',') || 0})&select=id,name,tags`)
+  const batches = await db(`nursery_batches?id=in.(${Object.keys(d.per_batch ?? {}).filter(k => k !== '0').map(Number).join(',') || 0})&select=id,name,package_tag`)
   const pk = []
   for (const b of batches) {
-    const tag = up(b.tags?.[0])
+    const tag = up(b.package_tag)
     if (!tag) throw new Error(`Cutting batch ${b.name ?? b.id} has no clone package tag`)
     const m = await packageByTag(lic, tag)
     const sent = Number(d.per_batch?.[String(b.id)] ?? 0)

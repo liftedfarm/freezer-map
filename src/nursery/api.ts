@@ -71,7 +71,9 @@ export class NurseryApi {
       { p_order: orderId, p_lines: lines, p_date: date, p_manifest: manifest, p_notes: notes })
   }
   undoDelivery(ref: string) { return this.rpc('nursery_undo_delivery', { p_ref: ref }) }
-  async nextTags(site: string, n: number) { try { return await this.rpc<string[]>('nursery_next_tags', { p_site: site, p_count: n }) ?? [] } catch { return [] } }
+  async nextTags(site: string, n: number, type: 'plant' | 'package' = 'plant') { try { return await this.rpc<string[]>('nursery_next_tags', { p_site: site, p_count: n, p_type: type }) ?? [] } catch { return [] } }
+  /** autofill switch (Compliance > Settings > METRC tags) */
+  async tagAutofill() { const { data } = await this.sb.from('app_settings').select('value').eq('key', 'comp.tag_autofill').maybeSingle(); return (data?.value ?? 'true') === 'true' }
   setSetting(key: string, value: string) { return this.rpc('set_nursery_setting', { p_key: key, p_value: value }) }
   saveRange(p: { license: string; first?: string; last?: string; id?: number; active?: boolean; purpose?: string; notes?: string | null }) { return this.rpc<TagRange>('save_tag_range', { p }) }
 

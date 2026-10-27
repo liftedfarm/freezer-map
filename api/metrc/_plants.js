@@ -31,7 +31,7 @@ export async function sendNurseryClones(job, ctx) {
   const lic = job.license
   const b = await one(`nursery_batches?id=eq.${Number(d.batch_id)}&select=*`)
   if (!b) throw new Error('The cutting batch is gone from the app')
-  const tag = up(b.tags?.[0])
+  const tag = up(b.package_tag)
   if (!tag) throw new Wait('Give the cutting batch its clone package tag (Nursery > Batches), then send')
   if (await packageByTag(lic, tag)) throw new Skip(`METRC already has ${tag}`)
   let lots = []
@@ -63,8 +63,8 @@ export async function sendNurseryMothers(job, ctx) {
   const lotTag = up(m?.plant_tag ?? d.lot_tag)
   if (!lotTag) throw new Wait('Give the mother lot its plant tag (Nursery > Mothers), then send')
   if (await plantBatch(lic, lotTag)) throw new Skip(`METRC already has mother lot ${lotTag}`)
-  const b = await one(`nursery_batches?id=eq.${Number(d.batch_id)}&select=tags`)
-  const src = up(b?.tags?.[0] ?? d.source_tag)
+  const b = await one(`nursery_batches?id=eq.${Number(d.batch_id)}&select=package_tag`)
+  const src = up(b?.package_tag ?? d.source_tag)
   if (!src) throw new Wait('The cutting batch has no clone package tag yet')
   const p = await packageByTag(lic, src)
   if (!p) throw new Wait(`Clone package ${src} isn't active on ${lic} yet (its own to-do goes first)`)
@@ -105,8 +105,8 @@ export async function sendNurseryLoss(job, ctx) {
     const resp = await write(ctx, '/v2/plantbatches/destroy', lic, body)
     return { state: ctx.live ? 'sent' : 'checked', request: body, response: resp, info: `${ctx.live ? 'METRC' : 'Dry run OK'}: destroy ${lost} from mother lot ${lot.name}` }
   }
-  const b = await one(`nursery_batches?id=eq.${Number(d.batch_id)}&select=tags`)
-  const tag = up(b?.tags?.[0] ?? d.tag)
+  const b = await one(`nursery_batches?id=eq.${Number(d.batch_id)}&select=package_tag`)
+  const tag = up(b?.package_tag ?? d.tag)
   if (!tag) throw new Error('The cutting batch has no clone package tag')
   const p = await packageByTag(lic, tag)
   if (!p) throw new Error(`Clone package ${tag} isn't active on ${lic}`)

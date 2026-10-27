@@ -26,6 +26,8 @@ import { ItemLotRows, TestRows } from '../comp/trace'
 import type { Col, GroupBy, Chip } from '../invtable'
 import { MetrcNote } from '../metrc'
 import type { InvAction } from '../metrc'
+import { openMetrcManifest } from '../metrcCall'
+import type { PalletManifest } from '../metrcCall'
 
 /** the freezer map's pallet actions, handed down from App (same dialogs, same METRC queue) */
 export interface InvBridge { act: (p: Pallet, kind: InvAction) => void; info: (id: number) => { load?: string; mixed?: string; inSnap: boolean }; tick: number }
@@ -61,6 +63,8 @@ interface Ctx {
   runOf: (palletId: number) => Run | undefined; openRun: (r: Run, logDate?: string) => void; openPkg: (p: Pallet) => void
   start: (kind: Run['kind'], ids?: number[]) => void; send: (ids: number[]) => void; back: (ids: number[]) => void; putAway: (p: Pallet) => void
   manifest: (ids: number[]) => Promise<void>; dried: (ids: number[]) => Promise<void>
+  /** the METRC manifest a package went out on, and a button that opens it */
+  mfst: (p: Pallet) => ReactNode
   sb: ReturnType<Backend['client']>
   inv?: InvBridge
 }
@@ -87,6 +91,13 @@ export default function ProcessingView({ backend, flash, tab, go, isAdmin, canEd
   }, [api])
   useEffect(() => { load() }, [load])
   useEffect(() => { if (inv?.tick) load() }, [inv?.tick])   // a map action (split, merge, weight...) finished
+  const [mf, setMf] = useState<Map<number, PalletManifest>>(new Map())
+  useEffect(() => {
+    if (!sb || !d) return
+    const ids = d.pallets.filter(p => p.package_tag && (p.status === 'at_processor' || p.product === 'wet' || p.product === 'unbucked')).map(p => p.id)
+    if (!ids.length) return
+    sb.rpc('pallet_manifests', { p_ids: ids }).then(({ data }) => setMf(new Map(((data ?? []) as PalletManifest[]).map(x => [x.pallet_id, x]))))
+  }, [d, sb])
   // Scan in Processing opens the package card (Buck, Trim, Send to processor...); other tags go to the app's pallet card
   useScanHandler(tag => {
     const p = d?.pallets.find(x => sameTag(x.package_tag, tag))
@@ -122,6 +133,8 @@ export default function ProcessingView({ backend, flash, tab, go, isAdmin, canEd
       try { const m = await api.manifest(ids); const { manifestPdf, manifestFile } = await import('../manifest'); const b = await manifestPdf(m)
         const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = manifestFile(m); a.click() } catch (e) { flash(errText(e), true) }
     },
+    mfst: p => { const m = mf.get(p.id); return m && sb ? <button className="ghost small" title={`METRC manifest ${m.manifest} (${m.license})`}
+      onClick={e => { e.stopPropagation(); openMetrcManifest(sb, m.license, m.manifest).catch(er => flash(errText(er), true)) }}>Manifest {m.manifest.replace(/^0+/, '')}</button> : null },
     dried: async ids => { try { await api.dried(ids); flash(`${ids.length} now unbucked`); await reload() } catch (e) { flash(errText(e), true) } },
   }
   return (
@@ -283,11 +296,10 @@ function Drying({ c }: { c: Ctx }) {
       <h3 className="csec row between"><span>At processors <span className="muted">{away.length ? `${away.length} · ${n0(sum(away.map(w)))} lbs wet` : ''}</span></span>{away.length > 0 && c.canEdit && <SelButton sel={selAway} />}</h3>
       {!away.length && <p className="muted">Nothing out at a processor.</p>}
       {[...byProc.entries()].map(([pid, ps]) => <div key={pid}>
-        <h4 className="subh row between"><span>{c.procName(pid) || 'Unknown processor'} <span className="muted">{ps.length} · {n0(sum(ps.map(w)))} lbs</span></span>
-          <button className="ghost small" onClick={() => c.manifest(ps.map(p => p.id))}>Manifest sheet</button></h4>
-        <PkgTable c={c} rows={ps} sel={selAway} extra={p => p.sent_on ? <span className={days(p.sent_on, today()) > 21 ? 'warn-t' : 'muted'}>{days(p.sent_on, today())} days out</span> : null} />
+        <h4 className="subh row between"><span>{c.procName(pid) || 'Unknown processor'} <span className="muted">{ps.length} · {n0(sum(ps.map(w)))} lbs</span></span></h4>
+        <PkgTable c={c} rows={ps} sel={selAway} extra={p => <span className="row nowrap" style={{ justifyContent: 'flex-end', gap: 6 }}>{c.mfst(p)}{p.sent_on ? <span className={days(p.sent_on, today()) > 21 ? 'warn-t' : 'muted'}>{days(p.sent_on, today())} days out</span> : null}</span>} />
       </div>)}
-      <SelBar sel={selAway} noun="package" actions={[{ label: 'Back unbucked', run: async ids => c.back(ids) }, { label: 'Manifest sheet', run: ids => c.manifest(ids) }]} />
+      <SelBar sel={selAway} noun="package" actions={[{ label: 'Back unbucked', run: async ids => c.back(ids) }]} />
 
       <h3 className="csec">Back, needs a spot <span className="muted">{backHere.length || ''}</span></h3>
       {backHere.length ? <PkgTable c={c} rows={backHere} extra={p => c.canEdit ? <span className="row"><button className="ghost small" onClick={e => { e.stopPropagation(); c.putAway(p) }}>Put in a trailer</button>
@@ -324,8 +336,7 @@ function WetSheet({ c, h, onClose }: { c: Ctx; h: DryHarvest; onClose: () => voi
   const inHouse = procs.find(p => p.id === proc)?.in_house
   async function save() {
     setBusy(true)
-    try { const codes = await c.api.makeWet(h.id, rows.filter(r => r.lbs).map(r => ({ lbs: r.lbs!, tag: r.tag })), proc, sent); c.flash(`${codes.join(', ')} made${proc != null && !inHouse ? '. Manifest sheet downloading.' : ''}`)
-      if (proc != null && !inHouse) await c.manifest(await c.api.idsOf(codes))
+    try { const codes = await c.api.makeWet(h.id, rows.filter(r => r.lbs).map(r => ({ lbs: r.lbs!, tag: r.tag })), proc, sent); c.flash(`${codes.join(', ')} made`)
       await c.reload(); onClose() }
     catch (e) { c.flash(errText(e), true) } finally { setBusy(false) }
   }
@@ -340,7 +351,7 @@ function WetSheet({ c, h, onClose }: { c: Ctx; h: DryHarvest; onClose: () => voi
     {h.raw_lbs != null && tot !== h.raw_lbs && <p className="warn-t small-note">Packages add up to {n0(tot)} lbs; the harvest logged {n0(h.raw_lbs)} lbs raw.</p>}
     <F label="Going to"><Pick value={proc} blank="Stays here for now" options={procs.map(p => ({ v: p.id, l: p.name }))} onChange={setProc} /></F>
     {proc != null && !inHouse && <F label="Sent"><DateIn value={sent} onChange={setSent} /></F>}
-    <p className="muted small-note">{proc == null || inHouse ? 'It lands as "Needs a spot" at ' + h.site + '. Mark it "Dried in house" when it comes off the drying racks.' : 'It shows under At processors until it comes back unbucked. The manifest sheet (PDF) downloads so you can enter the transfer in METRC.'}</p>
+    <p className="muted small-note">{proc == null || inHouse ? 'It lands as "Needs a spot" at ' + h.site + '. Mark it "Dried in house" when it comes off the drying racks.' : 'It shows under At processors until it comes back unbucked. Its METRC manifest shows on its line once METRC has it.'}</p>
     <SaveBar busy={busy} onCancel={onClose} onSave={save} saveLabel="Make package" disabled={!tot} />
   </Sheet>
 }
@@ -357,9 +368,9 @@ function SendSheet({ c, ids, onClose }: { c: Ctx; ids: number[]; onClose: () => 
   }
   const pr = procs.find(p => p.id === proc)
   if (sent) return <Sheet title={`Sent to ${pr?.name ?? 'the processor'}`} onClose={onClose}>
-    <p>Print the manifest sheet: our license, theirs, the transporter, and every package with its tag, batch and wet weight. Then enter the transfer in METRC.</p>
+    <p>Make the transfer in METRC if the app isn't sending processor transfers yet. Each package's METRC manifest shows on its line under At processors once METRC has it (nightly, or Compliance › METRC › Pull from METRC).</p>
     {!pr?.license && <p className="warn-t small-note">{pr?.name} has no license on file yet. Add it in Processing › Settings › Processors.</p>}
-    <div className="row between csave"><span /><div className="row"><button className="ghost" onClick={onClose}>Done</button><button className="primary" onClick={() => c.manifest(ids)}>Manifest sheet (PDF)</button></div></div>
+    <div className="row between csave"><span /><div className="row"><button className="primary" onClick={onClose}>Done</button></div></div>
   </Sheet>
   return <Sheet title={`Send ${ids.length} to a processor`} onClose={onClose}>
     <F label="Processor"><Pick value={proc} options={procs.map(p => ({ v: p.id, l: p.name }))} onChange={setProc} /></F>
@@ -696,7 +707,7 @@ function PackageSheet({ c, p, onClose }: { c: Ctx; p: Pallet; onClose: () => voi
       {free && (p.product === 'wet' || p.product === 'unbucked') && <button className="ghost" onClick={() => go(() => c.send([p.id]))}>Send to processor</button>}
       {free && p.product === 'wet' && <button className="ghost" onClick={() => go(() => c.dried([p.id]))}>Dried here</button>}
       {p.status === 'at_processor' && <button className="primary" onClick={() => go(() => c.back([p.id]))}>Back unbucked</button>}
-      {p.status === 'at_processor' && <button className="ghost" onClick={() => c.manifest([p.id])}>Manifest sheet</button>}
+      {c.mfst(p)}
       {free && p.product === 'bucked' && <button className="ghost" onClick={() => go(() => c.start('sort', [p.id]))}>Sort</button>}
       {free && takes('trim', p) && <button className="primary" onClick={() => go(() => c.start('trim', [p.id]))}>Trim</button>}
       {free && takes('machine', p) && p.product !== 'bucked' && <button className="ghost" onClick={() => go(() => c.start('machine', [p.id]))}>Machine trim</button>}

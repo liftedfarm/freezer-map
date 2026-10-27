@@ -12,7 +12,7 @@ export interface Lic {
   license_no: string; kind: string; tier: string | null; entity: string; dba: string | null; site: string | null; premises: string | null; address: string | null
   email: string | null; phone: string | null; remit: string | null; hub: boolean; expires: string | null; active: boolean; notes: string | null; sort: number
 }
-export interface Range { id: number; site: string; purpose: string; prefix: string; first_n: number; last_n: number; digits: number; active: boolean; notes: string | null; license: string | null }
+export interface Range { id: number; site: string; purpose: string; prefix: string; first_n: number; last_n: number; digits: number; active: boolean; notes: string | null; license: string | null; reserved?: boolean }
 type Flash = (t: string, bad?: boolean) => void
 
 export const KIND_LABEL: Record<string, string> = {
@@ -36,6 +36,7 @@ export function TagRanges({ sb, license, kind, ranges, used, canEdit, flash, onC
   const [first, setFirst] = useState('')
   const [last, setLast] = useState('')
   const [purpose, setPurpose] = useState(kind === 'nursery' ? 'plant' : 'harvest')
+  const [reserve, setReserve] = useState(true)
   const [busy, setBusy] = useState(false)
   const mine = ranges.filter(r => r.license === license)
   const go = async (p: Record<string, unknown>, ok: string) => {
@@ -44,14 +45,16 @@ export function TagRanges({ sb, license, kind, ranges, used, canEdit, flash, onC
   }
   return (
     <div className="tagranges">
-      {!mine.length && <p className="muted small">No METRC tag ranges for this license yet.</p>}
+      <p className="muted small">Ranges marked "blocked off" keep tags for one purpose (the pallet-number tags are blocked off for harvest pallets). Once METRC's available tags are pulled, a purpose with its own blocked-off range takes tags only from it, and everything else skips blocked-off ranges. Other ranges are the old lists of issued tags, used only until METRC's list is pulled.</p>
+      {!mine.length && <p className="muted small">No tag ranges blocked off for this license.</p>}
       {[...new Set(mine.map(r => r.purpose))].map(pu => {
         const rs = mine.filter(r => r.purpose === pu), on = rs.filter(r => r.active)
         const n = (xs: Range[]) => xs.reduce((a, r) => a + r.last_n - r.first_n + 1, 0)
         const row = (r: Range) => (
           <div key={r.id} className={`drow ${r.active ? '' : 'off'}`}>
             <span className="grow"><span className="mono">{tag(r, r.first_n).slice(-10)}{r.last_n > r.first_n ? ` to ${tag(r, r.last_n).slice(-10)}` : ''}</span><span className="muted"> · {(r.last_n - r.first_n + 1).toLocaleString()} {r.last_n > r.first_n ? 'tags' : 'tag'}
-              {used ? ` · ${used(r).toLocaleString()} used` : ''}{r.active ? '' : ' · off'}</span></span>
+              {used ? ` · ${used(r).toLocaleString()} used` : ''}{r.active ? '' : ' · off'}</span>{r.reserved && <span className="pill m-warn">blocked off</span>}{r.notes && <span className="muted small"> {r.notes}</span>}</span>
+            {canEdit && <button className="ghost small" disabled={busy} onClick={() => go({ id: r.id, reserved: !r.reserved }, r.reserved ? 'Range released' : 'Range blocked off')}>{r.reserved ? 'Release' : 'Block off'}</button>}
             {canEdit && <button className="ghost small" disabled={busy} onClick={() => go({ id: r.id, active: !r.active }, r.active ? 'Range off' : 'Range on')}>{r.active ? 'Turn off' : 'Turn on'}</button>}
           </div>)
         return rs.length === 1 ? <div key={pu}><b className="small">{PURPOSE_LABEL[pu] ?? pu}</b>{row(rs[0])}</div> : (
@@ -62,7 +65,8 @@ export function TagRanges({ sb, license, kind, ranges, used, canEdit, flash, onC
         <Select value={purpose} onChange={e => setPurpose(e.target.value)}>{Object.entries(PURPOSE_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</Select>
         <input value={first} onChange={e => setFirst(e.target.value.toUpperCase())} placeholder="First tag" /><ScanButton compact onScan={setFirst} />
         <input value={last} onChange={e => setLast(e.target.value.toUpperCase())} placeholder="Last tag" /><ScanButton compact onScan={setLast} />
-        <button className="ghost small" disabled={busy || !first.trim() || !last.trim()} onClick={() => go({ first: first.trim(), last: last.trim(), purpose }, 'Tag range added')}>+ Add range</button>
+        <label className="check"><input type="checkbox" checked={reserve} onChange={e => setReserve(e.target.checked)} /> <span>Block off for this purpose</span></label>
+        <button className="ghost small" disabled={busy || !first.trim() || !last.trim()} onClick={() => go({ first: first.trim(), last: last.trim(), purpose, reserved: reserve }, 'Tag range added')}>+ Add range</button>
       </div>}
     </div>
   )
@@ -77,8 +81,11 @@ export function LicensesPanel({ backend, flash }: { backend: Backend; flash: Fla
   const [ed, setEd] = useState<Partial<Lic> | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [counts, setCounts] = useState<{ license: string; tag_type: string; available: number; free: number; pulled: string | null }[]>([])
+  const [pulling, setPulling] = useState<string | null>(null)
   const load = async () => {
     if (!sb) return
+    sb.rpc('metrc_tag_counts').then(({ data }) => setCounts((data ?? []) as typeof counts))
     const [l, r, f] = await Promise.all([sb.from('licenses').select('*').order('sort'), sb.from('tag_ranges').select('*').order('id'), sb.from('freezers').select('*').order('site').order('number')])
     if (l.error) { setErr(/licenses/.test(l.error.message) ? 'Run 028_licenses_nursery.sql in Supabase first.' : l.error.message); return }
     setLics(l.data as Lic[]); setRanges((r.data ?? []) as Range[]); setFreezers((f.data ?? []) as typeof freezers); setErr(null)
@@ -93,6 +100,18 @@ export function LicensesPanel({ backend, flash }: { backend: Backend; flash: Fla
   }
   const moveFreezer = async (id: number, lic: string) => {
     try { await rpc(sb, 'set_freezer_license', { p_freezer: id, p_license: lic }); flash('Freezer moved'); load() } catch (e) { flash(String((e as Error).message ?? e), true) }
+  }
+  const pullTags = async (lic: string) => {
+    setPulling(lic)
+    try {
+      const { data } = await sb.auth.getSession()
+      const r = await fetch('/api/metrc/sync', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${data.session?.access_token ?? ''}` }, body: JSON.stringify({ licenses: [lic], only: 'tags' }) })
+      const j = await r.json().catch(() => ({ error: `The server didn't answer (${r.status})` }))
+      if (!r.ok) throw new Error(j.error ?? `Error ${r.status}`)
+      const res = j.results?.[0]
+      if (res?.error) throw new Error(res.error)
+      flash(`${lic}: ${(res?.tags ?? 0).toLocaleString()} available tags from METRC`); load()
+    } catch (e) { flash(String((e as Error).message ?? e), true) } finally { setPulling(null) }
   }
   const set = (v: Partial<Lic>) => setEd(s => ({ ...s, ...v }))
   const real = freezers.filter(f => f.kind !== 'staging' && f.number > 0)
@@ -109,6 +128,10 @@ export function LicensesPanel({ backend, flash }: { backend: Backend; flash: Fla
             <div className="muted">{l.entity}{l.dba ? ` (dba ${l.dba})` : ''}{l.site ? ` · ${l.site}` : ''}{l.premises && l.premises !== l.site ? ` ${l.premises}` : ''}{l.hub ? ' · distribution hub' : ''}{l.expires ? ` · expires ${l.expires}` : ''}{l.active ? '' : ' · inactive'}</div>
             {l.notes && <div className="small">{l.notes}</div>}
             {fz.length > 0 && <div className="small">{fz.length} {fz.length === 1 ? 'freezer' : 'freezers'}: {fz[0].site} {fz.map(f => f.number).join(', ')}</div>}
+            {l.kind !== 'transport' && <div className="row wrap small" style={{ alignItems: 'center', gap: 8, margin: '6px 0' }}>
+              <span><b>METRC available tags:</b> {(() => { const cs = counts.filter(x => x.license === l.license_no)
+                return cs.length ? cs.map(x => `${x.free.toLocaleString()} ${x.tag_type} free (${x.available.toLocaleString()} available)`).join(' · ') + ` · pulled ${new Date(cs[0].pulled ?? '').toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}` : 'not pulled yet' })()}</span>
+              <button className="ghost small" disabled={!!pulling} onClick={() => pullTags(l.license_no)}>{pulling === l.license_no ? 'Pulling…' : 'Pull tags from METRC'}</button></div>}
             <TagRanges sb={sb} license={l.license_no} kind={l.kind} ranges={ranges} canEdit flash={flash} onChanged={load} />
           </section>
         )

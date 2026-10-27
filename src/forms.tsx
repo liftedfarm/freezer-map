@@ -1,5 +1,6 @@
 import { TextIn } from './cult/ui'
-import { useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useState } from 'react'
+import { useTagPool } from './tagSuggest'
 import { ScanButton } from './scan'
 import type { MixLine, Pallet, SingleInput } from './types'
 import { MetrcNote, WEIGHT_REASONS, defaultReason } from './metrc'
@@ -24,12 +25,17 @@ function Dialog({ title, children, onClose }: { title: string; children: React.R
 function TagField({ tag, setTag, pending, setPending, label = 'New METRC tag' }: {
   tag: string; setTag: (v: string) => void; pending: boolean; setPending: (v: boolean) => void; label?: string
 }) {
+  const pool = useTagPool()
+  const lid = useId()
+  // autofill: an empty box starts with the next available tag (Compliance > Settings > METRC tags)
+  useEffect(() => { if (pool?.autofill && pool.tags.length && !tag && !pending) setTag(pool.tags[0]) }, [pool])
   return (
     <div className="field">
-      <label>{label}</label>
+      <label>{label}{pool?.from_metrc && pool.tags.length > 0 && <span className="muted"> · next available: {pool.tags[0].slice(-8)}</span>}</label>
       <div className="row tagrow">
-        <input className="mono-in grow-in" value={tag} disabled={pending} placeholder="1A40603000…"
+        <input className="mono-in grow-in" value={tag} disabled={pending} placeholder="1A40603000…" list={`tl${lid}`}
           onChange={e => setTag(e.target.value.toUpperCase().replace(/\s/g, ''))} />
+        <datalist id={`tl${lid}`}>{(pool?.tags ?? []).map(t => <option key={t} value={t} />)}</datalist>
         <ScanButton disabled={pending} onScan={setTag} />
       </div>
       <label className="check"><input type="checkbox" checked={pending} onChange={e => setPending(e.target.checked)} /> Tag pending, I'll add it later</label>

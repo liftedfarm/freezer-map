@@ -33,7 +33,7 @@ function pkgRow(license, p, state, now) {
     location: p.locationName ?? null, source_labels: labels(p.sourcePackageLabels), source_harvests: p.sourceHarvestNames ?? null,
     packaged_on: day(p.packagedDate), finished_on: day(p.finishedDate), last_modified: p.lastModified ?? null,
     on_hold: !!(p.isOnHold || p.isOnInvestigationHold), lab_state: p.labTestingStateName ?? null,
-    received_manifest: p.receivedFromManifestNumber ?? null, received_from: p.receivedFromFacilityName ?? null, seen_at: now,
+    received_manifest: p.receivedFromManifestNumber ?? null, received_from: p.receivedFromFacilityName ?? null, out_manifest: p.transferManifestNumber || null, seen_at: now,
   }
 }
 function transferRow(license, t, now) {
@@ -76,9 +76,18 @@ async function pages(path, query, onPage, out) {
   }
 }
 
+/** available tags only (Licenses > Pull tags from METRC) */
+async function syncTagsOnly(license, t0) {
+  const out = { calls: 0, tags: 0, notes: [], timeUp: () => Date.now() - t0 > BUDGET_MS }
+  const now = new Date().toISOString()
+  let complete = false, error = null
+  try { complete = await syncTags(license, out, now) } catch (e) { error = String(e.message || e).slice(0, 500) }
+  return { license, complete, error, tags: out.tags, calls: out.calls }
+}
+
 async function syncLicense(license, by, t0) {
   const run = (await db('metrc_sync_runs', { method: 'POST', body: JSON.stringify({ license, started_by: by }), headers: { Prefer: 'return=representation' } }))[0]
-  const out = { calls: 0, active: 0, intransit: 0, inactive: 0, transferred: 0, transfers: 0, delivery_packages: 0, locations: 0, strains: 0, plant_batches: 0, harvests: 0, plants: 0, live: new Set(), timeUp: () => Date.now() - t0 > BUDGET_MS }
+  const out = { calls: 0, active: 0, intransit: 0, inactive: 0, transferred: 0, transfers: 0, delivery_packages: 0, locations: 0, strains: 0, plant_batches: 0, harvests: 0, plants: 0, tags: 0, notes: [], live: new Set(), timeUp: () => Date.now() - t0 > BUDGET_MS }
   const now = new Date().toISOString()
   let complete = false, error = null
   try {
@@ -149,12 +158,29 @@ async function syncLicense(license, by, t0) {
       full = full && ok
     }
     // 5) Phase 2: locations, strains, plant batches, harvests, plant counts by location and strain
-    if (full) full = await syncPlants(license, out, now)
+    // Phase 2 and tags: a step METRC refuses (a permission the app's METRC user doesn't have) is noted, not fatal
+    if (full) {
+      try { await syncTags(license, out, now) } catch (e) { out.notes.push(`tags: ${String(e.message || e).slice(0, 200)}`) }
+      try { await syncPlants(license, out, now) } catch (e) { out.notes.push(`plants: ${String(e.message || e).slice(0, 200)}`) }
+    }
     complete = full
   } catch (e) { error = String(e.message || e).slice(0, 800) }
   const { timeUp, live, ...counts } = out
   await db(`metrc_sync_runs?id=eq.${run.id}`, { method: 'PATCH', body: JSON.stringify({ finished_at: new Date().toISOString(), counts, complete, error }), headers: { Prefer: 'return=minimal' } })
   return { license, complete, error, ...counts }
+}
+
+/** METRC's available tags for a license (package and plant), replacing the last pull's list */
+async function syncTags(license, out, now) {
+  const ok = await pages('/v2/tags/available', { licenseNumber: license }, async rows => {
+    const r = rows.filter(t => t.label && !t.isUsed && !t.isArchived).map(t => ({
+      license, label: up(t.label), tag_type: /plant/i.test(`${t.tagTypeName ?? ''} ${t.groupTagTypeName ?? ''} ${t.tagInventoryTypeName ?? ''}`) ? 'plant' : 'package',
+      type_name: t.tagTypeName ?? null, seen_at: now }))
+    if (r.length) await upsert('metrc_tags', r, 'license,label')
+    out.tags += r.length
+  }, out)
+  if (ok) await db(`metrc_tags?license=eq.${license}&seen_at=lt.${encodeURIComponent(now)}`, { method: 'DELETE', headers: { Prefer: 'return=minimal' } })
+  return ok
 }
 
 const PLANT_DETAIL_MAX = 60000   // more plants than this on a license: just the total (paging 1M+ plants nightly takes too long)
@@ -171,54 +197,65 @@ async function syncPlants(license, out, now) {
     out.strains += rows.length
   }, out)
   if (!ok) return false
-  ok = await pages('/v2/plantbatches/active', { licenseNumber: license }, async rows => {
-    await upsert('metrc_plant_batches', rows.map(b => ({ license, id: b.id, name: b.name ?? b.label, type: b.plantBatchTypeName ?? b.typeName ?? null, strain: b.strainName ?? null,
-      strain_id: b.strainId ?? null, location_id: b.locationId ?? null, location: b.locationName ?? null, untracked: b.untrackedCount ?? null, tracked: b.trackedCount ?? null,
-      packaged: b.packagedCount ?? null, destroyed: b.destroyedCount ?? null, planted_on: isoDay(b.plantedDate), source_package: b.sourcePackageLabel ?? null,
-      source_plant: b.sourcePlantLabel ?? null, state: 'active', last_modified: real(b.lastModified), seen_at: now })), 'license,id')
-    out.plant_batches += rows.length
-  }, out)
+  const step = async (name, fn) => { try { return await fn() } catch (e) { out.notes.push(`${name}: ${String(e.message || e).slice(0, 160)}`); return true } }
+  ok = await step('plant batches', async () => {
+    const done = await pages('/v2/plantbatches/active', { licenseNumber: license }, async rows => {
+      await upsert('metrc_plant_batches', rows.map(b => ({ license, id: b.id, name: b.name ?? b.label, type: b.plantBatchTypeName ?? b.typeName ?? null, strain: b.strainName ?? null,
+        strain_id: b.strainId ?? null, location_id: b.locationId ?? null, location: b.locationName ?? null, untracked: b.untrackedCount ?? null, tracked: b.trackedCount ?? null,
+        packaged: b.packagedCount ?? null, destroyed: b.destroyedCount ?? null, planted_on: isoDay(b.plantedDate), source_package: b.sourcePackageLabel ?? null,
+        source_plant: b.sourcePlantLabel ?? null, state: 'active', last_modified: real(b.lastModified), seen_at: now })), 'license,id')
+      out.plant_batches += rows.length
+    }, out)
+    if (done) await db(`metrc_plant_batches?license=eq.${license}&state=eq.active&seen_at=lt.${encodeURIComponent(now)}`, { method: 'PATCH', body: JSON.stringify({ state: 'gone' }), headers: { Prefer: 'return=minimal' } })
+    return done
+  })
   if (!ok) return false
-  await db(`metrc_plant_batches?license=eq.${license}&state=eq.active&seen_at=lt.${encodeURIComponent(now)}`, { method: 'PATCH', body: JSON.stringify({ state: 'gone' }), headers: { Prefer: 'return=minimal' } })
   const hrow = (h, state) => ({ license, id: h.id, name: h.name, strains: h.sourceStrainNames ?? null, location: h.dryingLocationName ?? null, plant_count: h.plantCount ?? null,
     wet: h.totalWetWeight ?? null, current: h.currentWeight ?? null, waste: h.totalWasteWeight ?? null, packaged: h.totalPackagedWeight ?? null, uom: h.unitOfWeightAbbreviation ?? null,
     started: isoDay(h.harvestStartDate), finished: !!h.isFinished, finished_on: isoDay(h.finishedDate), state, last_modified: real(h.lastModified), seen_at: now })
-  ok = await pages('/v2/harvests/active', { licenseNumber: license }, async rows => { await upsert('metrc_harvests', rows.map(h => hrow(h, 'active')), 'license,id'); out.harvests += rows.length }, out)
+  ok = await step('harvests', async () => {
+    let done = await pages('/v2/harvests/active', { licenseNumber: license }, async rows => { await upsert('metrc_harvests', rows.map(h => hrow(h, 'active')), 'license,id'); out.harvests += rows.length }, out)
+    if (!done) return false
+    const since = (await cursor(license, 'harvests_inactive')) ?? SEASON_START
+    done = await pages('/v2/harvests/inactive', { licenseNumber: license, filter: `lastModified__gte:${since}` }, async rows => {
+      await upsert('metrc_harvests', rows.map(h => hrow(h, 'inactive')), 'license,id'); out.harvests += rows.length
+    }, out)
+    if (done) await setCursor(license, 'harvests_inactive', new Date(Date.parse(now) - 2 * 86400000).toISOString())
+    return done
+  })
   if (!ok) return false
-  const since = (await cursor(license, 'harvests_inactive')) ?? SEASON_START
-  ok = await pages('/v2/harvests/inactive', { licenseNumber: license, filter: `lastModified__gte:${since}` }, async rows => {
-    await upsert('metrc_harvests', rows.map(h => hrow(h, 'inactive')), 'license,id'); out.harvests += rows.length
-  }, out)
-  if (!ok) return false
-  await setCursor(license, 'harvests_inactive', new Date(Date.parse(now) - 2 * 86400000).toISOString())
   // plant counts by location and strain (vegetative, flowering)
   for (const phase of ['vegetative', 'flowering']) {
     if (out.timeUp()) return false
-    const head = await t3('GET', `/v2/plants/${phase}`, { query: { licenseNumber: license, page: 1, pageSize: 5 } })
-    const total = Number(head?.total ?? list(head).length)
-    const run = `r${Date.parse(now)}`
-    if (total > PLANT_DETAIL_MAX) {
-      await rpc('metrc_plant_counts_add', { p_license: license, p_phase: phase, p_run: run, p_rows: [{ location_id: 0, location: '(all, too many to break down nightly)', strain: '', plants: total }] })
+    ok = await step(`${phase} plants`, async () => {
+      const head = await t3('GET', `/v2/plants/${phase}`, { query: { licenseNumber: license, page: 1, pageSize: 5 } })
+      const total = Number(head?.total ?? list(head).length)
+      const run = `r${Date.parse(now)}`
+      if (total > PLANT_DETAIL_MAX) {
+        await rpc('metrc_plant_counts_add', { p_license: license, p_phase: phase, p_run: run, p_rows: [{ location_id: 0, location: '(all, too many to break down nightly)', strain: '', plants: total }] })
+        await rpc('metrc_plant_counts_swap', { p_license: license, p_phase: phase, p_run: run })
+        out.plants += total
+        return true
+      }
+      const agg = new Map()
+      const done = await pages(`/v2/plants/${phase}`, { licenseNumber: license }, async rows => {
+        for (const p of rows) {
+          const k = `${p.locationId ?? 0}|${p.strainName ?? ''}`
+          const a = agg.get(k) ?? { location_id: p.locationId ?? 0, location: p.locationName ?? null, strain: p.strainName ?? '', plants: 0, oldest: null, newest: null }
+          a.plants++
+          const d = isoDay(p.plantedDate)
+          if (d && (!a.oldest || d < a.oldest)) a.oldest = d
+          if (d && (!a.newest || d > a.newest)) a.newest = d
+          agg.set(k, a)
+        }
+      }, out)
+      if (!done) return false
+      if (agg.size) await rpc('metrc_plant_counts_add', { p_license: license, p_phase: phase, p_run: run, p_rows: [...agg.values()] })
       await rpc('metrc_plant_counts_swap', { p_license: license, p_phase: phase, p_run: run })
       out.plants += total
-      continue
-    }
-    const agg = new Map()
-    const done = await pages(`/v2/plants/${phase}`, { licenseNumber: license }, async rows => {
-      for (const p of rows) {
-        const k = `${p.locationId ?? 0}|${p.strainName ?? ''}`
-        const a = agg.get(k) ?? { location_id: p.locationId ?? 0, location: p.locationName ?? null, strain: p.strainName ?? '', plants: 0, oldest: null, newest: null }
-        a.plants++
-        const d = isoDay(p.plantedDate)
-        if (d && (!a.oldest || d < a.oldest)) a.oldest = d
-        if (d && (!a.newest || d > a.newest)) a.newest = d
-        agg.set(k, a)
-      }
-    }, out)
-    if (!done) return false
-    if (agg.size) await rpc('metrc_plant_counts_add', { p_license: license, p_phase: phase, p_run: run, p_rows: [...agg.values()] })
-    await rpc('metrc_plant_counts_swap', { p_license: license, p_phase: phase, p_run: run })
-    out.plants += total
+      return true
+    })
+    if (!ok) return false
   }
   return true
 }
@@ -246,7 +283,7 @@ export default async function handler(req, res) {
     const results = []
     for (const lic of want) {
       if (Date.now() - t0 > BUDGET_MS) { results.push({ license: lic, complete: false, left: true }); continue }
-      results.push(await syncLicense(lic, by, t0))
+      results.push(req.body?.only === 'tags' ? await syncTagsOnly(lic, t0) : await syncLicense(lic, by, t0))
     }
     let closed = 0
     try { closed = await rpc('metrc_autoclose', {}) } catch { /* 071 missing */ }

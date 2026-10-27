@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { NurseryApi } from './api'
 import type { NCtx } from './calc'
 import { GEN_LABEL, GEN_WHAT, STAGE_LABEL, addDays, batchName, daysBetween, fmtD, live, n0, rooted, strainKey, tagsNeeded, today } from './calc'
@@ -57,6 +57,17 @@ export function BatchSheet({ d, c, b: b0, api, flash, onClose, onSaved }: { d: N
   const [x, setX] = useState<Partial<Batch>>(() => ({ site, cut_on: today(), tags: [], lost: 0, gen: 4,
     room_id: isNew ? d.rooms.find(r => r.active && r.kind === 'trailer')?.id ?? null : null, ...b0 }))
   const [tagText, setTagText] = useState((b0.tags ?? []).join('\n'))
+  const [pkgTags, setPkgTags] = useState<string[]>([])
+  // clone package tag: suggestions from METRC's available package tags, filled in for a new batch when autofill is on
+  useEffect(() => {
+    let on = true
+    Promise.all([api.nextTags(x.site ?? site, 20, 'package'), api.tagAutofill()]).then(([p, auto]) => {
+      if (!on) return
+      setPkgTags(p)
+      if (auto && isNew && !x.package_tag && p[0]) set({ package_tag: p[0] })
+    })
+    return () => { on = false }
+  }, [x.site])
   const [busy, setBusy] = useState(false)
   const [good, setGood] = useState<number | null>(null)
   const [mode, setMode] = useState<'edit' | 'ready' | 'loss' | 'plant'>('edit')
@@ -82,7 +93,7 @@ export function BatchSheet({ d, c, b: b0, api, flash, onClose, onSaved }: { d: N
   }
   const save = () => run(() => api.save<Batch>('nursery_batches', {
     id: x.id, site: x.site ?? site, room_id: x.room_id ?? null, strain: x.strain!.trim(), name: (x.name ?? '').trim() || autoName || null, order_id: gen === 4 ? x.order_id ?? null : null,
-    cut_on: x.cut_on!, cuttings: x.cuttings!, lost: x.lost ?? 0, ready_on: x.ready_on ?? (x.cut_on ? addDays(x.cut_on, d.settings.rootDays) : null), stage: x.stage ?? 'rooting', tags, notes: x.notes ?? null,
+    cut_on: x.cut_on!, cuttings: x.cuttings!, lost: x.lost ?? 0, ready_on: x.ready_on ?? (x.cut_on ? addDays(x.cut_on, d.settings.rootDays) : null), stage: x.stage ?? 'rooting', tags, package_tag: (x.package_tag ?? '').trim().toUpperCase() || null, notes: x.notes ?? null,
     gen, season: x.season ?? (x.cut_on ? nextSeason(gen, x.cut_on) : null), mother_id: x.mother_id ?? null, trays: x.trays ?? (x.cuttings ? Math.round(x.cuttings / tray * 10) / 10 : null),
     emerged_on: x.emerged_on ?? null, moved_out_on: x.moved_out_on ?? null,
     sort1_on: x.sort1_on ?? null, s1_vigorous: x.s1_vigorous ?? null, s1_minimal: x.s1_minimal ?? null, s1_none: x.s1_none ?? null, s1_dead: x.s1_dead ?? null,
@@ -136,6 +147,11 @@ export function BatchSheet({ d, c, b: b0, api, flash, onClose, onSaved }: { d: N
       </div>
       <StrainList id="n-strains" names={[...new Set([...d.mothers.filter(m => m.status === 'active').map(m => m.strain), ...d.strains])]} />
       <F label={t('METRC batch name')}><TextIn value={x.name} placeholder={autoName} onChange={v => set({ name: v })} /></F>
+      <F label={t('Clone package tag (METRC)')} hint={t('one package for this cutting event')}>
+        <div className="row"><input className="mono" list="n-pkg-tags" value={x.package_tag ?? ''} onChange={e => set({ package_tag: e.target.value.toUpperCase().replace(/\s/g, '') })} placeholder="1A40603…" />
+          <ScanButton onScan={v => set({ package_tag: v })} disabled={busy} /></div>
+        <datalist id="n-pkg-tags">{pkgTags.map(p => <option key={p} value={p} />)}</datalist>
+      </F>
       <F label={t('METRC tags')} hint={t('({n} of {of}: one per 100 plants)', { n: tags.length, of: tagsNeeded(x.cuttings ?? 1) })}>
         <textarea rows={Math.max(2, Math.min(6, tags.length + 1))} value={tagText} onChange={e => setTagText(e.target.value.toUpperCase())} placeholder={t('One tag per line')} />
         <div className="row"><button type="button" className="ghost small" onClick={fillTags} disabled={busy || tags.length >= tagsNeeded(x.cuttings ?? 1)}>{t('Fill next tags')}</button>

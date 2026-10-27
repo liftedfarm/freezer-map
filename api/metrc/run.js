@@ -4,11 +4,12 @@
 //   { action: 'send', ids: [...] }          send (Live) or dry-run check to-dos
 //   { action: 'checklist', load_id }        the METRC checklist for every pending stop of a load (Depart needs it green)
 //   { action: 'depart', load_id }           after Depart: send the load's manifests now if those kinds are on Auto
+//   { action: 'manifest_pdf', license, manifest } the METRC manifest PDF (base64)
 //   { action: 'incoming', license? }        incoming METRC deliveries for our licenses (Distribution > Inbound)
 //   { action: 'inbound_receive', license, delivery_id }  receive a delivery in METRC (Live) and bring it into the app
 import { asUser, caller, db, isLive, missing, rpc, runJob, send, t3, testConnection } from './_t3.js'
 import { incoming, loadChecklist, receiveDelivery } from './_xfer.js'
-import { enc, up } from './_core.js'
+import { enc, t3file, up } from './_core.js'
 
 export const config = { maxDuration: 60 }
 
@@ -74,6 +75,15 @@ export default async function handler(req, res) {
       const out = []
       for (const j of jobs.sort((a, b) => a.id - b.id)) out.push(await runJob(j, ctx))
       return send(res, 200, { live, results: out })
+    }
+    if (body.action === 'manifest_pdf') {
+      // the manifest PDF straight from METRC, for any manifest one of our licenses shipped or received
+      const lic = String(body.license || ''), man = String(body.manifest || '').replace(/\D/g, '')
+      if (!lic || !man) return send(res, 400, { error: 'Which manifest?' })
+      const ok = (await db('metrc_connection?id=eq.1&select=licenses'))?.[0]?.licenses?.some(l => l.license === lic && l.in_t3)
+      if (!ok) return send(res, 400, { error: `${lic} isn't one of the licenses the app's METRC user can reach` })
+      const f = await t3file('/v2/transfers/manifest', { licenseNumber: lic, manifestNumber: man })
+      return send(res, 200, { manifest: man, license: lic, ...f })
     }
     if (body.action === 'incoming') {
       const lics = (await ours()).filter(l => !body.license || l.license === body.license)

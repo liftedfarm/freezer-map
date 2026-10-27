@@ -47,6 +47,7 @@ import { LicensesPanel, PURPOSE_LABEL } from './licenses'
 import { TestRows } from './comp/trace'
 import { LoadForm, LoadView, PickLoad, TransitView, stopColor } from './loads'
 import { InboundView } from './inbound'
+import { TagSuggestProvider } from './tagSuggest'
 import type { LoadCtx } from './loads'
 import { lang, setLang, t } from './i18n'
 import { setMyAccess } from './fold'
@@ -813,7 +814,7 @@ export default function App() {
   document.title = noMods ? 'Lifted Farms' : `${view === 'mine' ? t('My settings') : view === 'fleet' ? t('Vehicles') : ML(cur)} · Lifted Farms`
 
   return (
-    <div className={`app shell ${noMods ? '' : 'with-rail'} ${myMods.length > 1 ? 'with-mods' : ''} ${banner ? 'is-moving' : ''} mod-${cur} ${!noMods && lv[MOD_KEY[cur]] === 'view' ? 'viewonly' : ''}`}
+    <TagSuggestProvider sb={backend.client()} site={site}><div className={`app shell ${noMods ? '' : 'with-rail'} ${myMods.length > 1 ? 'with-mods' : ''} ${banner ? 'is-moving' : ''} mod-${cur} ${!noMods && lv[MOD_KEY[cur]] === 'view' ? 'viewonly' : ''}`}
       style={{ ['--navw' as string]: myMods.length > 1 ? '284px' : '200px' }}>
       {viewBar}
       {!noMods && (
@@ -1206,7 +1207,7 @@ export default function App() {
       )}
       {snap && <StrainCardHost backend={backend} strains={snap.strains ?? []} flash={flash} onChanged={() => { reload() }} />}
       {toast && <div className={`toast ${toast.bad ? 'bad' : ''}`}>{toast.text}</div>}
-    </div>
+    </div></TagSuggestProvider>
   )
 }
 
