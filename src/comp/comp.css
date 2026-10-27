@@ -59,8 +59,6 @@
 .mbar.due .mbar-fill { background: color-mix(in srgb, var(--warn) 70%, var(--panel)); }
 .mbar.go .mbar-fill { background-image: linear-gradient(45deg, rgba(255,255,255,.28) 25%, transparent 25%, transparent 50%, rgba(255,255,255,.28) 50%, rgba(255,255,255,.28) 75%, transparent 75%);
   background-size: 12px 12px; animation: mbar-move .8s linear infinite; }
-.mbar.spin .mbar-fill { width: 35% !important; animation: mbar-slide 1.3s ease-in-out infinite; }
 .mbar-label { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; color: var(--muted); margin-top: 2px; }
 @keyframes mbar-move { from { background-position: 0 0 } to { background-position: 12px 0 } }
-@keyframes mbar-slide { 0% { left: -35% } 100% { left: 100% } }
-@media (prefers-reduced-motion: reduce) { .mbar.go .mbar-fill, .mbar.spin .mbar-fill { animation: none; } .mbar.spin .mbar-fill { left: 0; } }
+@media (prefers-reduced-motion: reduce) { .mbar.go .mbar-fill { animation: none; } }

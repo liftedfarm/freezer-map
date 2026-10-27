@@ -57,7 +57,7 @@ function MetrcBar({ r, now }: { r: MAction; now: number }) {
     pct = Math.max(0, Math.min(100, ((now - a) / Math.max(1, b - a)) * 100)); cls = 'due'
     const m = Math.max(1, Math.ceil((b - now) / 60000))
     left = 'Waiting to send'; right = m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m left` : `${m}m left`
-  } else if (sending) { cls = 'spin'; left = 'Sending to METRC…' }
+  } else if (sending) { pct = 100; cls = 'wait'; left = 'Sending to METRC…' }
   else if (err) { pct = 100; cls = 'bad'; left = 'Stopped' }
   else if (blocked) { pct = 100; cls = 'wait'; left = 'Waiting on an earlier to-do' }
   else if (r.push_state === 'waiting') { pct = 0; left = 'Next run' }
