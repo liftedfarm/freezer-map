@@ -50,7 +50,7 @@ begin
   if not (comp_can_edit() or is_mod_admin('distribution') or is_owner()) or impersonating() then
     raise exception 'Only Compliance (or a Distribution Admin) can apply reconcile changes';
   end if;
-  -- the live report once, for every license (so a stale Excel can't do the wrong thing)
+  -- the live report once, for every license (so an old Excel cannot do the wrong thing)
   drop table if exists _rr;
   create temp table _rr on commit drop as
     select to_jsonb(lr) || jsonb_build_object('license', l.license_no, 'site', l.site) as rj, lr.issue as ri, coalesce(lr.tag, '') as rt, coalesce(lr.pallet_id, -1) as rp
