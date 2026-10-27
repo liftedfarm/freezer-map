@@ -88,50 +88,52 @@ async function syncLicense(license, by, t0) {
       await db(`metrc_packages?license=eq.${license}&state=in.(active,intransit)&seen_at=lt.${encodeURIComponent(now)}`,
         { method: 'PATCH', body: JSON.stringify({ state: 'gone' }), headers: { Prefer: 'return=minimal' } })
     }
-    // 2) inactive and transferred since the last pull (2 days overlap)
-    // (T3 filters transferred packages by departure, not lastModified)
-    for (const [step, path, state, field] of [['inactive', '/v2/packages/inactive', 'inactive', 'lastModified'], ['transferred', '/v2/packages/transferred', 'transferred', 'actualDepartureDateTime']]) {
-      if (!full) break
-      const since = (await cursor(license, step)) ?? SEASON_START
-      const ok = await pages(path, { licenseNumber: license, filter: `${field}__gte:${since}` }, async rows => {
-        await upsert('metrc_packages', rows.map(p => pkgRow(license, p, state, now)).filter(r => r.label), 'license,label'); out[step] += rows.length
+    // 2) inactive packages since the last pull (2 days overlap)
+    if (full) {
+      const since = (await cursor(license, 'inactive')) ?? SEASON_START
+      const ok = await pages('/v2/packages/inactive', { licenseNumber: license, filter: `lastModified__gte:${since}` }, async rows => {
+        await upsert('metrc_packages', rows.map(p => pkgRow(license, p, 'inactive', now)).filter(r => r.label), 'license,label'); out.inactive += rows.length
       }, out)
-      if (ok) await setCursor(license, step, new Date(Date.parse(now) - 2 * 86400000).toISOString())
+      if (ok) await setCursor(license, 'inactive', new Date(Date.parse(now) - 2 * 86400000).toISOString())
       full = full && ok
     }
-    // 3) outgoing transfers since the last pull, then the packages on each delivery not loaded yet
+    // 3) every package this license has shipped (each row carries its manifest, recipient and dates): the manifest trail
+    if (full) {
+      full = await pages('/v2/packages/transferred', { licenseNumber: license }, async rows => {
+        const pk = [], tr = new Map(), tp = []
+        for (const p of rows) {
+          const label = up(p.packageLabel ?? p.label)
+          const tid = Number(String(p.manifestNumber ?? '').replace(/\D/g, '')) || Number(p.id ?? 0) || null   // keyed by manifest number
+          if (!label) continue
+          pk.push(pkgRow(license, p, 'transferred', now))
+          if (!tid) continue
+          if (!tr.has(tid)) tr.set(tid, { delivery_id: tid, transfer_id: tid, license, manifest: p.manifestNumber ?? null,
+            recipient_license: p.recipientFacilityLicenseNumber ?? null, recipient_name: p.recipientFacilityName ?? null,
+            departed_at: p.actualDepartureDateTime ?? null, received_at: p.receivedDateTime ?? null, packages_loaded: true, seen_at: now })
+          tp.push({ delivery_id: tid, label, manifest: p.manifestNumber ?? null, item: p.productName ?? null,
+            shipped_lbs: toLbs(p.shippedQuantity, p.shippedUnitOfMeasureAbbreviation), received_lbs: toLbs(p.receivedQuantity, p.receivedUnitOfMeasureAbbreviation),
+            uom: p.shippedUnitOfMeasureAbbreviation ?? null, state: p.shipmentPackageStateName ?? p.shipmentPackageState ?? null, source_labels: labels(p.sourcePackageLabels) })
+        }
+        await upsert('metrc_packages', pk, 'license,label')
+        if (tr.size) await upsert('metrc_transfers', [...tr.values()], 'delivery_id')
+        if (tp.length) await upsert('metrc_transfer_packages', tp, 'delivery_id,label')
+        out.transferred += pk.length; out.delivery_packages += tp.length
+      }, out) && full
+    }
+    // 4) transfer details (driver, vehicle, dates, voided) since the last pull, keyed the same way
     if (full) {
       const since = (await cursor(license, 'transfers')) ?? SEASON_START
       let ok = true
       for (const path of ['/v2/transfers/outgoing/active', '/v2/transfers/outgoing/inactive']) {
         ok = ok && await pages(path, { licenseNumber: license, filter: `lastModified__gte:${since}` }, async rows => {
-          const tr = rows.map(t => transferRow(license, t, now)).filter(r => r.delivery_id)
-          if (!tr.length) return
-          // changed transfers get their packages reloaded
-          await upsert('metrc_transfers', tr.map(r => ({ ...r, packages_loaded: false })), 'delivery_id'); out.transfers += tr.length
+          const tr = rows.map(t => ({ ...transferRow(license, t, now), delivery_id: Number(String(t.manifestNumber ?? '').replace(/\D/g, '')) || Number(t.id) || null, packages_loaded: true }))
+            .filter(r => r.delivery_id)
+          if (tr.length) await upsert('metrc_transfers', tr, 'delivery_id')
+          out.transfers += tr.length
         }, out)
       }
       if (ok) await setCursor(license, 'transfers', new Date(Date.parse(now) - 2 * 86400000).toISOString())
       full = full && ok
-      for (;;) {
-        if (out.timeUp()) { full = false; break }
-        const todo = await db(`metrc_transfers?license=eq.${license}&packages_loaded=eq.false&select=delivery_id,manifest&order=delivery_id&limit=25`)
-        if (!todo.length) break
-        for (const d of todo) {
-          if (out.timeUp()) { full = false; break }
-          const rows = []
-          await pages('/v2/transfers/packages', { licenseNumber: license, deliveryId: d.delivery_id }, async ps => { rows.push(...ps) }, out)
-          await db(`metrc_transfer_packages?delivery_id=eq.${d.delivery_id}`, { method: 'DELETE', headers: { Prefer: 'return=minimal' } })
-          const tp = rows.map(p => ({
-            delivery_id: d.delivery_id, label: up(p.packageLabel ?? p.label), manifest: d.manifest, item: p.productName ?? p.item?.name ?? null,
-            shipped_lbs: toLbs(p.shippedQuantity, p.shippedUnitOfMeasureAbbreviation), received_lbs: toLbs(p.receivedQuantity, p.receivedUnitOfMeasureAbbreviation),
-            uom: p.shippedUnitOfMeasureAbbreviation ?? null, state: p.shipmentPackageState ?? null, source_labels: labels(p.sourcePackageLabels),
-          })).filter(r => r.label)
-          if (tp.length) await upsert('metrc_transfer_packages', tp, 'delivery_id,label')
-          out.delivery_packages += tp.length
-          await db(`metrc_transfers?delivery_id=eq.${d.delivery_id}`, { method: 'PATCH', body: JSON.stringify({ packages_loaded: true }), headers: { Prefer: 'return=minimal' } })
-        }
-      }
     }
     complete = full
   } catch (e) { error = String(e.message || e).slice(0, 800) }
