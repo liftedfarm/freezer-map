@@ -61,7 +61,10 @@ export function T3More({ c, conn, set, save }: { c: Ctx; conn: T3Conn | null; se
           <option value="">Pick…</option>{reasons.map(n => <option key={n} value={n}>{n}</option>)}</Select> : inp('comp.metrc_plant_adjust_reason')}</div>
       <div className="field"><label>Destroying immature plants (waste reason, as METRC names it)</label>{inp('comp.metrc_plant_waste_reason', 'e.g. Male Plants / Died')}</div>
       <div className="field"><label>Harvest waste type <span className="muted">(blank = METRC's first)</span></label>{inp('comp.metrc_waste_type', 'e.g. Plant Material')}</div>
+      <div className="field"><label>Hours after Finish: record harvest waste <span className="muted">(0 = right away)</span></label>{inp('comp.metrc_waste_hours', '48')}</div>
+      <div className="field"><label>Hours after Finish: finish the harvest in METRC <span className="muted">(0 = right away)</span></label>{inp('comp.metrc_finish_hours', '48')}</div>
     </div>
+    <p className="muted small">Counted from when Finish is pressed in the app. A change applies to harvests finished after it; to-dos already waiting keep their time. Send on a to-do sends it right away. The finish never goes before its waste.</p>
     <h3 style={{ marginTop: 14 }}>Cutover per site</h3>
     <p className="muted small">Plant, nursery and harvest to-dos only go to METRC from a site's cutover date on. Before that (or with no date) they stay by hand, even if the kind is on.</p>
     <div className="grid2">{['OHR', 'GVR', '1PN'].map(s => {
