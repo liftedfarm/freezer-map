@@ -76,16 +76,18 @@ async function pages(path, query, onPage, out) {
 
 async function syncLicense(license, by, t0) {
   const run = (await db('metrc_sync_runs', { method: 'POST', body: JSON.stringify({ license, started_by: by }), headers: { Prefer: 'return=representation' } }))[0]
-  const out = { calls: 0, active: 0, intransit: 0, inactive: 0, transferred: 0, transfers: 0, delivery_packages: 0, timeUp: () => Date.now() - t0 > BUDGET_MS }
+  const out = { calls: 0, active: 0, intransit: 0, inactive: 0, transferred: 0, transfers: 0, delivery_packages: 0, live: new Set(), timeUp: () => Date.now() - t0 > BUDGET_MS }
   const now = new Date().toISOString()
   let complete = false, error = null
   try {
     // 1) everything live (full pull, so anything not seen is no longer active)
     let full = await pages('/v2/packages/active', { licenseNumber: license }, async rows => {
-      await upsert('metrc_packages', rows.map(p => pkgRow(license, p, 'active', now)), 'license,label'); out.active += rows.length
+      const r = rows.map(p => pkgRow(license, p, 'active', now)); r.forEach(x => out.live.add(x.label))
+      await upsert('metrc_packages', r, 'license,label'); out.active += rows.length
     }, out)
     full = full && await pages('/v2/packages/intransit', { licenseNumber: license }, async rows => {
-      await upsert('metrc_packages', rows.map(p => pkgRow(license, p, 'intransit', now)), 'license,label'); out.intransit += rows.length
+      const r = rows.map(p => pkgRow(license, p, 'intransit', now)); r.forEach(x => out.live.add(x.label))
+      await upsert('metrc_packages', r, 'license,label'); out.intransit += rows.length
     }, out)
     if (full) {
       await db(`metrc_packages?license=eq.${license}&state=in.(active,intransit)&seen_at=lt.${encodeURIComponent(now)}`,
@@ -108,7 +110,7 @@ async function syncLicense(license, by, t0) {
           const label = up(p.packageLabel ?? p.label)
           const tid = Number(String(p.manifestNumber ?? '').replace(/\D/g, '')) || Number(p.id ?? 0) || null   // keyed by manifest number
           if (!label) continue
-          pk.push(pkgRow(license, p, 'transferred', now))
+          if (!out.live.has(label)) pk.push(pkgRow(license, p, 'transferred', now))   // shipped and came back: stays active
           if (!tid) continue
           if (!tr.has(tid)) tr.set(tid, { delivery_id: tid, transfer_id: tid, license, manifest: p.manifestNumber ?? null,
             recipient_license: p.recipientFacilityLicenseNumber ?? null, recipient_name: p.recipientFacilityName ?? null,
@@ -141,7 +143,7 @@ async function syncLicense(license, by, t0) {
     }
     complete = full
   } catch (e) { error = String(e.message || e).slice(0, 800) }
-  const { timeUp, ...counts } = out
+  const { timeUp, live, ...counts } = out
   await db(`metrc_sync_runs?id=eq.${run.id}`, { method: 'PATCH', body: JSON.stringify({ finished_at: new Date().toISOString(), counts, complete, error }), headers: { Prefer: 'return=minimal' } })
   return { license, complete, error, ...counts }
 }
