@@ -179,8 +179,36 @@ export const CONFIG_MISSING = !(URL_ && KEY) && !import.meta.env.DEV
 
 export function makeBackend(): Backend {
   const wantDemo = new URLSearchParams(location.search).has('demo')
-  if (!wantDemo && URL_ && KEY) return new SupaBackend(createClient(URL_, KEY))
+  if (!wantDemo && URL_ && KEY) return new SupaBackend(createClient(URL_, KEY, { global: { fetch: kickingFetch } }))
   return new DemoBackend()
+}
+
+// ---------------- METRC: send right away ----------------
+// Any change saved to the database (push, finish, flip, split, depart...) may have made METRC to-dos. Shortly after one,
+// ask the server to send whatever is ready (Auto kinds, Live only). It sends in to-do order and holds back anything still
+// waiting on an earlier step, so the order stays right. The 1-minute timer on the server is the backup.
+const READS = /\/rpc\/(tag_search|tag_suggest|tag_range_|comp_reconcile|comp_farm_licenses|metrc_sync_status|metrc_tag_counts|metrc_me|pallet_manifests|app_used_tags|next_tags|nursery_next_tags|strain_profiles|reserve_strains|strain_menu_info)/
+let kickTimer: ReturnType<typeof setTimeout> | null = null
+let kickBusy = false, kickAgain = false, kickAuth = ''
+function kickMetrc() {
+  if (kickBusy) { kickAgain = true; return }
+  kickBusy = true
+  fetch('/api/metrc/run', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: kickAuth }, body: JSON.stringify({ action: 'kick' }) })
+    .catch(() => {}).finally(() => { kickBusy = false; if (kickAgain) { kickAgain = false; kickTimer = setTimeout(kickMetrc, 1500) } })
+}
+const kickingFetch: typeof fetch = async (input, init) => {
+  const res = await fetch(input, init)
+  try {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+    const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase()
+    const auth = new Headers(init?.headers).get('Authorization') ?? ''
+    if (res.ok && method !== 'GET' && /\/rest\/v1\//.test(url) && !READS.test(url) && auth.startsWith('Bearer ')) {
+      kickAuth = auth
+      if (kickTimer) clearTimeout(kickTimer)
+      kickTimer = setTimeout(kickMetrc, 1500)
+    }
+  } catch { /* never in the way of the save */ }
+  return res
 }
 
 // ---------------- Supabase ----------------

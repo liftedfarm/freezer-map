@@ -7,6 +7,7 @@
 //   { action: 'manifest_pdf', license, manifest } the METRC manifest PDF (base64)
 //   { action: 'incoming', license? }        incoming METRC deliveries for our licenses (Distribution > Inbound)
 //   { action: 'inbound_receive', license, delivery_id }  receive a delivery in METRC (Live) and bring it into the app
+//   { action: 'kick' }                      right after a save in the app: send to-dos that are ready (Auto kinds, Live only)
 //   { action: 'tag_range', planting_id, purpose, count, first?, after?, save? }  plant tag runs for a planting:
 //        suggest the next clean run (no first), check a run (first), or check and hold it for the planting (save)
 import { asUser, caller, db, isLive, missing, rpc, runJob, send, t3, testConnection } from './_t3.js'
@@ -15,7 +16,6 @@ import { enc, t3file, up } from './_core.js'
 import { checkRun, suggestRun } from './_tagrange.js'
 
 export const config = { maxDuration: 60 }
-const FLIP_NOW_MAX = 2000   // one promote call; anything bigger waits for the night run
 
 async function ours() {
   const conn = (await db('metrc_connection?id=eq.1&select=licenses'))?.[0]
@@ -48,20 +48,26 @@ export default async function handler(req, res) {
       const ids = (Array.isArray(body.ids) ? body.ids : []).map(Number).filter(Boolean).slice(0, 50)
       if (!ids.length) return send(res, 400, { error: 'Which to-dos?' })
       const live = await isLive()
-      // big flips to flowering (thousands of plants, many promote calls) go on the overnight run; small ones send now
-      const night = (await db(`comp_metrc_actions?select=id,details&id=in.(${ids.join(',')})&kind=eq.flower`))
-        .filter(x => Number(x.details?.plants ?? 0) > FLIP_NOW_MAX).map(x => x.id)
-      if (night.length) await asUser(req, 'metrc_queue_night', { p_ids: night })
-      const jobs = await rpc('metrc_claim', { p_ids: ids.filter(i => !night.includes(i)), p_limit: ids.length })
+      const jobs = await rpc('metrc_claim', { p_ids: ids, p_limit: ids.length })
       const ctx = { live, by: me.email, deadline: t0 + 45000 }
       const out = []
       for (const j of jobs.sort((a, b) => a.id - b.id)) {
         if (Date.now() - t0 > 50000) { await rpc('metrc_result', { p_id: j.id, p_state: 'waiting', p_by: me.email, p_request: null, p_response: null, p_error: 'Out of time: send again' }); out.push({ id: j.id, state: 'waiting', error: 'Out of time: send again' }); continue }
         out.push(await runJob(j, ctx))
       }
-      for (const id of night) out.push({ id, state: 'waiting', info: 'Queued for tonight\'s run' })
-      const skipped = ids.filter(id => !jobs.some(j => j.id === id) && !night.includes(id))
+      const skipped = ids.filter(id => !jobs.some(j => j.id === id))
       return send(res, 200, { live, results: out, not_sent: skipped })
+    }
+    if (body.action === 'kick') {
+      if (!(await isLive())) return send(res, 200, { live: false, results: [] })
+      const jobs = await rpc('metrc_claim', { p_ids: null, p_limit: 40 })
+      const ctx = { live: true, by: 'auto', deadline: t0 + 45000 }
+      const out = []
+      for (const j of jobs.sort((a, b) => a.id - b.id)) {
+        if (Date.now() - t0 > 45000) { await rpc('metrc_result', { p_id: j.id, p_state: 'waiting', p_by: 'auto', p_request: null, p_response: null, p_error: 'Next run' }).catch(() => {}); continue }
+        out.push(await runJob(j, ctx))
+      }
+      return send(res, 200, { live: true, results: out })
     }
     if (body.action === 'checklist') {
       const loadId = Number(body.load_id)

@@ -44,7 +44,7 @@
     },
     {
       "path": "/api/metrc/worker",
-      "schedule": "*/5 * * * *"
+      "schedule": "* * * * *"
     },
     {
       "path": "/api/metrc/sync",
