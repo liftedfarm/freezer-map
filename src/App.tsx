@@ -1,3 +1,4 @@
+import { Select } from './combo'
 import { Scanner } from './scan'
 import { routeScan, sameTag } from './scanroute'
 import { screenIcon, SCAN_ICON } from './icons'
@@ -1414,10 +1415,10 @@ function FreezerView({ ix, L, plan, freezer, query, placing, selecting, sel, sib
           <h2>{freezer.site} {staging ? 'Staging' : fName(freezer)}</h2>
           <div className="muted">{ps.length} pallet{ps.length === 1 ? '' : 's'}{staging ? ` of 26` : ''} · {lbs(ps.reduce((a, p) => a + weightOf(ix, p), 0))}</div>
         </div>
-        {!staging && <select className={`status st-${freezer.status.replace(/ /g, '-')}`} value={freezer.status}
+        {!staging && <Select className={`status st-${freezer.status.replace(/ /g, '-')}`} value={freezer.status}
           onChange={e => onStatus(e.target.value as FreezerStatus)}>
           {FREEZER_STATUSES.map(s => <option key={s}>{s}</option>)}
-        </select>}
+        </Select>}
       </div>
       <div className="row between fz-tools">
         {!staging ? <button className="ghost small" disabled={!prev} onClick={() => prev && onOpen(prev.id)}>‹ {prev ? fShort(prev) : ''}</button> : <span />}
@@ -1678,8 +1679,8 @@ function PalletSheet({ ix, p, others, busy, where, flash, onClose, onGo, onMove,
             <dt>Harvested</dt><dd>{p.harvest_date ?? ''}</dd>
             <dt>Zone</dt><dd>{p.zone ?? ''}</dd>
             <dt>Grown at</dt><dd>{originAdmin && onOrigin
-              ? <select className="inline" value={p.origin_site ?? ''} onChange={e => e.target.value && onOrigin(e.target.value)}>
-                  {!p.origin_site && <option value="">unknown</option>}{['OHR', 'GVR', 'GVR+OHR'].map(s => <option key={s} value={s}>{s === 'GVR+OHR' ? 'Both farms' : s}</option>)}</select>
+              ? <Select className="inline" value={p.origin_site ?? ''} onChange={e => e.target.value && onOrigin(e.target.value)}>
+                  {!p.origin_site && <option value="">unknown</option>}{['OHR', 'GVR', 'GVR+OHR'].map(s => <option key={s} value={s}>{s === 'GVR+OHR' ? 'Both farms' : s}</option>)}</Select>
               : p.origin_site === 'GVR+OHR' ? 'Both farms (GVR and OHR)' : p.origin_site ?? 'unknown'}</dd>
             <dt>Item</dt><dd>{item
               ? <><a onClick={() => setShowSku(v => !v)}>{FINISH_LABEL[item.finish] ?? item.finish} · {item.crop_year} · {item.site}</a>
@@ -1692,10 +1693,10 @@ function PalletSheet({ ix, p, others, busy, where, flash, onClose, onGo, onMove,
               <span className={`pill grade ${g.grade.toLowerCase()}`}>{g.grade}</span>
               <span className="muted"> {g.from === 'pallet' ? 'set on this pallet' : g.from === 'lot' ? `whole lot${lot?.grade_reason ? ` (${lot.grade_reason})` : ''}` : 'strain default'}</span>
               {canGrade && <div className="row gradeset">
-                {lot && onLotGrade && <label>Lot <select className="inline" disabled={busy} value={lot.grade ?? ''} onChange={e => onLotGrade(lot, (e.target.value || null) as Grade | null)}>
-                  <option value="">Strain default ({strainDefault})</option><option value="SHO">SHO</option><option value="BHO">BHO</option></select></label>}
-                {onPalletGrade && <label>This pallet <select className="inline" disabled={busy} value={p.grade ?? ''} onChange={e => onPalletGrade((e.target.value || null) as Grade | null)}>
-                  <option value="">{lot ? 'Same as lot' : 'Strain default'}</option><option value="SHO">SHO</option><option value="BHO">BHO</option></select></label>}
+                {lot && onLotGrade && <label>Lot <Select className="inline" disabled={busy} value={lot.grade ?? ''} onChange={e => onLotGrade(lot, (e.target.value || null) as Grade | null)}>
+                  <option value="">Strain default ({strainDefault})</option><option value="SHO">SHO</option><option value="BHO">BHO</option></Select></label>}
+                {onPalletGrade && <label>This pallet <Select className="inline" disabled={busy} value={p.grade ?? ''} onChange={e => onPalletGrade((e.target.value || null) as Grade | null)}>
+                  <option value="">{lot ? 'Same as lot' : 'Strain default'}</option><option value="SHO">SHO</option><option value="BHO">BHO</option></Select></label>}
               </div>}</dd>
           </>}
           {isMixed && contents.length > 0 && <><dt>Grown at</dt><dd>{[...new Set(contents.map(c => c.origin_site ?? '?'))].sort().join(', ')}</dd></>}

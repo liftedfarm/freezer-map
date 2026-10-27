@@ -1,3 +1,4 @@
+import { Select } from '../combo'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Backend } from '../api'
 import { AcctApi, GRP_LABEL } from './api'
@@ -276,11 +277,11 @@ function SendSheet({ api, id, flash, canEdit, env, onClose, onChanged, onPdf }: 
             return (
               <tr key={k}>
                 <td className="desc">{l.description.split('\n').map((s, j) => <div key={j} className={j ? 'muted small' : ''}>{s}</div>)}</td>
-                <td>{editable && first ? <select value={l.product ?? ''} disabled={busy} onChange={e => run(() => api.setLine(id, l.line_id, e.target.value || null, l.class_set ?? null, l.applies_to ?? null))}>
-                  <option value="">Pick…</option>{products.filter(x => x.active || x.code === l.product).map(x => <option key={x.code} value={x.code}>{x.name}</option>)}</select>
+                <td>{editable && first ? <Select value={l.product ?? ''} disabled={busy} onChange={e => run(() => api.setLine(id, l.line_id, e.target.value || null, l.class_set ?? null, l.applies_to ?? null))}>
+                  <option value="">Pick…</option>{products.filter(x => x.active || x.code === l.product).map(x => <option key={x.code} value={x.code}>{x.name}</option>)}</Select>
                   : <span className={l.product ? '' : 'bad-t'}>{l.item ?? 'none'}</span>}</td>
-                <td>{editable && first && !split ? <select value={l.class_set ?? ''} disabled={busy} onChange={e => run(() => api.setLine(id, l.line_id, l.product, e.target.value || null, l.applies_to ?? null))}>
-                  <option value="">{l.class && !l.class_set ? `${l.class} (from rules)` : l.class_set ? 'Back to the rules' : 'Pick…'}</option>{classes.filter(c => c.active).map(c => <option key={c.name} value={c.name}>{c.name}</option>)}</select>
+                <td>{editable && first && !split ? <Select value={l.class_set ?? ''} disabled={busy} onChange={e => run(() => api.setLine(id, l.line_id, l.product, e.target.value || null, l.applies_to ?? null))}>
+                  <option value="">{l.class && !l.class_set ? `${l.class} (from rules)` : l.class_set ? 'Back to the rules' : 'Pick…'}</option>{classes.filter(c => c.active).map(c => <option key={c.name} value={c.name}>{c.name}</option>)}</Select>
                   : <span className={l.class ? '' : 'bad-t'}>{l.class ?? 'none'}</span>}
                   <div className="muted small">{[l.site, l.year].filter(Boolean).join(' · ')}{split ? ' · split by farm' : ''}</div></td>
                 <td className="num">{Number(l.qty).toLocaleString()}</td><td className="num">{money(Number(l.price))}</td><td className="num">{money(Number(l.amount))}</td>
@@ -292,12 +293,12 @@ function SendSheet({ api, id, flash, canEdit, env, onClose, onChanged, onPdf }: 
         <p className="muted small">The class comes from where each package was grown and its harvest year (Accounting › Settings › Class rules). Picking a class in the dropdown overrides the rules for that line.</p>
         {editable && (add ? (
           <div className="row wrap invcharge">
-            <select value={add.product} onChange={e => setAdd({ ...add, product: e.target.value })}>
-              {products.filter(x => x.active && ['shipping', 'adjust', 'other'].includes(x.grp)).map(x => <option key={x.code} value={x.code}>{x.name}</option>)}</select>
+            <Select value={add.product} onChange={e => setAdd({ ...add, product: e.target.value })}>
+              {products.filter(x => x.active && ['shipping', 'adjust', 'other'].includes(x.grp)).map(x => <option key={x.code} value={x.code}>{x.name}</option>)}</Select>
             <input placeholder="Description (optional)" value={add.desc} onChange={e => setAdd({ ...add, desc: e.target.value })} />
             <input type="number" step="0.01" placeholder="Amount" value={add.amount} onChange={e => setAdd({ ...add, amount: e.target.value })} />
-            {products.find(x => x.code === add.product)?.grp === 'adjust' && <select value={add.applies} onChange={e => setAdd({ ...add, applies: e.target.value })}>
-              <option value="">Applies to: biggest line</option>{[...new Map(productLines.map(l => [l.line_id, l])).values()].map(l => <option key={l.line_id} value={l.line_id}>{l.description.split('\n')[0]}</option>)}</select>}
+            {products.find(x => x.code === add.product)?.grp === 'adjust' && <Select value={add.applies} onChange={e => setAdd({ ...add, applies: e.target.value })}>
+              <option value="">Applies to: biggest line</option>{[...new Map(productLines.map(l => [l.line_id, l])).values()].map(l => <option key={l.line_id} value={l.line_id}>{l.description.split('\n')[0]}</option>)}</Select>}
             <button className="primary small" disabled={busy || add.amount === ''} onClick={() => run(() => api.addLine(id, add.product, add.desc, 1, Number(add.amount), add.applies ? Number(add.applies) : null), 'Line added').then(() => setAdd(null))}>Add</button>
             <button className="ghost small" onClick={() => setAdd(null)}>Cancel</button>
             {products.find(x => x.code === add.product)?.grp === 'adjust' && <span className="muted small">Discounts, returns and refunds go on as a minus amount.</span>}
@@ -386,7 +387,7 @@ function ProductsPanel({ api, flash }: { api: AcctApi; flash: Flash }) {
       {ed && <div className="scrim" onClick={() => setEd(null)}><div className="sheet form" onClick={e => e.stopPropagation()}>
         <div className="sheet-h"><h2>{ed.isNew ? 'New product' : ed.name}</h2><button className="ghost" onClick={() => setEd(null)}>✕</button></div>
         <div className="field"><label>Name in QuickBooks</label><input value={ed.name} onChange={e => setEd({ ...ed, name: e.target.value })} placeholder="Fresh Frozen" /></div>
-        <div className="field"><label>Group</label><select value={ed.grp} onChange={e => setEd({ ...ed, grp: e.target.value as Product['grp'] })}>{(Object.keys(GRP_LABEL) as Product['grp'][]).map(g => <option key={g} value={g}>{GRP_LABEL[g]}</option>)}</select></div>
+        <div className="field"><label>Group</label><Select value={ed.grp} onChange={e => setEd({ ...ed, grp: e.target.value as Product['grp'] })}>{(Object.keys(GRP_LABEL) as Product['grp'][]).map(g => <option key={g} value={g}>{GRP_LABEL[g]}</option>)}</Select></div>
         <label className="check"><input type="checkbox" checked={ed.active} onChange={e => setEd({ ...ed, active: e.target.checked })} /> In use</label>
         <div className="row between"><span /><div className="row"><button className="ghost" onClick={() => setEd(null)}>Cancel</button><button className="primary" disabled={!ed.name.trim()} onClick={save}>Save</button></div></div>
       </div></div>}
@@ -435,11 +436,11 @@ function RulesPanel({ api, flash }: { api: AcctApi; flash: Flash }) {
         <tbody>{rows.map((r, k) => (
           <tr key={k}>
             <td className="nowrap"><button className="ghost small" disabled={k === 0} onClick={() => move(k, -1)}>↑</button><button className="ghost small" disabled={k === rows.length - 1} onClick={() => move(k, 1)}>↓</button></td>
-            <td><select value={r.site ?? ''} onChange={e => set(k, { site: e.target.value || null })}><option value="">Any</option>{['OHR', 'GVR', '1PN'].map(s => <option key={s}>{s}</option>)}</select></td>
-            <td><select value={r.grp ?? ''} onChange={e => set(k, { grp: e.target.value || null })}><option value="">Any</option>{(Object.keys(GRP_LABEL) as Product['grp'][]).filter(g => g !== 'adjust').map(g => <option key={g} value={g}>{GRP_LABEL[g].split(' (')[0]}</option>)}</select></td>
+            <td><Select value={r.site ?? ''} onChange={e => set(k, { site: e.target.value || null })}><option value="">Any</option>{['OHR', 'GVR', '1PN'].map(s => <option key={s}>{s}</option>)}</Select></td>
+            <td><Select value={r.grp ?? ''} onChange={e => set(k, { grp: e.target.value || null })}><option value="">Any</option>{(Object.keys(GRP_LABEL) as Product['grp'][]).filter(g => g !== 'adjust').map(g => <option key={g} value={g}>{GRP_LABEL[g].split(' (')[0]}</option>)}</Select></td>
             <td><input className="qty" type="number" value={r.year_from ?? ''} onChange={e => set(k, { year_from: num(e.target.value) })} /></td>
             <td><input className="qty" type="number" value={r.year_to ?? ''} onChange={e => set(k, { year_to: num(e.target.value) })} /></td>
-            <td><select value={r.class_name} onChange={e => set(k, { class_name: e.target.value })}>{classes.map(c => <option key={c.name}>{c.name}</option>)}</select></td>
+            <td><Select value={r.class_name} onChange={e => set(k, { class_name: e.target.value })}>{classes.map(c => <option key={c.name}>{c.name}</option>)}</Select></td>
             <td><input value={r.notes ?? ''} onChange={e => set(k, { notes: e.target.value || null })} /></td>
             <td><button className="ghost small" onClick={() => { setRows(rows.filter((_, j) => j !== k)); setDirty(true) }}>✕</button></td>
           </tr>))}</tbody>

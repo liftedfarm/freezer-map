@@ -1,3 +1,4 @@
+import { ListInput, Select } from './combo'
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { pageAll } from './pageAll'
 import type { ReactNode } from 'react'
@@ -149,7 +150,7 @@ export function OpsLogs({ sb, module, sites, areas, strains, flash, batches, wag
           <button className={kind === 'recipes' ? 'on' : ''} onClick={() => setKind('recipes')}>{t('Recipes')}</button>
           <button className={kind === 'products' ? 'on' : ''} onClick={() => setKind('products')}>{t('Products')}</button></div>
         {kind !== 'extra' && kind !== 'recipes' && kind !== 'products' && <>
-          <select value={yr} onChange={e => setYear(Number(e.target.value))}>{(years.length ? years : [yr]).map(y => <option key={y} value={y}>{y}</option>)}</select>
+          <Select value={yr} onChange={e => setYear(Number(e.target.value))}>{(years.length ? years : [yr]).map(y => <option key={y} value={y}>{y}</option>)}</Select>
           {sites.length > 1 && <div className="seg">{[null, ...sites].map(s => <button key={s ?? 'all'} className={site === s ? 'on' : ''} onClick={() => setSite(s)}>{s ?? t('All')}</button>)}</div>}
           <input className="search" type="search" placeholder={t('Field, product, task')} value={q} onChange={e => setQ(e.target.value)} />
         </>}
@@ -270,23 +271,23 @@ function LogSheet({ sb, x0, field, sites, areas, strains, products, recipes, bat
         <div className="sheet-h"><h2>{t(x.id ? KIND_LABEL[x.kind!] + ' log' : 'New ' + KIND_LABEL[x.kind!].toLowerCase() + ' log')}</h2><button className="ghost" onClick={onClose}>✕</button></div>
         <div className="grid3">
           <div className="field"><label>{t('Date')}</label>{inp('log_on', 'date')}</div>
-          {sites.length > 1 && <div className="field"><label>{t('Site')}</label><select value={x.site} onChange={e => set({ site: e.target.value })}>{sites.map(s => <option key={s}>{s}</option>)}</select></div>}
-          {(!labor || field) && <div className="field"><label>{t(field ? 'Field / block' : 'Where')}</label><input list="ops-areas" value={x.area ?? ''} onChange={e => where(e.target.value)} placeholder={field ? t('Block 6, Field 8A…') : t('Webb, GH, Hoops 1-4…')} />
+          {sites.length > 1 && <div className="field"><label>{t('Site')}</label><Select value={x.site} onChange={e => set({ site: e.target.value })}>{sites.map(s => <option key={s}>{s}</option>)}</Select></div>}
+          {(!labor || field) && <div className="field"><label>{t(field ? 'Field / block' : 'Where')}</label><ListInput list="ops-areas" value={x.area ?? ''} onChange={e => where(e.target.value)} placeholder={field ? t('Block 6, Field 8A…') : t('Webb, GH, Hoops 1-4…')} />
             <datalist id="ops-areas">{areas.map(a => <option key={a} value={a} />)}</datalist></div>}
           {field && !labor && <div className="field"><label>{t('Acres')}</label>{inp('acres', 'number')}</div>}
-          {x.kind === 'spray' && <div className="field"><label>{t('Type')}</label><select value={x.spray_type ?? ''} onChange={e => set({ spray_type: e.target.value })}><option value="">—</option>{SPRAY_TYPES.map(o => <option key={o} value={o}>{t(o)}</option>)}</select></div>}
-          {x.kind === 'feed' && <div className="field"><label>{t('Method')}</label><select value={x.method ?? ''} onChange={e => set({ method: e.target.value })}><option value="">—</option>{FEED_METHODS.map(o => <option key={o} value={o}>{t(o)}</option>)}</select></div>}
-          {!labor && myRecipes.length > 0 && <div className="field"><label>{t('Recipe')}</label><select value={x.recipe ?? ''} onChange={e => e.target.value ? useRecipe(e.target.value) : set({ recipe: null })}><option value="">—</option>{myRecipes.map(r => <option key={r.id}>{r.name}</option>)}</select></div>}
+          {x.kind === 'spray' && <div className="field"><label>{t('Type')}</label><Select value={x.spray_type ?? ''} onChange={e => set({ spray_type: e.target.value })}><option value="">—</option>{SPRAY_TYPES.map(o => <option key={o} value={o}>{t(o)}</option>)}</Select></div>}
+          {x.kind === 'feed' && <div className="field"><label>{t('Method')}</label><Select value={x.method ?? ''} onChange={e => set({ method: e.target.value })}><option value="">—</option>{FEED_METHODS.map(o => <option key={o} value={o}>{t(o)}</option>)}</Select></div>}
+          {!labor && myRecipes.length > 0 && <div className="field"><label>{t('Recipe')}</label><Select value={x.recipe ?? ''} onChange={e => e.target.value ? useRecipe(e.target.value) : set({ recipe: null })}><option value="">—</option>{myRecipes.map(r => <option key={r.id}>{r.name}</option>)}</Select></div>}
           {!labor && <div className="field"><label>{t(x.method === 'Fertigation' ? 'Solution (gal)' : 'Water (gal)')}</label>{inp('water_gal', 'number')}</div>}
           {x.method === 'Fertigation' && <div className="field"><label>{t('Run time (min)')}</label>{inp('run_min', 'number')}</div>}
           {!labor && !field && <div className="field"><label>{t('Start')}</label>{inp('start_at', 'time')}</div>}
           {!labor && !field && <div className="field"><label>{t('End')}</label>{inp('end_at', 'time')}</div>}
           {!labor && !field && <div className="field"><label>{t('Area (sq ft)')}</label>{inp('sqft', 'number')}</div>}
           {!labor && <div className="field"><label>{t(x.kind === 'spray' ? 'Applicator' : 'By')}</label>{inp('applicator')}</div>}
-          {labor && <div className="field"><label>{t('Task')}</label><input list="ops-tasks" value={x.task ?? ''} onChange={e => set({ task: e.target.value })} /><datalist id="ops-tasks">{(field ? FIELD_TASKS : TASKS).map(o => <option key={o} value={o}>{lang() === 'es' ? t(o) : ''}</option>)}</datalist></div>}
-          {labor && !field && <div className="field"><label>{t('Strain')}</label><input list="ops-strains" value={x.strain ?? ''} onChange={e => set({ strain: e.target.value })} /><datalist id="ops-strains">{strains.map(s => <option key={s} value={s} />)}</datalist></div>}
-          {labor && batches && <div className="field"><label>{t('Batch')}</label><select value={x.batch_id ?? ''} onChange={e => { const b = batches.find(v => v.id === Number(e.target.value)); set({ batch_id: b?.id ?? null, ...(b && !x.strain ? { strain: b.strain } : {}) }) }}>
-            <option value="">—</option>{batches.filter(b => !x.strain || b.strain.toLowerCase() === x.strain.toLowerCase()).map(b => <option key={b.id} value={b.id}>{b.label}</option>)}</select></div>}
+          {labor && <div className="field"><label>{t('Task')}</label><ListInput list="ops-tasks" value={x.task ?? ''} onChange={e => set({ task: e.target.value })} /><datalist id="ops-tasks">{(field ? FIELD_TASKS : TASKS).map(o => <option key={o} value={o}>{lang() === 'es' ? t(o) : ''}</option>)}</datalist></div>}
+          {labor && !field && <div className="field"><label>{t('Strain')}</label><ListInput list="ops-strains" value={x.strain ?? ''} onChange={e => set({ strain: e.target.value })} /><datalist id="ops-strains">{strains.map(s => <option key={s} value={s} />)}</datalist></div>}
+          {labor && batches && <div className="field"><label>{t('Batch')}</label><Select value={x.batch_id ?? ''} onChange={e => { const b = batches.find(v => v.id === Number(e.target.value)); set({ batch_id: b?.id ?? null, ...(b && !x.strain ? { strain: b.strain } : {}) }) }}>
+            <option value="">—</option>{batches.filter(b => !x.strain || b.strain.toLowerCase() === x.strain.toLowerCase()).map(b => <option key={b.id} value={b.id}>{b.label}</option>)}</Select></div>}
           {labor && !field && <div className="field"><label>{t('How many (clones, plants)')}</label>{inp('qty', 'number')}</div>}
           {labor && <div className="field"><label>{t('People')}</label>{inp('crew', 'number')}</div>}
           {labor && <div className="field"><label>{t('Hours (each)')}</label>{inp('hours', 'number')}</div>}
@@ -296,7 +297,7 @@ function LogSheet({ sb, x0, field, sites, areas, strains, products, recipes, bat
           <h3>{t('Products')} <span className="muted small">{t(basis === 'acre' ? 'rate per acre' : 'rate per gallon of water')}</span></h3>
           <datalist id="ops-products">{products.filter(p => p.active).map(p => <option key={p.id} value={p.name}>{p.manufacturer ?? ''}</option>)}</datalist>
           {(x.products ?? []).map((l, i) => <div key={i} className="row prodline">
-            <input list="ops-products" value={l.product} placeholder={t('Product')} onChange={e => setLine(i, { product: e.target.value })} />
+            <ListInput list="ops-products" value={l.product} placeholder={t('Product')} onChange={e => setLine(i, { product: e.target.value })} />
             <input type="number" value={l.rate ?? ''} placeholder={t('Rate')} onChange={e => setLine(i, { rate: n(e.target.value) })} />
             <input value={l.unit ?? ''} placeholder={field ? 'gal, lb, fl oz' : 'mL'} onChange={e => setLine(i, { unit: e.target.value })} />
             <span className="muted small">{l.total != null ? `= ${num(l.total, 1)} ${l.total_unit ?? ''}` : ''}{(() => { const c = lineCost(l, pmap.get(l.product.toLowerCase())); return c ? ` · ${money(c)}` : '' })()}</span>
@@ -344,14 +345,14 @@ function Recipes({ sb, module, recipes, products, canEdit, flash, onChanged }: {
       <div className="sheet-h"><h2>{ed.id ? ed.name : t('New recipe')}</h2><button className="ghost" onClick={() => setEd(null)}>✕</button></div>
       <div className="grid3">
         <div className="field"><label>{t('Name')}</label><input value={ed.name ?? ''} onChange={e => setEd({ ...ed, name: e.target.value })} /></div>
-        <div className="field"><label>{t('For')}</label><select value={ed.kind} onChange={e => setEd({ ...ed, kind: e.target.value as 'spray' | 'feed' })}><option value="feed">{t('Feed')}</option><option value="spray">{t('Spray')}</option></select></div>
-        <div className="field"><label>{t('Method')}</label><input list="r-methods" value={ed.method ?? ''} onChange={e => setEd({ ...ed, method: e.target.value })} /><datalist id="r-methods">{[...FEED_METHODS, 'Foliar'].map(m => <option key={m} value={m} />)}</datalist></div>
+        <div className="field"><label>{t('For')}</label><Select value={ed.kind} onChange={e => setEd({ ...ed, kind: e.target.value as 'spray' | 'feed' })}><option value="feed">{t('Feed')}</option><option value="spray">{t('Spray')}</option></Select></div>
+        <div className="field"><label>{t('Method')}</label><ListInput list="r-methods" value={ed.method ?? ''} onChange={e => setEd({ ...ed, method: e.target.value })} /><datalist id="r-methods">{[...FEED_METHODS, 'Foliar'].map(m => <option key={m} value={m} />)}</datalist></div>
         <div className="field"><label>{t('Stage')}</label><input value={ed.stage ?? ''} onChange={e => setEd({ ...ed, stage: e.target.value })} placeholder={t('Vegetative, Flower…')} /></div>
         <div className="field"><label>{t('Water gal / acre')}</label><input type="number" value={ed.water_per_acre ?? ''} onChange={e => setEd({ ...ed, water_per_acre: n(e.target.value) })} /></div>
       </div>
       <datalist id="ops-products">{products.map(p => <option key={p.id} value={p.name} />)}</datalist>
       {(ed.products ?? []).map((l, i) => <div key={i} className="row prodline">
-        <input list="ops-products" value={l.product} placeholder={t('Product')} onChange={e => setEd({ ...ed, products: ed.products!.map((z, j) => j === i ? { ...z, product: e.target.value } : z) })} />
+        <ListInput list="ops-products" value={l.product} placeholder={t('Product')} onChange={e => setEd({ ...ed, products: ed.products!.map((z, j) => j === i ? { ...z, product: e.target.value } : z) })} />
         <input type="number" value={l.rate ?? ''} placeholder={t('Rate')} onChange={e => setEd({ ...ed, products: ed.products!.map((z, j) => j === i ? { ...z, rate: n(e.target.value) } : z) })} />
         <input value={l.unit ?? ''} placeholder={t('unit')} onChange={e => setEd({ ...ed, products: ed.products!.map((z, j) => j === i ? { ...z, unit: e.target.value } : z) })} />
         <button className="ghost small" onClick={() => setEd({ ...ed, products: ed.products!.filter((_, j) => j !== i) })}>✕</button></div>)}

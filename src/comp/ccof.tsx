@@ -1,3 +1,4 @@
+import { Select } from '../combo'
 import { useEffect, useMemo, useState } from 'react'
 import type { AppLog, CcofEntry, Doc, Issue, Material } from './api'
 import { STATUS_LABEL } from './api'
@@ -51,7 +52,7 @@ function Materials({ c }: { c: Ctx }) {
     <p className="muted">The Production and Nursery product lists, with CCOF approval. Feed and Spray logs warn when someone uses a product that isn't approved here, and those show in Review.</p>
     <div className="row wrap toolbar">
       <input className="search" placeholder="Search products" value={q} onChange={e => setQ(e.target.value)} />
-      <select value={mod ?? ''} onChange={e => setMod(e.target.value || null)} aria-label="List"><option value="">Production + Nursery</option><option value="cultivation">Production</option><option value="nursery">Nursery{nurseryCert ? '' : ' (not certified)'}</option></select>
+      <Select value={mod ?? ''} onChange={e => setMod(e.target.value || null)} aria-label="List"><option value="">Production + Nursery</option><option value="cultivation">Production</option><option value="nursery">Nursery{nurseryCert ? '' : ' (not certified)'}</option></Select>
     </div>
     <div className="chips"><button className={!st ? 'on' : ''} onClick={() => setSt(null)}>All<span className="n">{all.length}</span></button>
       {(Object.keys(STATUS_LABEL) as Material['ccof_status'][]).map(s => <button key={s} className={st === s ? 'on' : ''} onClick={() => setSt(st === s ? null : s)}>{STATUS_LABEL[s]}<span className="n">{n(s)}</span></button>)}

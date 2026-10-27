@@ -1,3 +1,4 @@
+import { Select } from '../combo'
 import './pay.css'
 import '../cult/cult.css'
 import { useEffect, useMemo, useState } from 'react'
@@ -63,8 +64,8 @@ export function PayrollTab({ sb, flash, canEdit, isAdmin }: { sb: SupabaseClient
   return (
     <div className="list payroll">
       <div className="row between wrap toolbar"><h2>Payroll</h2>
-        <select value={start} onChange={e => setStart(e.target.value)}>{opts.map(o => { const p = periods?.find(x => x.starts === o)
-          return <option key={o} value={o}>{label(o)}{o === cur ? ' (now)' : ''}{p?.status === 'closed' ? (p.exported_at ? ' · paid' : ' · closed') : ''}</option> })}</select></div>
+        <Select value={start} onChange={e => setStart(e.target.value)}>{opts.map(o => { const p = periods?.find(x => x.starts === o)
+          return <option key={o} value={o}>{label(o)}{o === cur ? ' (now)' : ''}{p?.status === 'closed' ? (p.exported_at ? ' · paid' : ' · closed') : ''}</option> })}</Select></div>
       <p className="muted">Piece pay for bucking and trimming, from what the crew lead logs in Processing › Crew. It goes through regular bi-weekly payroll. Close the period when it's over: the lines lock and that's what goes to payroll.</p>
       {!s ? <p className="muted">Loading…</p> : <>
         <div className="row wrap pay-status">

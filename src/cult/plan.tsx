@@ -1,3 +1,4 @@
+import { Select } from '../combo'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { CultApi } from './api'
 import { acresFor, addDays, fmtD, n0, n1, n2, sum } from './calc'
@@ -82,9 +83,9 @@ export function PlanTab({ d, c, api, flash, q }: { d: CultData; c: Ctx; api: Cul
     <>
       <div className="row toolbar">
         <b>Plan for</b>
-        <select value={year} onChange={e => setYear(Number(e.target.value))}>
+        <Select value={year} onChange={e => setYear(Number(e.target.value))}>
           {[d.currentYear + 2, d.currentYear + 1, d.currentYear, d.currentYear - 1].map(y => <option key={y} value={y}>{y}</option>)}
-        </select>
+        </Select>
         <span className="muted">Buffer on top of reserves</span>
         <input className="bufin" inputMode="decimal" defaultValue={String(bufferPct)} key={bufferPct} onBlur={e => { const v = Number(e.target.value); if (isFinite(v) && v >= 0 && v !== bufferPct) saveBuffer(v) }} /><span className="muted">%</span>
         {!p.plan.length && <button className="ghost small" disabled={busy} onClick={() => copyPlan(year - 1)}>Start from the {year - 1} plan</button>}

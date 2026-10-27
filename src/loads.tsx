@@ -1,3 +1,4 @@
+import { ListInput, Select } from './combo'
 import { ScanButton } from './scan'
 import { sameTag, useScanHandler } from './scanroute'
 import { useEffect, useMemo, useState } from 'react'
@@ -40,6 +41,7 @@ export interface LoadCtx {
     cancelLoad(l: number): Promise<void>
     stackTop(i: number): Promise<void>
     orderToLoad(orderId: number, loadId: number): Promise<void>
+    orderOffLoad(orderId: number): Promise<void>
     stopManifest(s: number): Promise<StopManifest>
     client(): SupabaseClient | null
   }
@@ -194,7 +196,7 @@ export function LoadForm({ ctx, load, onClose, onSaved }: { ctx: LoadCtx; load?:
           <StopSearch ctx={ctx} customers={customers} taken={new Set(stops.map(s => s.customer_id))} onPick={addStop} />
           {customers.filter(c => c.kind === 'external').length === 0 && <div className="muted small-note">No customers yet. Add them in Settings, Customers.</div>}
         </div>
-        <div className="field"><label>Driver (optional)</label><input list="load-drivers" value={driver} onChange={e => setDriver(e.target.value)} placeholder="Pick or type a name" />
+        <div className="field"><label>Driver (optional)</label><ListInput list="load-drivers" value={driver} onChange={e => setDriver(e.target.value)} placeholder="Pick or type a name" />
           <datalist id="load-drivers">{(() => {
             const v = ctx.vehicles.find(x => x.id === vehicle)
             const ds = (ctx.drivers ?? []).filter(x => x.active && (v?.carrier_id != null ? x.carrier_id === v.carrier_id : x.carrier_id == null))
@@ -308,10 +310,15 @@ export function LoadView({ ctx, loadId, onBack, onEdit }: { ctx: LoadCtx; loadId
               {(sOrders.length > 0 || waiting.length > 0 || loose > 0 || carrying.length > 0) && <div className="stoporders">
                 {sOrders.map(o => {
                   const ids = palletIds(o), tops = new Set(ids.map(top)), on = its.filter(i => tops.has(i.pallet_id)), onTruck = ids.filter(id => on.some(i => i.loaded && i.pallet_id === top(id))).length
-                  return <button key={o.id} className="sorder" onClick={() => ctx.openOrder?.(o.id)}>
-                    <span><b>{soOf(o)}</b> <span className="muted">· {n0(orderGot(o))} lbs · {o.lines.length} strain{o.lines.length === 1 ? '' : 's'}</span></span>
-                    <span className="muted">{s.status === 'delivered' ? 'shipped' : `${onTruck}/${ids.length} on truck`} ›</span>
-                  </button>
+                  return <div key={o.id} className="row sorderrow">
+                    <button className="sorder" onClick={() => ctx.openOrder?.(o.id)}>
+                      <span><b>{soOf(o)}</b> <span className="muted">· {n0(orderGot(o))} lbs · {o.lines.length} strain{o.lines.length === 1 ? '' : 's'}</span></span>
+                      <span className="muted">{s.status === 'delivered' ? 'shipped' : `${onTruck}/${ids.length} on truck`} ›</span>
+                    </button>
+                    {canEdit && s.status === 'pending' && <button className="ghost small" disabled={ctx.busy || onTruck > 0} title={onTruck ? 'Put its pallets back in a freezer first' : 'Take this order off the load'}
+                      onClick={() => ctx.confirm(`Take ${soOf(o)} off ${l.code}? Its pallets come off the truck plan and it goes back to Ready in Fulfillment.`, 'Take off',
+                        async () => { await ctx.run(async () => { await ctx.api.orderOffLoad(o.id); await ctx.refreshOrders?.() }, `${soOf(o)} taken off ${l.code}`) })}>Take off</button>}
+                  </div>
                 })}
                 {waiting.map(o => o.state === 'ready'
                   ? <div key={o.id} className="sorder ready"><span><b>{soOf(o)}</b> <span className="muted">· ready · {n0(orderGot(o))} lbs</span></span>
@@ -383,7 +390,7 @@ export function LoadView({ ctx, loadId, onBack, onEdit }: { ctx: LoadCtx; loadId
           title={unloaded ? `${unloaded} not loaded yet` : ''}
           onClick={() => ctx.confirm(`Truck is leaving with ${items.length} pallet${items.length === 1 ? '' : 's'}?`, 'Depart', async () => { await ctx.run(() => ctx.api.departLoad(l.id), `${l.code} in transit`) })}>
           {unloaded ? `Depart (${unloaded} not loaded)` : 'Depart'}</button>}
-        {canEdit && <button className="ghost" disabled={ctx.busy} onClick={() => ctx.confirm(`Cancel ${l.code}? Planned pallets stay where they are.`, 'Cancel load', async () => { if (await ctx.run(() => ctx.api.cancelLoad(l.id), `${l.code} cancelled`)) onBack() })}>Cancel load</button>}
+        {canEdit && <button className="ghost" disabled={ctx.busy} onClick={() => ctx.confirm(`Cancel ${l.code}? Planned pallets stay where they are${(ctx.orders ?? []).some(o => o.stop?.load_id === l.id) ? ', and its orders go back to Ready in Fulfillment' : ''}.`, 'Cancel load', async () => { if (await ctx.run(async () => { await ctx.api.cancelLoad(l.id); await ctx.refreshOrders?.() }, `${l.code} cancelled`)) onBack() })}>Cancel load</button>}
       </div>
       {canEdit && <p className="muted">Planned pallets stay in their freezer until someone taps "Pulled onto truck" (or scans the pallet's tag with Scan). Depart unlocks when everything is loaded.</p>}
 
@@ -467,9 +474,9 @@ function PositionSheet({ ctx, load, pos, items: raw, stops, onClose, onMove, onS
               {canEdit && (
                 <div className="field">
                   <label>Stop</label>
-                  <select value={i.stop_id} onChange={e => ctx.run(() => ctx.api.moveItem(i.id, null, +e.target.value, false), 'Stop changed')}>
+                  <Select value={i.stop_id} onChange={e => ctx.run(() => ctx.api.moveItem(i.id, null, +e.target.value, false), 'Stop changed')}>
                     {stops.filter(s => s.status === 'pending').map(s => <option key={s.id} value={s.id}>{s.seq}. {ctx.customers.find(c => c.id === s.customer_id)?.name}</option>)}
-                  </select>
+                  </Select>
                 </div>
               )}
               {canEdit && (

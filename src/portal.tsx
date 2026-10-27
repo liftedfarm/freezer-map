@@ -1,3 +1,4 @@
+import { ListInput } from './combo'
 import { SampleHolds } from './samples'
 import { CustomerDashboard } from './statement'
 import { useEffect, useState } from 'react'
@@ -233,7 +234,7 @@ export function ReserveTable({ backend, year, current, deadline, open, onMsg }: 
       {edit && (
         <div className="authform">
           <div className="row">
-            <input list={`rs-${year}`} value={add} onChange={e => setAdd(e.target.value)} placeholder={current ? 'Add a strain from the open menu' : 'Add a strain'}
+            <ListInput list={`rs-${year}`} value={add} onChange={e => setAdd(e.target.value)} placeholder={current ? 'Add a strain from the open menu' : 'Add a strain'}
               onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addStrain() } }} />
             <datalist id={`rs-${year}`}>{names.map(n => <option key={n} value={n} />)}</datalist>
             <button className="ghost small" onClick={addStrain}>Add</button>

@@ -1,3 +1,4 @@
+import { Select } from '../combo'
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { pageAll } from '../pageAll'
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -61,7 +62,7 @@ export function Leachate({ sb, d, flash }: { sb: SupabaseClient; d: NData; flash
   return <div className="leach">
     <div className="row toolbar between">
       <div className="row wrap">
-        <select value={yr} onChange={e => setYear(Number(e.target.value))}>{(years.length ? years : [yr]).map(y => <option key={y} value={y}>{y}</option>)}</select>
+        <Select value={yr} onChange={e => setYear(Number(e.target.value))}>{(years.length ? years : [yr]).map(y => <option key={y} value={y}>{y}</option>)}</Select>
         {places.length > 1 && <div className="seg">{['', ...places].map(p => <button key={p || 'all'} className={place === p ? 'on' : ''} onClick={() => setPlace(p)}>{p || t('All')}</button>)}</div>}
       </div>
       {can && <button className="primary" onClick={() => setEd({ taken_on: today(), site: d.sites[0]?.code ?? '1PN' })}>{t('+ Leachate reading')}</button>}

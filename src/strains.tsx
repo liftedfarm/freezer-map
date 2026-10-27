@@ -1,3 +1,4 @@
+import { ListInput } from './combo'
 import { useState } from 'react'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { Fold, isAdminOf } from './fold'
@@ -94,7 +95,7 @@ export function StrainProfileEdit({ sb, p, flash, onSaved }: { sb: SupabaseClien
           return <div key={f.k} className="field sfield">
             <label>{f.l}{f.unit ? ` (${f.unit})` : ''}{f.hint && <span className="muted"> · {f.hint}</span>}</label>
             <div className="row">
-              <input value={v[f.k] ?? ''} disabled={!can} list={f.k === 'photo_url' ? 'strain-photos' : undefined} inputMode={f.text ? undefined : 'decimal'} placeholder={f.auto ? (a ? 'auto' : 'no data yet') : ''}
+              <ListInput value={v[f.k] ?? ''} disabled={!can} list={f.k === 'photo_url' ? 'strain-photos' : undefined} inputMode={f.text ? undefined : 'decimal'} placeholder={f.auto ? (a ? 'auto' : 'no data yet') : ''}
                 onChange={e => setV(s => ({ ...s, [f.k]: e.target.value }))} />
               {can && over && f.auto && <button className="ghost small" onClick={() => setV(s => ({ ...s, [f.k]: '' }))}>Use auto</button>}
             </div>

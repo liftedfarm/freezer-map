@@ -1,3 +1,4 @@
+import { Select } from '../combo'
 import { CompFleet } from '../fleet/Fleet'
 import { StrainLink } from '../strainCard'
 import { useBack } from '../nav'
@@ -593,7 +594,7 @@ function RunSheet({ c, run, logDate, setLogDate, onClose }: { c: Ctx; run: Run; 
         : filled ? <p className="muted small-note">Filled in from the crew log ({crew?.days} day{crew?.days === 1 ? '' : 's'}). If the scale says different on a package, change it here.</p>
         : !crew?.people && <p className="muted small-note">Log the crew's days above (Log a day) and these fill in.</p>}
       {rows.map((r, i) => <div key={i} className="row noline">
-        <select value={r.product} onChange={e => { setTouched(true); setRows(rs => rs.map((x, j) => j === i ? { ...x, product: e.target.value as Product } : x)) }}>{OUTS[run.kind].map(k => <option key={k} value={k}>{PL(k)}{run.kind === 'buck' && k === 'trim' ? ' (buck trim)' : ''}</option>)}</select>
+        <Select value={r.product} onChange={e => { setTouched(true); setRows(rs => rs.map((x, j) => j === i ? { ...x, product: e.target.value as Product } : x)) }}>{OUTS[run.kind].map(k => <option key={k} value={k}>{PL(k)}{run.kind === 'buck' && k === 'trim' ? ' (buck trim)' : ''}</option>)}</Select>
         <NumIn value={r.lbs} placeholder="lbs" onChange={v => { setTouched(true); setRows(rs => rs.map((x, j) => j === i ? { ...x, lbs: v } : x)) }} />
         <TagIn value={r.tag} onChange={v => setRows(rs => rs.map((x, j) => j === i ? { ...x, tag: v } : x))} />
         {rows.length > 1 && <button className="ghost small" onClick={() => { setTouched(true); setRows(rs => rs.filter((_, j) => j !== i)) }}>✕</button>}

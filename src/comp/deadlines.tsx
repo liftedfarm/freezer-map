@@ -1,3 +1,4 @@
+import { Select } from '../combo'
 import { useEffect, useState } from 'react'
 import type { Deadline, Doc, ObLog, Obligation } from './api'
 import { CATEGORY_LABEL } from './api'
@@ -44,7 +45,7 @@ export function Deadlines({ c }: { c: Ctx }) {
     <p className="muted">Everything that's due, in one list: recurring deadlines, plus anything with an expiry date (documents, our licenses, material listings, customer licenses).</p>
     <div className="row wrap toolbar">
       <div className="chips"><button className={!cat ? 'on' : ''} onClick={() => setCat(null)}>All</button>{cats.map(k => <button key={k} className={cat === k ? 'on' : ''} onClick={() => setCat(cat === k ? null : k)}>{CATEGORY_LABEL[k] ?? k}</button>)}</div>
-      <select value={site ?? ''} onChange={e => setSite(e.target.value || null)} aria-label="Site"><option value="">All sites</option><option value="-">Company</option>{SITES.map(s => <option key={s}>{s}</option>)}</select>
+      <Select value={site ?? ''} onChange={e => setSite(e.target.value || null)} aria-label="Site"><option value="">All sites</option><option value="-">Company</option>{SITES.map(s => <option key={s}>{s}</option>)}</Select>
     </div>
     {rows == null ? <p className="muted">Loading…</p> : groups.map(([g, ds]) => ds.length > 0 && <div key={g} className="dueg"><h3>{g} <span className="muted">{ds.length}</span></h3>
       <div className="clist">{ds.map(d => <button key={d.kind + d.ref} className="crow" onClick={() => openRow(d)}>

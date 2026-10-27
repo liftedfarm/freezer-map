@@ -1,3 +1,4 @@
+import { Select } from './combo'
 import { useEffect, useState } from 'react'
 import type { Backend } from './api'
 import { MODULES } from './types'
@@ -147,10 +148,10 @@ function UserForm({ user, customers, me, isMe, onClose, onSave, onRemove, backen
         </div>
         {kind === 'customer' && (
           <div className="field"><label>Customer account</label>
-            <select value={u.customer_id ?? ''} onChange={e => set({ customer_id: e.target.value ? Number(e.target.value) : null })}>
+            <Select value={u.customer_id ?? ''} onChange={e => set({ customer_id: e.target.value ? Number(e.target.value) : null })}>
               <option value="">Pick a customer…</option>
               {external.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
+            </Select>
             <p className="muted">They'll only ever see this customer's reserves, menu and orders. After saving, send them the invite link.</p>
           </div>
         )}

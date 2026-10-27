@@ -1,3 +1,4 @@
+import { ListInput, Select } from './combo'
 import { useEffect, useMemo, useState } from 'react'
 import type { Backend } from './api'
 import type { Customer, Invoice, NewOrderLine, PaymentTerm, Product, Strain } from './types'
@@ -91,9 +92,9 @@ function InvoiceEditor({ d, terms, busy, run, backend }: { d: SalesDoc; terms: P
     <div className="invedit">
       <div className="grid2">
         <label><span>Payment terms</span>
-          <select value={d.terms_code ?? ''} disabled={busy} onChange={e => run(() => backend.setInvoiceTerms(d.id, e.target.value), 'Terms changed')}>
+          <Select value={d.terms_code ?? ''} disabled={busy} onChange={e => run(() => backend.setInvoiceTerms(d.id, e.target.value), 'Terms changed')}>
             {terms.filter(t => t.active || t.code === d.terms_code).map(t => <option key={t.code} value={t.code}>{t.label}</option>)}
-          </select></label>
+          </Select></label>
         <label><span>Invoice date</span><input type="date" value={date} onChange={e => setDate(e.target.value)} /></label>
         <label><span>Customer PO</span><input value={po} onChange={e => setPo(e.target.value)} /></label>
         <label><span>Notes on the invoice</span><input value={notes} onChange={e => setNotes(e.target.value)} /></label>
@@ -103,7 +104,7 @@ function InvoiceEditor({ d, terms, busy, run, backend }: { d: SalesDoc; terms: P
         <tbody>{d.lines.map(l => <LineRow key={l.id} l={l} busy={busy} onPrice={p => run(() => backend.setInvoiceLine(d.id, l.id, l.description, null, p), 'Price changed')}
           onRemove={l.kind === 'charge' ? () => run(() => backend.removeInvoiceLine(d.id, l.id), 'Removed') : undefined} />)}</tbody></table>
       <div className="row wrap invcharge">
-        {products.length > 0 && <select value={charge.product} onChange={e => setCharge({ ...charge, product: e.target.value })}>{products.map(x => <option key={x.code} value={x.code}>{x.name}</option>)}</select>}
+        {products.length > 0 && <Select value={charge.product} onChange={e => setCharge({ ...charge, product: e.target.value })}>{products.map(x => <option key={x.code} value={x.code}>{x.name}</option>)}</Select>}
         <input value={charge.desc} onChange={e => setCharge({ ...charge, desc: e.target.value })} placeholder={chosen ? `Description (default: ${chosen.name})` : 'Charge (shipping, storage…)'} />
         <input type="number" value={charge.qty} onChange={e => setCharge({ ...charge, qty: e.target.value })} placeholder="Qty" />
         <input type="number" value={charge.price} onChange={e => setCharge({ ...charge, price: e.target.value })} placeholder={chosen?.grp === 'adjust' ? 'Amount off' : 'Price'} />
@@ -219,19 +220,19 @@ export function NewOrderSheet({ backend, customers, strains, flash, onClose, onD
       <div className="sheet form" onClick={e => e.stopPropagation()}>
         <div className="sheet-h"><h2>New sales order</h2><button className="ghost" onClick={onClose}>✕</button></div>
         <div className="field"><label>Customer</label>
-          <select value={cust ?? ''} onChange={e => setCust(e.target.value ? Number(e.target.value) : null)}>
+          <Select value={cust ?? ''} onChange={e => setCust(e.target.value ? Number(e.target.value) : null)}>
             <option value="">Pick a customer…</option>
             {customers.filter(x => x.active && x.kind === 'external').sort((a, b) => a.name.localeCompare(b.name)).map(x => <option key={x.id} value={x.id}>{x.name}</option>)}
-          </select>
+          </Select>
           {c && <span className="muted">{c.price_per_lb != null ? `Contract price ${money(Number(c.price_per_lb))}/lb` : 'No contract price set'} · {terms.find(t => t.code === c.payment_terms)?.label ?? 'Due on receipt'}</span>}
           {c && licenseWarning(c) && <div className="warnbox">{licenseWarning(c)} Compliance keeps customer licenses in Compliance › Library › Customer licenses.</div>}</div>
         <div className="field"><label>Lines <span className="muted">(price blank = their contract price for fresh frozen; dry products get priced on the invoice)</span></label>
           <datalist id="no-strains">{strains.filter(s => s.active).map(s => <option key={s.id} value={s.name} />)}</datalist>
           {lines.map((l, i) => (<div key={i} className="nolinewrap">
             <div className="row noline">
-              <select value={l.product} aria-label="Product" onChange={e => setLines(ls => ls.map((x, j) => j === i ? { ...x, product: e.target.value as Product } : x))}>
-                {SALE_PRODUCTS.map(p => <option key={p} value={p}>{PRODUCT_LABEL[p]}</option>)}</select>
-              <input list="no-strains" placeholder="Strain" value={l.strain} onChange={e => setLines(ls => ls.map((x, j) => j === i ? { ...x, strain: e.target.value } : x))} />
+              <Select value={l.product} aria-label="Product" onChange={e => setLines(ls => ls.map((x, j) => j === i ? { ...x, product: e.target.value as Product } : x))}>
+                {SALE_PRODUCTS.map(p => <option key={p} value={p}>{PRODUCT_LABEL[p]}</option>)}</Select>
+              <ListInput list="no-strains" placeholder="Strain" value={l.strain} onChange={e => setLines(ls => ls.map((x, j) => j === i ? { ...x, strain: e.target.value } : x))} />
               <input type="number" placeholder="lbs" value={l.lbs} onChange={e => setLines(ls => ls.map((x, j) => j === i ? { ...x, lbs: e.target.value } : x))} />
               <input type="number" placeholder="$/lb" value={l.price} onChange={e => setLines(ls => ls.map((x, j) => j === i ? { ...x, price: e.target.value } : x))} />
               {lines.length > 1 && <button className="ghost small" onClick={() => setLines(ls => ls.filter((_, j) => j !== i))}>✕</button>}
@@ -250,10 +251,10 @@ export function NewOrderSheet({ backend, customers, strains, flash, onClose, onD
           <div className="field"><label>Wanted by</label><input type="date" value={wanted} onChange={e => setWanted(e.target.value)} /></div>
         </div>
         <div className="field"><label>Payment terms <span className="muted">(this order only)</span></label>
-          <select value={termsCode} onChange={e => setTermsCode(e.target.value)}>
+          <Select value={termsCode} onChange={e => setTermsCode(e.target.value)}>
             <option value="">{c ? `Customer default (${terms.find(t => t.code === c.payment_terms)?.label ?? 'Due on receipt'})` : 'Customer default'}</option>
             {terms.filter(t => t.active).map(t => <option key={t.code} value={t.code}>{t.label}</option>)}
-          </select></div>
+          </Select></div>
         <div className="field"><label>Shipping <span className="muted">($, blank = none{c && ((c.contract_lbs ?? 0) > 0) ? '; contract customers get a $0 "Free shipping - contract" line' : ''})</span></label>
           <input type="number" step="0.01" min="0" value={shipping} onChange={e => setShipping(e.target.value)} placeholder="0.00" /></div>
         <div className="field"><label>Notes</label><input value={notes} onChange={e => setNotes(e.target.value)} /></div>

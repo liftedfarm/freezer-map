@@ -1,3 +1,4 @@
+import { Select } from '../combo'
 import { useMemo, useState } from 'react'
 import type { NurseryApi } from './api'
 import type { NCtx } from './calc'
@@ -105,11 +106,11 @@ export function OrderSheet({ d, c, o: o0, customers, terms, api, flash, isAdmin,
         <F label={t('Strain')}><TextIn value={x.strain} list="n-strains" onChange={v => set({ strain: v ?? '' })} autoFocus={isNew} /></F>
         <StrainList id="n-strains" names={d.strains} />
         <div className="grid2">
-          <F label={t('To')}><select value={where} onChange={e => { const v = e.target.value; set(v.startsWith('site:') ? { site: v.slice(5), customer_id: null } : { site: null, customer_id: v ? Number(v.slice(2)) : null }) }}>
+          <F label={t('To')}><Select value={where} onChange={e => { const v = e.target.value; set(v.startsWith('site:') ? { site: v.slice(5), customer_id: null } : { site: null, customer_id: v ? Number(v.slice(2)) : null }) }}>
             <option value="">{t('Pick…')}</option>
             <optgroup label={t('Our farms')}>{farms.map(s => <option key={s} value={`site:${s}`}>{s}</option>)}</optgroup>
             <optgroup label={t('Outside farms and partners')}>{outside.map(k => <option key={k.id} value={`c:${k.id}`}>{k.name}</option>)}</optgroup>
-          </select></F>
+          </Select></F>
           <F label={t('Plants')}><NumIn value={x.plants} onChange={v => set({ plants: v ?? 0 })} /></F>
           <F label={t('Cut by')}><DateIn value={x.cut_on} onChange={v => set({ cut_on: v })} /></F>
           <F label={t('Deliver on')}><DateIn value={x.deliver_on} onChange={v => set({ deliver_on: v })} /></F>

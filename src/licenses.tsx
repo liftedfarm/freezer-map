@@ -1,3 +1,4 @@
+import { Select } from './combo'
 import { ScanButton } from './scan'
 import { useEffect, useState } from 'react'
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -58,7 +59,7 @@ export function TagRanges({ sb, license, kind, ranges, used, canEdit, flash, onC
             {rs.map(row)}</details>)
       })}
       {canEdit && <div className="row wrap tagadd">
-        <select value={purpose} onChange={e => setPurpose(e.target.value)}>{Object.entries(PURPOSE_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
+        <Select value={purpose} onChange={e => setPurpose(e.target.value)}>{Object.entries(PURPOSE_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</Select>
         <input value={first} onChange={e => setFirst(e.target.value.toUpperCase())} placeholder="First tag" /><ScanButton compact onScan={setFirst} />
         <input value={last} onChange={e => setLast(e.target.value.toUpperCase())} placeholder="Last tag" /><ScanButton compact onScan={setLast} />
         <button className="ghost small" disabled={busy || !first.trim() || !last.trim()} onClick={() => go({ first: first.trim(), last: last.trim(), purpose }, 'Tag range added')}>+ Add range</button>
@@ -114,7 +115,7 @@ export function LicensesPanel({ backend, flash }: { backend: Backend; flash: Fla
       })}
       {real.length > 0 && <details className="licfz"><summary>Which license each freezer is under</summary>
         <div className="dlist">{real.map(f => <div key={f.id} className="drow"><span className="grow">{f.site} freezer {f.number}</span>
-          <select value={f.license ?? ''} onChange={e => moveFreezer(f.id, e.target.value)}>{lics.filter(l => l.site === f.site || l.license_no === f.license).map(l => <option key={l.license_no} value={l.license_no}>{l.license_no} · {KIND_LABEL[l.kind]}</option>)}</select></div>)}</div>
+          <Select value={f.license ?? ''} onChange={e => moveFreezer(f.id, e.target.value)}>{lics.filter(l => l.site === f.site || l.license_no === f.license).map(l => <option key={l.license_no} value={l.license_no}>{l.license_no} · {KIND_LABEL[l.kind]}</option>)}</Select></div>)}</div>
       </details>}
       {ed && (
         <div className="scrim" onClick={() => setEd(null)}>
@@ -122,7 +123,7 @@ export function LicensesPanel({ backend, flash }: { backend: Backend; flash: Fla
             <div className="sheet-h"><h2>{lics.some(l => l.license_no === ed.license_no) ? ed.license_no : 'New license'}</h2><button className="ghost" onClick={() => setEd(null)}>✕</button></div>
             <div className="grid2">
               <div className="field"><label>License #</label><input value={ed.license_no ?? ''} disabled={lics.some(l => l.license_no === ed.license_no)} onChange={e => set({ license_no: e.target.value.toUpperCase() })} /></div>
-              <div className="field"><label>Type</label><select value={ed.kind} onChange={e => set({ kind: e.target.value })}>{Object.entries(KIND_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></div>
+              <div className="field"><label>Type</label><Select value={ed.kind} onChange={e => set({ kind: e.target.value })}>{Object.entries(KIND_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</Select></div>
               <div className="field"><label>Size / tier</label><input value={ed.tier ?? ''} onChange={e => set({ tier: e.target.value })} placeholder="Large, Medium outdoor…" /></div>
               <div className="field"><label>Site code</label><input value={ed.site ?? ''} onChange={e => set({ site: e.target.value.toUpperCase() })} placeholder="OHR, GVR, 1PN (blank for none)" /></div>
               <div className="field"><label>Legal entity</label><input value={ed.entity ?? ''} onChange={e => set({ entity: e.target.value })} placeholder="DNA Organics, Inc." /></div>

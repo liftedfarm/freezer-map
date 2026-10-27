@@ -1,3 +1,4 @@
+import { Select } from './combo'
 import { useBack, scrollTop } from './nav'
 import { ScanButton } from './scan'
 import { sameTag, useScanHandler } from './scanroute'
@@ -249,7 +250,7 @@ function OrderPage({ o, back, backend, reload, flash, pallets, heldBy, onLoad, i
           onNew={(v, d) => run(async () => { const l = await backend.createLoad(v, d, [{ customer_id: o.customer_id, manifest: '' }], '', ''); await backend.orderToLoad(o.id, l.id) }, 'New load made with this order').then(() => setLoadPick(false))} />}
         {o.state === 'loaded' && o.stop && <div className="row between wrap"><span>On <b>{o.stop.load}</b> <span className="muted">· {fmt(o.stop.load_date)} · {o.stop.load_status.replace('_', ' ')}</span></span>
           <div className="row"><button className="ghost small" onClick={() => openLoad(o.stop!.load_id)}>Open load</button>
-            {(o.stop.load_status === 'planning' || o.stop.load_status === 'loading') && <button className="ghost small" disabled={busy} onClick={() => run(() => backend.orderOffLoad(o.id), 'Taken off the load')}>Take off load</button>}</div></div>}
+            {(o.stop.load_status === 'planning' || o.stop.load_status === 'loading' || o.stop.load_status === 'cancelled') && <button className="ghost small" disabled={busy} onClick={() => run(() => backend.orderOffLoad(o.id), 'Taken off the load')}>Take off load</button>}</div></div>}
         {o.state === 'shipped' && <span>Shipped {fmt(o.shipped_date)}{o.stop ? ` on ${o.stop.load}` : ''}.</span>}
         {combine && <Combine o={o} line={combine} pallets={pallets} heldBy={heldBy} onLoad={onLoad} inRun={inRun} where={where} rank={rank} canon={canon} busy={busy}
           close={() => setCombine(null)}
@@ -324,7 +325,7 @@ function LoadChooser({ o, loads, vehicles, stops = [], customers = [], busy, clo
         {!title && hasMe(l) && <span className="ok-t small"><br />Already stops at {o.customer}: joins that stop</span>}</span><span>Add ›</span></button>)}
       {!open.length && <p className="muted">No loads being planned. Make a new one:</p>}
       <div className="drow"><span className="grow"><b>New load</b></span>
-        <select value={v ?? ''} onChange={e => setV(Number(e.target.value))}>{vs.map(x => <option key={x.id} value={x.id}>{x.name}</option>)}</select>
+        <Select value={v ?? ''} onChange={e => setV(Number(e.target.value))}>{vs.map(x => <option key={x.id} value={x.id}>{x.name}</option>)}</Select>
         <input type="date" value={d} onChange={e => setD(e.target.value)} />
         <button className="primary small" disabled={busy || v == null} onClick={() => onNew(v!, d)}>Make load</button></div>
     </div>

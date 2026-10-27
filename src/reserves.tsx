@@ -1,3 +1,4 @@
+import { ListInput, Select } from './combo'
 import { SampleHolds, SampleSheet } from './samples'
 import { CustomerDashboard } from './statement'
 import { StrainLink } from './strainCard'
@@ -300,12 +301,12 @@ export function ReservesView({ backend, customers, strains, onHand, flash, isAdm
           <div className="sheet form" onClick={e => e.stopPropagation()}>
             <div className="sheet-h"><h2>{edit.isNew ? 'Add reserve' : 'Edit reserve'}</h2><button className="ghost" onClick={() => setEdit(null)}>✕</button></div>
             <div className="field"><label>Customer</label>
-              <select value={edit.customer_id ?? ''} disabled={!edit.isNew} onChange={e => setEdit({ ...edit, customer_id: e.target.value ? Number(e.target.value) : null })}>
+              <Select value={edit.customer_id ?? ''} disabled={!edit.isNew} onChange={e => setEdit({ ...edit, customer_id: e.target.value ? Number(e.target.value) : null })}>
                 <option value="">Pick a customer…</option>
                 {customers.filter(c => c.active && c.kind === 'external').map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select></div>
+              </Select></div>
             <div className="field"><label>Strain</label>
-              <input list="reserve-strains" value={edit.strain} disabled={!edit.isNew} onChange={e => setEdit({ ...edit, strain: e.target.value })} placeholder="Start typing" />
+              <ListInput list="reserve-strains" value={edit.strain} disabled={!edit.isNew} onChange={e => setEdit({ ...edit, strain: e.target.value })} placeholder="Start typing" />
               <datalist id="reserve-strains">{strains.filter(s => s.active).map(s => <option key={s.id} value={s.name} />)}</datalist></div>
             <div className="field"><label>Reserved lbs <span className="muted">(the full amount, including what's already shipped)</span></label>
               <input type="number" min="0" step="10" value={edit.lbs} onChange={e => setEdit({ ...edit, lbs: e.target.value })} autoFocus={!edit.isNew} />
@@ -425,7 +426,7 @@ function OrderEditor({ backend, o, strains, flash, onChanged }: {
           )
         })}</tbody>
         <tfoot>
-          {open_ && <tr><td><input list="order-strains" placeholder="Add a strain" value={add.strain} onChange={e => setAdd({ ...add, strain: e.target.value })} />
+          {open_ && <tr><td><ListInput list="order-strains" placeholder="Add a strain" value={add.strain} onChange={e => setAdd({ ...add, strain: e.target.value })} />
             <datalist id="order-strains">{strains.filter(s => s.active).map(s => <option key={s.id} value={s.name} />)}</datalist></td>
             <td className="num"><input className="qty" type="number" step="10" min="0" placeholder="lbs" value={add.lbs} onChange={e => setAdd({ ...add, lbs: e.target.value })} /></td>
             <td className="muted small">customer price</td>

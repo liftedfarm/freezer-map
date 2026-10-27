@@ -1,3 +1,4 @@
+import { Select } from '../combo'
 import { useEffect, useMemo, useState } from 'react'
 import type { CustLic, Doc, License, RefKind } from './api'
 import type { Ctx } from './ctx'
@@ -46,7 +47,7 @@ function Docs({ c }: { c: Ctx }) {
       <button className="ghost" onClick={() => setAdding([])}>+ SharePoint link</button></div>}
     <div className="row wrap toolbar" style={{ marginTop: 10 }}>
       <input className="search" placeholder="Search title, file, license, notes" value={q} onChange={e => setQ(e.target.value)} />
-      <select value={site ?? ''} onChange={e => setSite(e.target.value || null)} aria-label="Site"><option value="">All sites</option><option value="-">Company</option>{SITES.map(s => <option key={s}>{s}</option>)}</select>
+      <Select value={site ?? ''} onChange={e => setSite(e.target.value || null)} aria-label="Site"><option value="">All sites</option><option value="-">Company</option>{SITES.map(s => <option key={s}>{s}</option>)}</Select>
       <label className="check"><input type="checkbox" checked={expiring} onChange={e => setExpiring(e.target.checked)} /> Expiring in 60 days</label>
       {c.isAdmin && <label className="check"><input type="checkbox" checked={removed} onChange={e => setRemoved(e.target.checked)} /> Removed</label>}
     </div>

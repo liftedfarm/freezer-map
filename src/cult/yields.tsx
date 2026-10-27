@@ -1,3 +1,4 @@
+import { Select } from '../combo'
 import { useEffect, useState } from 'react'
 import type { CultApi } from './api'
 import { avg, calcHarvest, fieldName, fmtD, n0, n1, n2, pct, sum, yieldsByStrain } from './calc'
@@ -44,9 +45,9 @@ export function YieldsTab({ d, c, site, q, api }: { d: CultData; c: Ctx; site: s
           <button className={view === 'field' ? 'on' : ''} onClick={() => setView('field')}>By field</button>
           <button className={view === 'harvest' ? 'on' : ''} onClick={() => setView('harvest')}>Every harvest</button>
         </div>
-        {view === 'strain' && <select value={sort} onChange={e => setSort(e.target.value as Sort)}>
+        {view === 'strain' && <Select value={sort} onChange={e => setSort(e.target.value as Sort)}>
           <option value="lpp">Best lbs / plant</option><option value="lbs">Most lbs</option><option value="vs">Best vs estimate</option><option value="name">Name</option>
-        </select>}
+        </Select>}
       </div>
 
       {view === 'strain' && <div className="cwrap"><table className="ctable">

@@ -1,3 +1,4 @@
+import { Select } from '../combo'
 import { useEffect, useMemo, useState } from 'react'
 import type { MAction, MError, Play, Recon, Upload } from './api'
 import type { Ctx } from './ctx'
@@ -49,7 +50,7 @@ function Todo({ c }: { c: Ctx }) {
     <div className="row wrap toolbar">
       <div className="chips">{([['todo', 'To do'], ['error', 'Problem'], ['done', 'Done'], ['skipped', 'Skipped'], [null, 'All']] as const).map(([k, l]) =>
         <button key={l} className={status === k ? 'on' : ''} onClick={() => setStatus(k)}>{l}</button>)}</div>
-      <select value={lic ?? ''} onChange={e => setLic(e.target.value || null)} aria-label="License"><option value="">All licenses</option>{lics.map(l => <option key={l} value={l}>{l || 'no license'}</option>)}</select>
+      <Select value={lic ?? ''} onChange={e => setLic(e.target.value || null)} aria-label="License"><option value="">All licenses</option>{lics.map(l => <option key={l} value={l}>{l || 'no license'}</option>)}</Select>
       <button className="ghost small" disabled={!shown.length} onClick={exportCsv}>Export CSV</button>
       {c.canEdit && shown.length > 0 && (sel.on ? <button className="ghost small" onClick={sel.stop}>Done selecting</button> : <button className="ghost small" onClick={sel.start}>Select</button>)}
     </div>
@@ -130,8 +131,8 @@ function Reconcile({ c }: { c: Ctx }) {
       {parsed.cols.qty == null && <div className="warn-t">No Quantity column, so weights won't be compared.</div>}
       <div className="row" style={{ marginTop: 6 }}><button className="primary" disabled={busy || !lic} onClick={compare}>Compare with the app ({lic})</button><button className="ghost" onClick={() => setParsed(null)}>Cancel</button></div></div>}
     {ups.length > 0 && <div className="row wrap toolbar" style={{ marginTop: 12 }}><span className="muted">Uploads</span>
-      <select value={cur?.id ?? ''} onChange={e => setCur(ups.find(u => u.id === Number(e.target.value)) ?? null)}><option value="">Pick one…</option>
-        {ups.map(u => <option key={u.id} value={u.id}>{u.license} · {when(u.uploaded_at)} · {u.rows} pkgs · {u.uploaded_by?.split('@')[0]}</option>)}</select>
+      <Select value={cur?.id ?? ''} onChange={e => setCur(ups.find(u => u.id === Number(e.target.value)) ?? null)}><option value="">Pick one…</option>
+        {ups.map(u => <option key={u.id} value={u.id}>{u.license} · {when(u.uploaded_at)} · {u.rows} pkgs · {u.uploaded_by?.split('@')[0]}</option>)}</Select>
       {cur && res && <button className="ghost small" onClick={exportCsv}>Export CSV</button>}</div>}
     {cur && (res == null ? <p className="muted">Comparing…</p> : !res.length ? <div className="infobox" style={{ marginTop: 10 }}>Everything matches for {cur.license}.</div>
       : ORDER.filter(k => by.get(k)?.length).map(k => <div key={k} className="dueg"><h3>{ISSUE[k][0]} <span className="muted">{by.get(k)!.length}</span></h3>

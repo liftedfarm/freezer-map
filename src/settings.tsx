@@ -1,3 +1,4 @@
+import { Select } from './combo'
 import { Fold } from './fold'
 import { StrainProfileEdit, eff, loadProfiles, mmdd } from './strains'
 import type { StrainProfile } from './strains'
@@ -399,10 +400,10 @@ export function EditForm({ list, row, busy, onClose, onSave, extra, terms }: {
             ) : c.kind === 'area' ? (
               <textarea rows={3} value={String(r[c.key] ?? '')} onChange={e => set(c.key, e.target.value)} />
             ) : c.kind === 'terms' ? (
-              <select value={String(r[c.key] ?? '')} onChange={e => set(c.key, e.target.value || null)}>
+              <Select value={String(r[c.key] ?? '')} onChange={e => set(c.key, e.target.value || null)}>
                 <option value="">Due on receipt (default)</option>
                 {(terms ?? []).map(t => <option key={t.code} value={t.code}>{t.label}</option>)}
-              </select>
+              </Select>
             ) : c.kind === 'bool' ? (
               <label className="check"><input type="checkbox" checked={Boolean(r[c.key] ?? c.key === 'show_on_menu')} onChange={e => set(c.key, e.target.checked)} /> On</label>
             ) : c.kind === 'num' ? (

@@ -1,3 +1,4 @@
+import { Select } from './combo'
 import { useEffect, useState } from 'react'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { MODULES } from './types'
@@ -60,10 +61,10 @@ export function PermissionsPanel({ sb, flash }: { sb: SupabaseClient | null; fla
         </div> })}</div>
       {!add ? <button className="ghost small" onClick={() => setAdd({ email: '', key: '', allow: true })}>+ Exception</button>
         : <div className="dcard">
-          <div className="field"><label>Person</label><select value={add.email} onChange={e => setAdd({ ...add, email: e.target.value })}>
-            <option value="">Pick someone…</option>{people.map(p => <option key={p.email} value={p.email}>{p.name ? `${p.name} (${p.email})` : p.email}</option>)}</select></div>
-          <div className="field"><label>Action</label><select value={add.key} onChange={e => setAdd({ ...add, key: e.target.value })}>
-            <option value="">Pick an action…</option>{mods.map(m => <optgroup key={m.key} label={m.label}>{rules.filter(r => r.module === m.key).map(r => <option key={r.action} value={`${r.module}.${r.action}`}>{r.label}</option>)}</optgroup>)}</select></div>
+          <div className="field"><label>Person</label><Select value={add.email} onChange={e => setAdd({ ...add, email: e.target.value })}>
+            <option value="">Pick someone…</option>{people.map(p => <option key={p.email} value={p.email}>{p.name ? `${p.name} (${p.email})` : p.email}</option>)}</Select></div>
+          <div className="field"><label>Action</label><Select value={add.key} onChange={e => setAdd({ ...add, key: e.target.value })}>
+            <option value="">Pick an action…</option>{mods.map(m => <optgroup key={m.key} label={m.label}>{rules.filter(r => r.module === m.key).map(r => <option key={r.action} value={`${r.module}.${r.action}`}>{r.label}</option>)}</optgroup>)}</Select></div>
           <div className="seg"><button className={add.allow ? 'on' : ''} onClick={() => setAdd({ ...add, allow: true })}>Allow</button><button className={!add.allow ? 'on' : ''} onClick={() => setAdd({ ...add, allow: false })}>Don't allow</button></div>
           <div className="row"><button className="ghost" onClick={() => setAdd(null)}>Cancel</button>
             <button className="primary" disabled={busy || !add.email || !add.key} onClick={() => { const [m, a] = add.key.split('.'); rpc('save_perm_override', { p_email: add.email, p_module: m, p_action: a, p_allow: add.allow }, 'Exception saved').then(() => setAdd(null)) }}>Save</button></div>

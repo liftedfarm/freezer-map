@@ -1,3 +1,4 @@
+import { Select } from '../combo'
 import './pay.css'
 import '../cult/cult.css'
 import { useEffect, useMemo, useState } from 'react'
@@ -143,8 +144,8 @@ export function RunDayLog({ sb, run, date0, flash, canEdit, onSaved }: {
       {shown.map(r => { const c = calc(r)
         return <div key={r.key} className={`crew-row ${c.hit ? 'crew-ok' : r.hours && r.lbs ? 'crew-under' : ''}`}>
           <div className="row between">
-            <select value={r.employee_id ?? ''} disabled={!editable} onChange={e => set(r.key, { employee_id: Number(e.target.value) })}>
-              {emps.filter(e => e.active || e.id === r.employee_id).map(e => <option key={e.id} value={e.id} disabled={e.id !== r.employee_id && used.has(e.id)}>{e.name}</option>)}</select>
+            <Select value={r.employee_id ?? ''} disabled={!editable} onChange={e => set(r.key, { employee_id: Number(e.target.value) })}>
+              {emps.filter(e => e.active || e.id === r.employee_id).map(e => <option key={e.id} value={e.id} disabled={e.id !== r.employee_id && used.has(e.id)}>{e.name}</option>)}</Select>
             <span className="crew-pay">{r.hours && r.lbs != null ? <>{n2(c.lph)} {t('lbs/hr')} {c.hit ? '✓' : '✗'} · <b>{money(c.pay)}</b></> : ''}</span>
             {editable && <button className="ghost small" aria-label={t('Remove')} onClick={() => r.id ? set(r.key, { delete: true }) : setRows(rs => rs.filter(x => x.key !== r.key))}>✕</button>}
           </div>

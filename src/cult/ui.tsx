@@ -1,3 +1,4 @@
+import { Select } from '../combo'
 import { useState } from 'react'
 import type { ReactNode } from 'react'
 import { lang, t } from '../i18n'
@@ -75,13 +76,13 @@ function Combo({ value, onChange, placeholder, list, autoFocus }: { value: strin
 
 export function Pick<T extends string | number>({ value, options, onChange, blank }: { value: T | null | undefined; options: { v: T; l: string }[]; onChange: (v: T | null) => void; blank?: string }) {
   return (
-    <select value={value == null ? '' : String(value)} onChange={e => {
+    <Select value={value == null ? '' : String(value)} onChange={e => {
       const o = options.find(x => String(x.v) === e.target.value)
       onChange(o ? o.v : null)
     }}>
       {blank !== undefined && <option value="">{blank}</option>}
       {options.map(o => <option key={String(o.v)} value={String(o.v)}>{o.l}</option>)}
-    </select>
+    </Select>
   )
 }
 

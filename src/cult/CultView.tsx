@@ -1,3 +1,4 @@
+import { Select } from '../combo'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Backend } from '../api'
 import { CultApi } from './api'
@@ -53,9 +54,9 @@ export default function CultView({ backend, flash, onPalletsChanged, tab, go }: 
       <div className="chead">
         {tab === 'dashboard' ? <span className="dev">{t('in development')}</span> : <h2>{tab === 'setup' ? t('Production settings') : t(cultLabel(tab))} <span className="dev">{t('in development')}</span></h2>}
         <div className="row">
-          {tab !== 'plan' && tab !== 'setup' && tab !== 'activity' && tab !== 'logs' && <select value={d.year} onChange={e => setYear(Number(e.target.value))}>
+          {tab !== 'plan' && tab !== 'setup' && tab !== 'activity' && tab !== 'logs' && <Select value={d.year} onChange={e => setYear(Number(e.target.value))}>
             {[...new Set([...d.years, d.currentYear + 1])].sort((a, b) => b - a).map(y => <option key={y} value={y}>{y} season</option>)}
-          </select>}
+          </Select>}
           {tab !== 'plan' && tab !== 'setup' && tab !== 'activity' && tab !== 'logs' && <div className="seg">
             {[null, ...d.sites.map(s => s.code)].map(s => <button key={s ?? 'all'} className={site === s ? 'on' : ''} onClick={() => setSite(s)}>{s ?? 'Both'}</button>)}
           </div>}

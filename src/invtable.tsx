@@ -1,3 +1,4 @@
+import { Select } from './combo'
 // Inventory table shared by Distribution, Sales and Processing: one table, a preset view per module.
 // Group by, filter chips, column picker, sort, totals, select for bulk actions, export to Excel (CSV).
 import './cult/cult.css'
@@ -118,8 +119,8 @@ export function InvTable<R>({ id, title, note, rows, rowId, cols, groups, defaul
       {note && <p className="muted">{note}</p>}
       <div className="row wrap toolbar invbar">
         <input className="search" type="search" placeholder="Search strain, pallet, tag, lot" value={q} onChange={e => setQ(e.target.value)} />
-        <label className="row">Group by <select className="inline" value={g} onChange={e => { setG(e.target.value); persist({ g: e.target.value }) }}>
-          {groups.map(x => <option key={x.k} value={x.k}>{x.l}</option>)}<option value="none">Nothing</option></select></label>
+        <label className="row">Group by <Select className="inline" value={g} onChange={e => { setG(e.target.value); persist({ g: e.target.value }) }}>
+          {groups.map(x => <option key={x.k} value={x.k}>{x.l}</option>)}<option value="none">Nothing</option></Select></label>
         <span className="colpick"><button className="ghost small" onClick={() => setColMenu(v => !v)}>Columns</button>
           {colMenu && <div className="colmenu" onMouseLeave={() => setColMenu(false)}>{cols.map(c =>
             <label key={c.k}><input type="checkbox" checked={visible.includes(c)} onChange={() => toggleCol(c)} /> {c.l}</label>)}</div>}</span>

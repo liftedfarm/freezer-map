@@ -1,3 +1,4 @@
+import { Select } from '../combo'
 import { Fragment, useMemo, useState } from 'react'
 import type { NurseryApi } from './api'
 import type { GenRow, NCtx, PlanRow } from './calc'
@@ -31,7 +32,7 @@ export function PlanTab({ d, c, api, flash, onSaved }: { d: NData; c: NCtx; api:
   return <>
     <div className="row toolbar between">
       <div className="row">
-        <select value={year} onChange={e => setYear(Number(e.target.value))}>{years.map(y => <option key={y} value={y}>{t('{y} season', { y })}</option>)}</select>
+        <Select value={year} onChange={e => setYear(Number(e.target.value))}>{years.map(y => <option key={y} value={y}>{t('{y} season', { y })}</option>)}</Select>
         <input className="search" type="search" placeholder={t('Strain')} value={q} onChange={e => setQ(e.target.value)} />
       </div>
     </div>
