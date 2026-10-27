@@ -23,8 +23,9 @@ const GROUPS: [NurseryRecon['kind'], NurseryRecon['issue'], string, string][] = 
 export function NurseryReconcile({ c }: { c: Ctx }) {
   const [rows, setRows] = useState<NurseryRecon[] | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
+  const [err, setErr] = useState<string | null>(null)
   const [open, setOpen] = useState<Set<string>>(new Set(['clones:count', 'mothers:count']))
-  const load = async () => { try { setRows(await c.api.reconcileNursery()) } catch (e) { c.flash(errText(e), true); setRows([]) } }
+  const load = async () => { try { setRows(await c.api.reconcileNursery()); setErr(null) } catch (e) { setErr(errText(e)); setRows(null) } }
   useEffect(() => { load() }, [])
   async function pull() {
     setBusy('Pulling 1PN from METRC…')
@@ -49,7 +50,10 @@ export function NurseryReconcile({ c }: { c: Ctx }) {
       <button className="ghost small" disabled={!rows?.length} onClick={csv}>Export CSV</button>
       {rows && <span className="muted small">{rows.length ? `${rows.length} to look at` : 'Everything matches'}</span>}
     </div>
-    {!rows && <p className="muted">Loading…</p>}
+    {err && <p className="neg small">{err}</p>}
+    <div>
+    </div>
+    {!rows && !err && <p className="muted">Loading…</p>}
     {GROUPS.map(([k, i, label, help]) => {
       const rs = (rows ?? []).filter(r => r.kind === k && r.issue === i)
       if (!rs.length) return null
