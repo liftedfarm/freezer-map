@@ -64,6 +64,7 @@ export async function t3(method, path, { query, body } = {}) {
   return j
 }
 const list = j => (Array.isArray(j) ? j : j?.data ?? [])
+const unhtml = s => String(s ?? '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
 
 /** one active package by tag, or null */
 export async function packageByTag(license, tag) {
@@ -74,7 +75,7 @@ export async function packageByTag(license, tag) {
 /** package adjustment reasons for a license (from the adjust form's inputs; the packages it also returns are dropped) */
 export async function adjustReasons(license) {
   const j = await t3('GET', '/v2/packages/adjust/inputs', { query: { licenseNumber: license } })
-  return (j?.actionReasons ?? []).filter(r => r.forPackageAdjustments !== false).map(r => ({ id: r.id, name: r.name, requiresNote: !!r.requiresNote }))
+  return (j?.actionReasons ?? []).filter(r => r.forPackageAdjustments !== false).map(r => ({ id: r.id, name: unhtml(r.name), requiresNote: !!r.requiresNote }))
 }
 
 // ---------- connection test ----------
@@ -91,7 +92,6 @@ export async function testConnection(by) {
       const app = ours.find(l => l.license_no === n)
       const row = { license: n, name: t?.licenseName ?? null, in_t3: !!t, in_app: !!app, site: app?.site ?? null, permissions: [] }
       if (t) {
-        try { row.permissions = list(await t3('GET', '/v2/permissions', { query: { licenseNumber: n } })) } catch (e) { row.permissions_error = e.message }
         try { out.reasons[n] = await adjustReasons(n) } catch (e) { row.reasons_error = e.message }
       }
       out.licenses.push(row)

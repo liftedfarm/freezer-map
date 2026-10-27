@@ -61,8 +61,8 @@ export function T3Settings({ c }: { c: Ctx }) {
         {conn.error && <div className="neg small" style={{ marginTop: 4 }}>{conn.error}</div>}
         {!!conn.licenses?.length && <div className="dlist" style={{ marginTop: 8 }}>{conn.licenses.map(l => <div key={l.license} className="drow">
           <span className="grow"><b>{l.site ?? ''}</b> <span className="mono small">{l.license}</span> <span className="muted small">{l.name ?? ''}</span>
-            {(l.permissions_error || l.reasons_error) && <div className="neg small">{l.permissions_error ?? l.reasons_error}</div>}</span>
-          <span className="small muted">{l.in_t3 ? `${l.permissions?.length ?? 0} permissions · ${conn.reasons?.[l.license]?.length ?? 0} adjust reasons` : ''}</span>
+            {l.reasons_error && <div className="neg small">{l.reasons_error}</div>}</span>
+          <span className="small muted">{l.in_t3 ? `${conn.reasons?.[l.license]?.length ?? 0} adjust reasons` : ''}</span>
           <span className={`pill ${l.in_t3 ? 'cp-ok' : l.in_app ? 'cp-bad' : 'cp-mute'}`}>{l.in_t3 ? 'Can reach' : l.in_app ? 'Not on this user' : 'Not in the app'}</span>
         </div>)}</div>}
       </>}
