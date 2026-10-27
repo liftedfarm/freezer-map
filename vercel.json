@@ -41,6 +41,10 @@
     {
       "path": "/api/compliance/backup",
       "schedule": "17 10 * * *"
+    },
+    {
+      "path": "/api/metrc/worker",
+      "schedule": "*/5 * * * *"
     }
   ]
 }

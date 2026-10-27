@@ -4,6 +4,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 
 function fail(error: { message: string } | null) {
   if (!error) return
+  if (/metrc_push|metrc_connection|metrc_set_mode|metrc_me|push_state/i.test(error.message)) throw new Error(`${error.message} (run 070_metrc_push.sql in Supabase)`)
   if (/comp_|pallet_trace|test_files|customer_license_status|does not exist|schema cache/i.test(error.message) && /function|relation|column/i.test(error.message))
     throw new Error(`${error.message} (run 055_compliance.sql and 056_ccof_list.sql in Supabase)`)
   throw new Error(error.message)
@@ -54,7 +55,16 @@ export interface AppLog {
 export interface MAction {
   id: number; at: string; due_at?: string | null; harvest_id?: number | null; license: string | null; action: string; pallet_id: number | null; code: string | null; tag: string | null; lbs: number | null
   summary: string | null; details: Record<string, unknown> | null; status: 'todo' | 'done' | 'error' | 'skipped'; note: string | null; done_by: string | null; done_at: string | null
+  kind?: string | null; push_state?: 'checked' | 'sending' | 'sent' | 'failed' | 'waiting' | null; push_attempts?: number; push_at?: string | null
+  push_by?: string | null; push_error?: string | null; push_request?: unknown; push_response?: unknown
 }
+export interface PushKind { kind: string; label: string; phase: number; sort: number; ready: boolean; mode: 'off' | 'approve' | 'auto'; updated_by: string | null; updated_at: string }
+export interface T3Conn {
+  ok: boolean | null; tested_at: string | null; tested_by: string | null; error: string | null; who: Record<string, unknown> | null
+  licenses: { license: string; name: string | null; in_t3: boolean; in_app: boolean; site: string | null; permissions: string[]; permissions_error?: string; reasons_error?: string }[] | null
+  reasons: Record<string, { id: number; name: string; requiresNote: boolean }[]> | null
+}
+export interface PushResult { id: number; state: 'checked' | 'sent' | 'failed' | 'waiting'; info?: string; error?: string }
 export interface Upload { id: number; license: string; file_name: string | null; rows: number; uploaded_by: string | null; uploaded_at: string }
 export interface Recon {
   issue: 'not_in_app' | 'closed_in_app' | 'not_in_metrc' | 'other_license' | 'weight' | 'item' | 'on_hold' | 'tag_pending' | 'stale'
@@ -198,6 +208,19 @@ export class CompApi {
   overview() { return this.rpc<Overview>('comp_overview') }
   setSetting(key: string, value: string) { return this.rpc<void>('comp_set_setting', { p_key: key, p_value: value }) }
   async backupRuns() { const { data, error } = await this.sb.from('comp_backup_runs').select('*').order('id', { ascending: false }).limit(10); fail(error); return (data ?? []) as BackupRun[] }
+  // ----- METRC through T3 -----
+  async pushKinds() { const { data, error } = await this.sb.from('metrc_push_kinds').select('*').order('sort'); fail(error); return (data ?? []) as PushKind[] }
+  setPushMode(kind: string, mode: PushKind['mode']) { return this.rpc<void>('metrc_set_mode', { p_kind: kind, p_mode: mode }) }
+  async t3Conn() { const { data, error } = await this.sb.from('metrc_connection').select('*').eq('id', 1).maybeSingle(); fail(error); return data as T3Conn | null }
+  async metrc<T>(body: object): Promise<T> {
+    const { data } = await this.sb.auth.getSession()
+    const r = await fetch('/api/metrc/run', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${data.session?.access_token ?? ''}` }, body: JSON.stringify(body) })
+    const j = await r.json().catch(() => ({ error: `The server didn't answer (${r.status})` }))
+    if (!r.ok) throw new Error(j.error ?? `Error ${r.status}`)
+    return j as T
+  }
+  testT3() { return this.metrc<T3Conn>({ action: 'test' }) }
+  sendMetrc(ids: number[]) { return this.metrc<{ live: boolean; results: PushResult[]; not_sent: number[] }>({ action: 'send', ids }) }
   /** start the SharePoint backup now (server function) */
   async runBackup() {
     const { data } = await this.sb.auth.getSession()

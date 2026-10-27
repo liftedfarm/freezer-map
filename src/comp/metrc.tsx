@@ -1,6 +1,6 @@
 import { Select } from '../combo'
 import { useEffect, useMemo, useState } from 'react'
-import type { MAction, MError, Play, Recon, Upload } from './api'
+import type { MAction, MError, Play, PushKind, PushResult, Recon, Upload } from './api'
 import type { Ctx } from './ctx'
 import { DocList, DropZone, fmtD, today } from './files'
 import { FIELD_LABEL, download, mapColumns, readTable, toCsv, toRows } from './csv'
@@ -10,6 +10,7 @@ import { DateIn, F, Pick, SaveBar, Sheet, TextIn, errText, useSel, SelBox, SelAl
 const when = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '')
 const short = (t: string | null | undefined) => (t ? (t.length > 10 ? `…${t.slice(-8)}` : t) : '')
 const n2 = (x: number | null | undefined) => (x == null ? '' : (Math.round(Number(x) * 100) / 100).toLocaleString())
+const PS: Record<NonNullable<MAction['push_state']>, [string, string]> = { checked: ['Dry run OK', 'cp-ok'], sending: ['Sending…', 'cp-warn'], sent: ['Sent by the app', 'cp-ok'], failed: ['Send failed', 'cp-bad'], waiting: ['Waiting', 'cp-mute'] }
 const ST: Record<MAction['status'], [string, string]> = { todo: ['To do', 'cp-warn'], done: ['Done', 'cp-ok'], error: ['Problem', 'cp-bad'], skipped: ['Skipped', 'cp-mute'] }
 
 export function Metrc({ c }: { c: Ctx }) {
@@ -31,9 +32,30 @@ function Todo({ c }: { c: Ctx }) {
   const [lic, setLic] = useState<string | null>(null)
   const [rows, setRows] = useState<MAction[] | null>(null)
   const [busy, setBusy] = useState(false)
+  const [kinds, setKinds] = useState<Record<string, PushKind>>({})
+  const [live, setLive] = useState(false)
   const sel = useSel()
   const load = async () => { try { setRows(await c.api.actions(status)) } catch (e) { c.flash(errText(e), true); setRows([]) } }
   useEffect(() => { load(); sel.stop() }, [status])
+  useEffect(() => {
+    c.api.pushKinds().then(k => setKinds(Object.fromEntries(k.map(x => [x.kind, x])))).catch(() => {})
+    c.api.sb.from('app_settings').select('value').eq('key', 'comp.metrc_live').maybeSingle().then(r => setLive(r.data?.value === 'true'))
+  }, [])
+  const sendable = (r: MAction) => (r.status === 'todo' || r.status === 'error') && r.push_state !== 'sending' && !!r.kind && !!kinds[r.kind]?.ready && kinds[r.kind]?.mode !== 'off'
+  async function push(ids: number[]) {
+    const go = ids.filter(id => { const r = rows?.find(x => x.id === id); return r && sendable(r) })
+    if (!go.length) { c.flash('None of those can be sent by the app (turn the kind on in Settings > METRC through T3)', true); return }
+    if (live && !confirm(`Send ${go.length} to METRC for real?`)) return
+    setBusy(true)
+    try {
+      const r = await c.api.sendMetrc(go)
+      const n = (s: PushResult['state']) => r.results.filter(x => x.state === s).length
+      const first = r.results.find(x => x.state === 'failed')
+      c.flash(r.live ? `${n('sent')} sent, ${n('failed')} failed${n('waiting') ? `, ${n('waiting')} waiting` : ''}${first ? `: ${first.error}` : ''}`
+        : `Dry run: ${n('checked')} OK, ${n('failed')} failed${n('waiting') ? `, ${n('waiting')} waiting` : ''}${first ? `: ${first.error}` : ''}`, n('failed') > 0)
+      sel.stop(); await load(); await c.reload()
+    } catch (e) { c.flash(errText(e), true) } finally { setBusy(false) }
+  }
   const shown = (rows ?? []).filter(r => !lic || r.license === lic)
   const lics = [...new Set((rows ?? []).map(r => r.license ?? ''))].sort()
   async function setTo(s: MAction['status'], ids: number[]) {
@@ -55,6 +77,7 @@ function Todo({ c }: { c: Ctx }) {
       {c.canEdit && shown.length > 0 && (sel.on ? <button className="ghost small" onClick={sel.stop}>Done selecting</button> : <button className="ghost small" onClick={sel.start}>Select</button>)}
     </div>
     <SelBar sel={sel} noun="action" actions={[
+      { label: live ? 'Send to METRC' : 'Dry run check', run: ids => push(ids) },
       { label: 'Done in METRC', run: ids => setTo('done', ids) }, { label: 'Problem', run: ids => setTo('error', ids) }, { label: 'Skip', run: ids => setTo('skipped', ids) },
       ...(status !== 'todo' ? [{ label: 'Back to to do', run: (ids: number[]) => setTo('todo', ids) }] : [])]} />
     {rows == null ? <p className="muted">Loading…</p> : !shown.length ? <p className="muted">{status === 'todo' ? 'Nothing waiting. Everything is checked off.' : 'Nothing here.'}</p>
@@ -63,14 +86,18 @@ function Todo({ c }: { c: Ctx }) {
         <tbody>{shown.map(r => <tr key={r.id} onClick={() => sel.on && sel.toggle(r.id)} className={sel.on ? 'tap' : ''}>
           <SelBox sel={sel} id={r.id} />
           <td className="nowrap small">{when(r.at)}<div className="muted">{(r.details?.by as string | undefined)?.split('@')[0] ?? ''}</div></td>
-          <td><b>{r.action}</b>{r.due_at && r.status === 'todo' && <div className={`small ${new Date(r.due_at) < new Date() ? 'neg' : 'muted'}`}>{new Date(r.due_at) > new Date() ? 'Not before' : 'Due'} {when(r.due_at)}</div>}{r.summary && <div className="muted small">{r.summary}</div>}{r.note && <div className="small neg">{r.note}</div>}</td>
+          <td><b>{r.action}</b>{r.due_at && r.status === 'todo' && <div className={`small ${new Date(r.due_at) < new Date() ? 'neg' : 'muted'}`}>{new Date(r.due_at) > new Date() ? 'Not before' : 'Due'} {when(r.due_at)}</div>}{r.summary && <div className="muted small">{r.summary}</div>}{r.note && <div className={`small ${r.push_state === 'sent' ? 'muted' : 'neg'}`}>{r.note}</div>}
+            {r.push_state && <div className="small" style={{ marginTop: 2 }}><span className={`pill ${PS[r.push_state][1]}`}>{PS[r.push_state][0]}</span>
+              {r.push_state !== 'sent' && r.push_error && <span className={r.push_state === 'failed' ? 'neg' : 'muted'}> {r.push_error}</span>}
+              {r.push_at && <span className="muted"> {when(r.push_at)}</span>}</div>}</td>
           <td>{r.code ?? ''}</td><td className="mono small hide-s" title={r.tag ?? ''}>{short(r.tag)}</td><td className="num">{n2(r.lbs)}</td>
           <td className="mono small hide-s">{r.license ?? ''}</td>
           <td><span className={`pill ${ST[r.status][1]}`}>{ST[r.status][0]}</span>{r.done_by && <div className="muted small">{r.done_by.split('@')[0]}</div>}</td>
-          {c.canEdit && !sel.on && <td>{r.status === 'todo' ? <button className="ghost small" disabled={busy} onClick={e => { e.stopPropagation(); setTo('done', [r.id]) }}>Done</button>
+          {c.canEdit && !sel.on && <td className="nowrap">{sendable(r) && <button className={live ? 'primary small' : 'ghost small'} disabled={busy} onClick={e => { e.stopPropagation(); push([r.id]) }}>{live ? 'Send' : 'Check'}</button>}
+            {r.status === 'todo' ? <button className="ghost small" disabled={busy} onClick={e => { e.stopPropagation(); setTo('done', [r.id]) }}>Done</button>
             : <button className="ghost small" disabled={busy} onClick={e => { e.stopPropagation(); setTo('todo', [r.id]) }}>Undo</button>}</td>}
         </tr>)}</tbody></table></div>}
-    <p className="muted small" style={{ marginTop: 8 }}>METRC bulk uploads (CSV) need METRC's own column layout for each action. Send one of METRC's CSV templates and the export here can match it.</p>
+    <p className="muted small" style={{ marginTop: 8 }}>{live ? 'Send' : 'Check'} goes through T3 for kinds switched on in Settings › METRC through T3{live ? '' : ' (Dry run: checked with METRC, nothing changes)'}. Everything else is still done by hand in METRC and checked off here.</p>
   </>
 }
 

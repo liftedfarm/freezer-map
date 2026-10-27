@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Backend } from '../api'
 import { scrollTop } from '../nav'
 import { CompApi } from './api'
+import { T3Settings } from './t3'
 import type { BackupRun, Cert, Deadline, DocType, Issue, MError, Material, Overview, TestNoFile } from './api'
 import type { CTab } from './tabs'
 import type { Ctx } from './ctx'
@@ -197,6 +198,7 @@ function SettingsTab({ c }: { c: Ctx }) {
         <li>Vercel › Settings › Environment Variables: <span className="mono">MS_TENANT_ID</span>, <span className="mono">MS_CLIENT_ID</span>, <span className="mono">MS_CLIENT_SECRET</span> (and <span className="mono">SUPABASE_SERVICE_ROLE_KEY</span>, already there for QuickBooks). Redeploy.</li>
         <li>Fill in the site above, then Run now.</li></ol></div>
     </Fold>
+    <T3Settings c={c} />
     <Sites c={c} />
     <Fold id="comp.set.types" title="Document types" count={c.types.length} right={<button className="ghost small" onClick={() => setEd({ active: true, expires: false, sort: 50 })}>+ Add</button>}>
       <p className="muted">Each type is a folder in SharePoint. Types that expire ask for an expiry date when you add a document.</p>
