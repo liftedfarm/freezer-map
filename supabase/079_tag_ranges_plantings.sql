@@ -61,7 +61,7 @@ language sql stable security definer set search_path = public as $$
    where u.label between tag_label(p_prefix, p_lo) and tag_label(p_prefix, p_hi) and tag_num(u.label) is not null
 $$;
 
--- tags missing from METRC's available list inside a run (for licenses whose tags are kept in the app)
+-- tags missing from the METRC available list inside a run (for licenses whose tags are kept in the app)
 create or replace function tag_range_missing(p_license text, p_type text, p_prefix text, p_lo bigint, p_hi bigint)
 returns table (lo bigint, hi bigint)
 language sql stable security definer set search_path = public as $$
