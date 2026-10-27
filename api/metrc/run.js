@@ -1,6 +1,6 @@
 // METRC through T3, from the app: { action: 'test' } (Compliance Admin) or { action: 'send', ids: [...] }.
 // Send = Dry run check while Compliance > Settings has Dry run on; a real send once it's Live.
-import { caller, isLive, missing, rpc, runJob, send, testConnection } from './_t3.js'
+import { caller, isLive, missing, rpc, runJob, send, t3, testConnection } from './_t3.js'
 
 export const config = { maxDuration: 60 }
 
@@ -15,6 +15,15 @@ export default async function handler(req, res) {
     if (body.action === 'test') {
       if (!me.admin) return send(res, 403, { error: 'Only a Compliance Admin can test the METRC connection' })
       return send(res, 200, await testConnection(me.email))
+    }
+    if (body.action === 'probe') {
+      // read-only look at one T3 collection (Compliance Admin): shape, total, first row
+      if (!me.admin) return send(res, 403, { error: 'Only a Compliance Admin' })
+      const path = String(body.path || '')
+      if (!/^\/v2\/(packages|transfers|harvests|plants|plantbatches|items|licenses)[a-z/-]*$/.test(path)) return send(res, 400, { error: 'Read paths only' })
+      const j = await t3('GET', path, { query: body.query || {} })
+      const rows = Array.isArray(j) ? j : j?.data ?? []
+      return send(res, 200, { total: j?.total ?? rows.length, totalPages: j?.totalPages ?? null, keys: rows[0] ? Object.keys(rows[0]) : [], first: rows[0] ?? null })
     }
     if (body.action === 'send') {
       if (!me.can_send) return send(res, 403, { error: 'Only Compliance (or a Distribution / Processing Admin) can send to METRC' })
