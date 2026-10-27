@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { LiveRecon, SyncStatus } from './api'
 import type { Ctx } from './ctx'
-import { errText } from '../cult/ui'
+import { Sheet, errText } from '../cult/ui'
+import { DropZone } from './files'
+import { readTable } from './csv'
 import { ISSUE_LABEL, ISSUE_ORDER, isPlant, reconExcel, reconPdf, shows } from './reconexport'
 import type { Row } from './reconexport'
 
@@ -60,6 +62,31 @@ export function LiveReconcile({ c }: { c: Ctx }) {
   const cur = lic ? rows[lic] : null
   const by = useMemo(() => { const m = new Map<LiveRecon['issue'], LiveRecon[]>(); for (const r of cur ?? []) if (!isPlant(r)) m.set(r.issue, [...(m.get(r.issue) ?? []), r]); return m }, [cur])
   const plants = (cur ?? []).filter(isPlant)
+  type Plan = { file: string; rows: { key: string; action: string; reason: string }[]; res: Awaited<ReturnType<typeof c.api.reconApply>> }
+  const [plan, setPlan] = useState<Plan | null>(null)
+  async function readBack(fs: File[]) {
+    const f = fs[0]
+    setBusy('Reading the sheet…')
+    try {
+      const t = await readTable(f)
+      const h = (t[0] ?? []).map(x => x.trim().toLowerCase())
+      const ki = h.indexOf('key'), ai = h.indexOf('action'), ri = h.indexOf('reason')
+      if (ki < 0 || ai < 0) { c.flash('That sheet has no Key / Action columns. Use the Excel exported from here.', true); return }
+      const rows = t.slice(1).map(r => ({ key: (r[ki] ?? '').trim(), action: (r[ai] ?? '').trim(), reason: ri >= 0 ? (r[ri] ?? '').trim() : '' })).filter(r => r.key && r.action)
+      if (!rows.length) { c.flash('No rows have an Action filled in', true); return }
+      const res = await c.api.reconApply(rows, true)
+      setPlan({ file: f.name, rows, res })
+    } catch (e) { c.flash(errText(e), true) } finally { setBusy(null) }
+  }
+  async function apply() {
+    if (!plan) return
+    setBusy('Applying…')
+    try {
+      const r = await c.api.reconApply(plan.rows, false)
+      c.flash(`${r.done} applied${r.skipped ? `, ${r.skipped} skipped` : ''}`, r.skipped > 0)
+      setPlan(null); setRows({}); if (lic) await loadRows(lic); await c.reload()
+    } catch (e) { c.flash(errText(e), true) } finally { setBusy(null) }
+  }
   const toggle = (k: string) => setOpen(s => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n })
 
   return <>
@@ -76,6 +103,14 @@ export function LiveReconcile({ c }: { c: Ctx }) {
       <button className="ghost" disabled={!!busy || !st.some(s => s.last_pull)} onClick={pdf}>PDF (all licenses)</button>
       {busy && !busy.startsWith('Pull') && !busy.startsWith('Still') && <span className="muted small">{busy}</span>}
     </div>
+    {c.canEdit && st.some(s => s.last_pull) && <div style={{ marginTop: 10 }}><DropZone onFiles={readBack} accept=".xlsx" label="Drop the filled-in mismatch Excel to apply it" /></div>}
+    {plan && <Sheet title={`Apply ${plan.file}`} onClose={() => setPlan(null)}>
+      <p className="muted">Nothing has changed yet. <b>{plan.res.done}</b> row{plan.res.done === 1 ? '' : 's'} will be applied{plan.res.skipped ? <>, <b>{plan.res.skipped}</b> skipped (reasons below)</> : ''}. "Use METRC" changes the app only; it never sends anything to METRC. "Keep app" weight and finish rows become METRC to-dos.</p>
+      <div className="tablewrap"><table className="ct"><thead><tr><th>Issue</th><th>Action</th><th>What happens</th></tr></thead>
+        <tbody>{plan.res.rows.map((r, i) => <tr key={i}><td className="small">{ISSUE_LABEL[r.issue as LiveRecon['issue']] ?? r.issue}</td><td className="small">{r.action}</td>
+          <td className={`small ${r.ok ? '' : 'neg'}`}>{r.msg}</td></tr>)}</tbody></table></div>
+      <div className="row" style={{ marginTop: 10 }}><button className="primary" disabled={!!busy || !plan.res.done} onClick={apply}>{busy === 'Applying…' ? busy : `Apply ${plan.res.done}`}</button><button className="ghost" onClick={() => setPlan(null)}>Cancel</button></div>
+    </Sheet>}
     {lic && (cur == null ? <p className="muted">Comparing…</p> : !st.find(s => s.license === lic)?.last_pull ? <p className="muted">Not pulled yet. Tap Pull from METRC now.</p>
       : !cur.length ? <div className="infobox" style={{ marginTop: 10 }}>Everything matches for {lic}.</div>
       : ISSUE_ORDER.filter(k => by.get(k)?.length).map(k => <div key={k} className="dueg">

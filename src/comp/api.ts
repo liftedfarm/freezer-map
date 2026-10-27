@@ -5,6 +5,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 function fail(error: { message: string } | null) {
   if (!error) return
   if (/metrc_push|metrc_connection|metrc_set_mode|metrc_me|push_state/i.test(error.message)) throw new Error(`${error.message} (run 070_metrc_push.sql in Supabase)`)
+  if (/reconcile_view|recon_apply|recon_ignores/i.test(error.message)) throw new Error(`${error.message} (run 074_recon_apply.sql in Supabase)`)
   if (/reconcile_live|metrc_sync|metrc_packages|metrc_trail/i.test(error.message)) throw new Error(`${error.message} (run 071_metrc_sync.sql in Supabase)`)
   if (/comp_|pallet_trace|test_files|customer_license_status|does not exist|schema cache/i.test(error.message) && /function|relation|column/i.test(error.message))
     throw new Error(`${error.message} (run 055_compliance.sql and 056_ccof_list.sql in Supabase)`)
@@ -228,7 +229,10 @@ export class CompApi {
     if (!r.ok) throw new Error(j.error ?? `Error ${r.status}`)
     return j as T
   }
-  reconcileLive(license: string) { return this.rpc<LiveRecon[]>('comp_reconcile_live', { p_license: license }) }
+  reconcileLive(license: string) { return this.rpc<LiveRecon[]>('comp_reconcile_view', { p_license: license }) }
+  reconApply(rows: { key: string; action: string; reason: string }[], dry: boolean) {
+    return this.rpc<{ dry: boolean; done: number; skipped: number; rows: { key: string; action: string; ok: boolean; msg: string | null; code: string | null; issue: string }[] }>('comp_recon_apply', { p_rows: rows, p_dry: dry })
+  }
   syncStatus() { return this.rpc<SyncStatus[]>('metrc_sync_status') }
   async pullMetrc(licenses?: string[]) {
     const { data } = await this.sb.auth.getSession()
