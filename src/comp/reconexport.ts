@@ -8,6 +8,10 @@ export const ISSUE_LABEL: Record<LiveRecon['issue'], string> = {
 }
 export const ISSUE_ORDER: LiveRecon['issue'][] = ['weight', 'not_in_metrc', 'not_in_app', 'closed_in_app', 'other_license', 'item', 'on_hold', 'tag_pending', 'stale']
 export const ACTIONS = ['Use METRC', 'Keep app', 'Ignore'] as const
+/** clones, seeds, immature plants: the app doesn't track these as pallets yet */
+export const isPlant = (r: LiveRecon) => r.issue === 'not_in_app' && /\b(clones?|seeds?|immature|plants?|teens?)\b/i.test(`${r.metrc_item ?? ''} ${r.strain ?? ''}`)
+/** what METRC shows, in words, including "never there" */
+export const shows = (r: LiveRecon) => r.explain ?? (r.issue === 'not_in_metrc' ? 'Never created in METRC (tag not found under any license this season)' : '')
 
 const r2 = (x: number | null | undefined) => (x == null ? null : Math.round(Number(x) * 100) / 100)
 const d = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric', year: '2-digit' }) : '')
@@ -20,7 +24,7 @@ const COLS = ['Key', 'Issue', 'Site', 'License', 'Package', 'Tag', 'Strain / ite
 function cells(r: Row) {
   const diff = r.app_lbs != null && r.metrc_lbs != null ? r2(r.metrc_lbs - r.app_lbs) : null
   return [rowKey(r), ISSUE_LABEL[r.issue], r.site ?? '', r.license, r.code ?? '', r.tag ?? '', r.strain ?? r.metrc_item ?? '',
-    r2(r.app_lbs), r2(r.metrc_lbs), diff, r.app_spot ?? '', r.metrc_location ?? '', d(r.metrc_changed), [r.explain, r.note].filter(Boolean).join(' · '), '', '']
+    r2(r.app_lbs), r2(r.metrc_lbs), diff, r.app_spot ?? '', r.metrc_location ?? '', d(r.metrc_changed), [shows(r), r.note].filter(Boolean).join(' · '), '', '']
 }
 const sorted = (rows: Row[]) => [...rows].sort((a, b) => ISSUE_ORDER.indexOf(a.issue) - ISSUE_ORDER.indexOf(b.issue) || (a.site ?? '').localeCompare(b.site ?? '') || (a.code ?? a.tag ?? '').localeCompare(b.code ?? b.tag ?? ''))
 

@@ -11,7 +11,8 @@ const PAGE = 500
 
 const up = s => String(s ?? '').trim().toUpperCase()
 const labels = v => (Array.isArray(v) ? v : String(v ?? '').split(/[,;\s]+/)).map(up).filter(x => x.length > 10)
-const day = v => (v ? String(v).slice(0, 10) : null)
+const real = v => (v && !String(v).startsWith('0001') ? v : null)   // METRC uses 0001-01-01 for "not set"
+const day = v => (real(v) ? String(v).slice(0, 10) : null)
 const toLbs = (q, u) => {
   if (q == null || q === '') return null
   const n = Number(q), unit = String(u ?? '').toLowerCase()
@@ -114,7 +115,7 @@ async function syncLicense(license, by, t0) {
           if (!tid) continue
           if (!tr.has(tid)) tr.set(tid, { delivery_id: tid, transfer_id: tid, license, manifest: p.manifestNumber ?? null,
             recipient_license: p.recipientFacilityLicenseNumber ?? null, recipient_name: p.recipientFacilityName ?? null,
-            departed_at: p.actualDepartureDateTime ?? null, received_at: p.receivedDateTime ?? null, packages_loaded: true, seen_at: now })
+            departed_at: real(p.actualDepartureDateTime) ?? real(p.receivedDateTime), received_at: real(p.receivedDateTime), packages_loaded: true, seen_at: now })
           tp.push({ delivery_id: tid, label, manifest: p.manifestNumber ?? null, item: p.productName ?? null,
             shipped_lbs: toLbs(p.shippedQuantity, p.shippedUnitOfMeasureAbbreviation), received_lbs: toLbs(p.receivedQuantity, p.receivedUnitOfMeasureAbbreviation),
             uom: p.shippedUnitOfMeasureAbbreviation ?? null, state: p.shipmentPackageStateName ?? p.shipmentPackageState ?? null, source_labels: labels(p.sourcePackageLabels) })
@@ -132,8 +133,13 @@ async function syncLicense(license, by, t0) {
       let ok = true
       for (const path of ['/v2/transfers/outgoing/active', '/v2/transfers/outgoing/inactive']) {
         ok = ok && await pages(path, { licenseNumber: license, filter: `lastModified__gte:${since}` }, async rows => {
-          const tr = rows.map(t => ({ ...transferRow(license, t, now), delivery_id: Number(String(t.manifestNumber ?? '').replace(/\D/g, '')) || Number(t.id) || null, packages_loaded: true }))
-            .filter(r => r.delivery_id)
+          // only what the shipped-package rows don't have (recipient and dates come from those)
+          const tr = rows.map(t => ({
+            delivery_id: Number(String(t.manifestNumber ?? '').replace(/\D/g, '')) || Number(t.id) || null, license, manifest: t.manifestNumber ?? null,
+            transfer_id: t.id ?? null, created_at: real(t.createdDateTime), voided: !!t.isVoided, driver: t.driverName ?? null,
+            vehicle: [t.vehicleMake, t.vehicleModel, t.vehicleLicensePlateNumber].filter(Boolean).join(' ') || null,
+            shipment_type: t.shipmentTypeName ?? null, last_modified: real(t.lastModified), packages_loaded: true, seen_at: now,
+          })).filter(r => r.delivery_id)
           if (tr.length) await upsert('metrc_transfers', tr, 'delivery_id')
           out.transfers += tr.length
         }, out)

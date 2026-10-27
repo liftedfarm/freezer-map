@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { LiveRecon, SyncStatus } from './api'
 import type { Ctx } from './ctx'
 import { errText } from '../cult/ui'
-import { ISSUE_LABEL, ISSUE_ORDER, reconExcel, reconPdf } from './reconexport'
+import { ISSUE_LABEL, ISSUE_ORDER, isPlant, reconExcel, reconPdf, shows } from './reconexport'
 import type { Row } from './reconexport'
 
 // Compliance > METRC > Reconcile (live): METRC pulled through T3 every night and on demand, compared with every package in the app.
@@ -47,7 +47,7 @@ export function LiveReconcile({ c }: { c: Ctx }) {
     const out: Row[] = []
     for (const s of st.filter(x => x.active > 0 || x.last_pull)) {
       const r = rows[s.license] ?? await loadRows(s.license)
-      out.push(...r.map(x => ({ ...x, license: s.license, site: s.site })))
+      out.push(...r.filter(x => !isPlant(x)).map(x => ({ ...x, license: s.license, site: s.site })))
     }
     return out
   }
@@ -57,7 +57,8 @@ export function LiveReconcile({ c }: { c: Ctx }) {
   async function pdf() { setBusy('Building PDF…'); try { await reconPdf(await allRows(), { name: fname, who: c.me ?? '', pulled: when(pulledAt) }) } catch (e) { c.flash(errText(e), true) } finally { setBusy(null) } }
 
   const cur = lic ? rows[lic] : null
-  const by = useMemo(() => { const m = new Map<LiveRecon['issue'], LiveRecon[]>(); for (const r of cur ?? []) m.set(r.issue, [...(m.get(r.issue) ?? []), r]); return m }, [cur])
+  const by = useMemo(() => { const m = new Map<LiveRecon['issue'], LiveRecon[]>(); for (const r of cur ?? []) if (!isPlant(r)) m.set(r.issue, [...(m.get(r.issue) ?? []), r]); return m }, [cur])
+  const plants = (cur ?? []).filter(isPlant)
   const toggle = (k: string) => setOpen(s => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n })
 
   return <>
@@ -83,8 +84,13 @@ export function LiveReconcile({ c }: { c: Ctx }) {
               <td>{r.code ?? ''}</td><td className="mono small hide-s" title={r.tag ?? ''}>{r.tag ? `…${r.tag.slice(-8)}` : ''}</td>
               <td className="small hide-s">{r.strain ?? r.metrc_item ?? ''}</td><td className="num">{n2(r.app_lbs)}</td><td className="num">{n2(r.metrc_lbs)}</td>
               <td className="small hide-s">{r.app_spot ?? ''}</td>
-              <td className="small">{r.explain ?? ''}{r.note && <div className="muted">{r.note}</div>}{r.metrc_location && <div className="muted">METRC: {r.metrc_location}{r.metrc_changed ? `, changed ${when(r.metrc_changed)}` : ''}</div>}</td>
+              <td className="small">{shows(r)}{r.note && <div className="muted">{r.note}</div>}{r.metrc_location && <div className="muted">METRC: {r.metrc_location}{r.metrc_changed ? `, changed ${when(r.metrc_changed)}` : ''}</div>}</td>
             </tr>)}</tbody></table></div></>}
       </div>))}
+    {plants.length > 0 && <div className="dueg"><h3 className="tap" onClick={() => toggle('plants')}>{open.has('plants') ? '▾' : '▸'} Plant packages in METRC (clones, seeds) <span className="muted">{plants.length}</span></h3>
+      {open.has('plants') && <><p className="muted small">The app doesn't track clones and seeds as pallets yet (Phase 2, nursery). Left out of the counts and the Excel / PDF.</p>
+        <div className="tablewrap"><table className="ct"><thead><tr><th>Tag</th><th>Item</th><th className="num">Qty</th><th>Location</th></tr></thead>
+          <tbody>{plants.slice(0, 300).map((r, i) => <tr key={i}><td className="mono small">…{(r.tag ?? '').slice(-8)}</td><td className="small">{r.metrc_item}</td><td className="num">{n2(r.metrc_lbs)}</td><td className="small">{r.metrc_location ?? ''}</td></tr>)}</tbody></table></div></>}
+    </div>}
   </>
 }
