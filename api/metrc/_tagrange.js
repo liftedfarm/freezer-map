@@ -15,7 +15,7 @@ async function t3Tags(lic, starts, pageSize = 1, sort) {
   return t3('GET', '/v2/tags/available', { query: { licenseNumber: lic, filter: [PLANT, `label__startswith:${starts}`], filterLogic: 'and', page: 1, pageSize, sort } })
 }
 /** aligned blocks covering lo..hi: [start, size] with size a power of 10 and start a multiple of it */
-export function blocks(lo, hi) {
+function blocks(lo, hi) {
   const out = []
   let n = lo
   while (n <= hi) {
@@ -25,7 +25,7 @@ export function blocks(lo, hi) {
   }
   return out
 }
-export const blockPrefix = (prefix, n, size) => label(prefix, n).slice(0, PRE + DIG - Math.round(Math.log10(size)))
+const blockPrefix = (prefix, n, size) => label(prefix, n).slice(0, PRE + DIG - Math.round(Math.log10(size)))
 async function pool(items, k, fn) {
   const out = []; let i = 0
   await Promise.all(Array.from({ length: Math.min(k, items.length) }, async () => { while (i < items.length) { const j = i++; out[j] = await fn(items[j]) } }))

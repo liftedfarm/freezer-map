@@ -5,7 +5,7 @@ import {
   Skip, Wait, all, db, enc, first, inputs, list, lc, mappedLocation, one, packageByTag, r4, reasonFrom, rpc, setting, strainFor,
   t3, tagIdFor, uomFrom, up, write, ymd, adjustReasons,
 } from './_core.js'
-import { blockPrefix, blocks, heldRun, num } from './_tagrange.js'
+import { heldRun } from './_tagrange.js'
 
 const day = (v, job) => (v ? String(v).slice(0, 10) : ymd(job.at))
 const progressOf = job => ({ ...(job.push_response?.progress ?? {}) })
@@ -294,19 +294,6 @@ export async function sendFlower(job, ctx) {
 }
 
 // ---------- the harvest chain ----------
-/** the unharvested flowering plants whose tags are in a planting's held run, in tag order (looked up by tag prefix) */
-async function runPlants(lic, run) {
-  const lo = Number(run.first_n), hi = Number(run.last_n), out = []
-  for (const [n, size] of blocks(lo, hi)) {
-    for (let page = 1; page < 50; page++) {
-      const j = await t3('GET', '/v2/harvests/create/source-plants', { query: { licenseNumber: lic, filter: `label__startswith:${blockPrefix(run.prefix, n, size)}`, page, pageSize: 500 } })
-      const rows = list(j)
-      out.push(...rows.filter(p => { const x = num(up(p.label)); return x != null && x >= lo && x <= hi && Number(p.harvestCount ?? 0) === 0 }))
-      if (rows.length < 500 || page >= (j?.totalPages ?? page)) break
-    }
-  }
-  return out.sort((a, b) => String(a.label).localeCompare(String(b.label)))
-}
 export async function sendHarvestPlants(job, ctx) {
   const d = job.details || {}
   const lic = job.license
@@ -332,16 +319,11 @@ export async function sendHarvestPlants(job, ctx) {
   const per = Math.floor((wet / plants) * 10000) / 10000
   if (!(per > 0)) throw new Error('Wet weight per plant rounds to 0')
   const deadline = ctx.deadline ?? Date.now() + 40000
-  // the planting's flowering tag run, when it has one: harvest exactly those plants (in tag order)
-  const run = h.planting_id ? await heldRun(h.planting_id, 'flower') : null
-  const inRun = run ? await runPlants(lic, run) : null
-  if (inRun && inRun.length < plants - prog.done)
-    throw new Error(`Only ${inRun.length} plants of the flowering tag run ${run.first_label}..${run.last_label.slice(-9)} are still unharvested in METRC; this harvest is ${plants - prog.done}. Check the plant count or the run.`)
   let lastBody = null, lastResp = null
   while (prog.done < plants) {
     if (Date.now() > deadline) break
     const n = Math.min(250, plants - prog.done)
-    const src = inRun ? inRun.splice(0, n) : list(await t3('GET', '/v2/harvests/create/source-plants', { query: { licenseNumber: lic, pageSize: n, filter: [`locationName__eq:${loc.location}`, `strainName__eq:${strain.name}`], filterLogic: 'and', sort: 'label:asc' } }))
+    const src = list(await t3('GET', '/v2/harvests/create/source-plants', { query: { licenseNumber: lic, pageSize: n, filter: [`locationName__eq:${loc.location}`, `strainName__eq:${strain.name}`], filterLogic: 'and', sort: 'label:asc' } }))
       .filter(p => Number(p.harvestCount ?? 0) === 0 && lc(p.locationName) === lc(loc.location))
     if (!src.length) throw new Error(`No flowering ${strain.name} plants left in ${loc.location} on ${lic} (${prog.done} of ${plants} harvested)`)
     const body = src.slice(0, n).map((p, i) => {
@@ -349,12 +331,12 @@ export async function sendHarvestPlants(job, ctx) {
       return { actualDate: day(h.harvested_on, job), harvestName: name, id: p.id, weight: last ? r4(wet - prog.wet - per * i) : per, dryingLocationId: dry.location_id, unitOfWeightId: lb }
     })
     lastResp = await write(ctx, '/v2/harvests/create', lic, body); lastBody = body
-    if (!ctx.live) return { state: 'checked', request: body, response: lastResp, info: `Dry run OK: first ${body.length} of ${plants} plants into ${name} (${per} lb each), tags ${body.length ? src[0].label + '..' + String(src[src.length - 1].label).slice(-9) : ''}${run ? ' (the planting\'s flowering run)' : ` from ${loc.location}`}` }
+    if (!ctx.live) return { state: 'checked', request: body, response: lastResp, info: `Dry run OK: first ${body.length} of ${plants} plants into ${name} (${per} lb each) from ${loc.location}` }
     prog.done += body.length; prog.wet = r4(prog.wet + body.reduce((s, x) => s + x.weight, 0))
     await saveProgress(job, prog)
   }
   if (prog.done < plants) throw new Wait(`${prog.done} of ${plants} plants harvested into ${name}; the rest go on the next run`)
-  return { state: 'sent', request: lastBody, response: { ...(lastResp ?? {}), progress: prog }, info: `METRC: ${plants} plants, ${wet} lb wet into ${name}${run ? ` (tags ${run.first_label}..${run.last_label.slice(-9)})` : ''}` }
+  return { state: 'sent', request: lastBody, response: { ...(lastResp ?? {}), progress: prog }, info: `METRC: ${plants} plants, ${wet} lb wet into ${name}` }
 }
 
 export async function sendHarvestPackage(job, ctx) {
