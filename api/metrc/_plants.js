@@ -347,6 +347,15 @@ export async function sendHarvestPlants(job, ctx) {
       .filter(p => Number(p.harvestCount ?? 0) === 0 && lc(p.locationName) === lc(where))
     if (!src.length) {
       if (++at < places.length) continue
+      // catch-up clean-up: METRC has this strain somewhere else (e.g. a trial entered in the wrong field). If every flowering plant
+      // of the strain left on the license is in one other location, harvest from there; otherwise say where they are.
+      if (!d.metrc_location && !places.found) {
+        const any = list(await t3('GET', '/v2/harvests/create/source-plants', { query: { licenseNumber: lic, pageSize: 200, filter: [`strainName__eq:${strain.name}`] } }))
+          .filter(p => Number(p.harvestCount ?? 0) === 0 && !places.some(x => lc(x) === lc(p.locationName)))
+        const locs = [...new Set(any.map(p => p.locationName).filter(Boolean))]
+        if (locs.length === 1) { places.push(locs[0]); places.found = locs[0]; continue }
+        if (locs.length > 1) throw new Error(`No flowering ${strain.name} plants left in ${places.join(' or ')} on ${lic}; METRC has them in ${locs.join(', ')} (${prog.done} of ${plants} harvested)`)
+      }
       throw new Error(`No flowering ${strain.name} plants left in ${places.join(' or ')} on ${lic} (${prog.done} of ${plants} harvested)`)
     }
     const body = src.slice(0, n).map((p, i) => {
@@ -359,7 +368,7 @@ export async function sendHarvestPlants(job, ctx) {
     await saveProgress(job, prog)
   }
   if (prog.done < plants) throw new Wait(`${prog.done} of ${plants} plants harvested into ${name}; the rest go on the next run`)
-  return { state: 'sent', request: lastBody, response: { ...(lastResp ?? {}), progress: prog }, info: `METRC: ${plants} plants, ${wet} lb wet into ${name}` }
+  return { state: 'sent', request: lastBody, response: { ...(lastResp ?? {}), progress: prog }, info: `METRC: ${plants} plants, ${wet} lb wet into ${name}${places.found ? ` (from ${places.found}, where METRC had them)` : ''}` }
 }
 
 export async function sendHarvestPackage(job, ctx) {
