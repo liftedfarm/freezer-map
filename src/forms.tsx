@@ -1,6 +1,6 @@
 import { TextIn } from './cult/ui'
 import { useEffect, useId, useMemo, useState } from 'react'
-import { useTagPool } from './tagSuggest'
+import { useTagSearch } from './tagSuggest'
 import { ScanButton } from './scan'
 import type { MixLine, Pallet, SingleInput } from './types'
 import { MetrcNote, WEIGHT_REASONS, defaultReason } from './metrc'
@@ -22,23 +22,27 @@ function Dialog({ title, children, onClose }: { title: string; children: React.R
   )
 }
 
-function TagField({ tag, setTag, pending, setPending, label = 'New METRC tag' }: {
-  tag: string; setTag: (v: string) => void; pending: boolean; setPending: (v: boolean) => void; label?: string
+function TagField({ tag, setTag, pending, setPending, label = 'New METRC tag', pallet, slot, keep }: {
+  tag: string; setTag: (v: string) => void; pending?: boolean; setPending?: (v: boolean) => void; label?: string
+  pallet?: number | null; slot?: number | null; keep?: string | null
 }) {
-  const pool = useTagPool()
+  // suggestions come from the license of the pallet (or the slot it's going into); typing searches every available tag there
+  const { pool, tags, off } = useTagSearch({ pallet, slot }, tag)
   const lid = useId()
   // autofill: an empty box starts with the next available tag (Compliance > Settings > METRC tags)
-  useEffect(() => { if (pool?.autofill && pool.tags.length && !tag && !pending) setTag(pool.tags[0]) }, [pool])
+  useEffect(() => { if (pool?.autofill && pool.tags.length && !tag && !pending && setPending) setTag(pool.tags[0]) }, [pool])
   return (
     <div className="field">
       <label>{label}{pool?.from_metrc && pool.tags.length > 0 && <span className="muted"> · next available: {pool.tags[0].slice(-8)}</span>}</label>
       <div className="row tagrow">
         <input className="mono-in grow-in" value={tag} disabled={pending} placeholder="1A40603000…" list={`tl${lid}`}
           onChange={e => setTag(e.target.value.toUpperCase().replace(/\s/g, ''))} />
-        <datalist id={`tl${lid}`}>{(pool?.tags ?? []).map(t => <option key={t} value={t} />)}</datalist>
+        <datalist id={`tl${lid}`}>{tags.map(t => <option key={t} value={t} />)}</datalist>
         <ScanButton disabled={pending} onScan={setTag} />
       </div>
-      <label className="check"><input type="checkbox" checked={pending} onChange={e => setPending(e.target.checked)} /> Tag pending, I'll add it later</label>
+      {pool?.from_metrc && <div className="muted small-note">{pool.license}{pool.free != null ? ` · ${pool.free.toLocaleString()} tags available` : ''}{tag.trim().length >= 3 && tag.trim().length < 24 ? ` · ${tags.length >= 200 ? '200+' : tags.length} match` : ''}</div>}
+      {off && tag !== keep && <div className="warn-t small-note">Not on METRC's available list for {pool?.license} (used, voided, another license, or held for something else). Check the tag.</div>}
+      {setPending && <label className="check"><input type="checkbox" checked={!!pending} onChange={e => setPending(e.target.checked)} /> Tag pending, I'll add it later</label>}
     </div>
   )
 }
@@ -80,7 +84,7 @@ export function SplitForm({ p, where, busy, onClose, onSubmit }: {
           {n > 0 && n < w ? `New pallet ${lbs(n)} · ${p.code} keeps ${lbs(w - n)}` : `Must be more than 0 and less than ${lbs(w)}`}
         </div>}
       </div>
-      <TagField tag={tag} setTag={setTag} pending={pending} setPending={setPending} />
+      <TagField tag={tag} setTag={setTag} pending={pending} setPending={setPending} pallet={p.id} />
       <DestField dest={dest} setDest={setDest} sameLabel={where ? `Same slot (${where})` : null} />
       <div className="field"><label>Note (optional)</label><input value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. pulled for Acquamarcia order" /></div>
       <MetrcNote kind="split" p={p} />
@@ -120,7 +124,7 @@ export function MergeForm({ p, candidates, whereOf, busy, onClose, onSubmit }: {
         </div>
         {picked.size > 0 && <div className="muted">New pallet: {picked.size + 1} pallets · {lbs(total)}</div>}
       </div>
-      <TagField tag={tag} setTag={setTag} pending={pending} setPending={setPending} />
+      <TagField tag={tag} setTag={setTag} pending={pending} setPending={setPending} pallet={p.id} />
       <DestField dest={dest} setDest={setDest} sameLabel={p.slot_id != null ? `${p.code}'s slot (${whereOf(p)})` : null} />
       <div className="field"><label>Note (optional)</label><input value={note} onChange={e => setNote(e.target.value)} /></div>
       <MetrcNote kind="merge" p={p} n={picked.size + 1} />
@@ -136,13 +140,7 @@ export function TagForm({ p, busy, onClose, onSubmit }: { p: Pallet; busy: boole
   const [tag, setTag] = useState(p.package_tag ?? '')
   return (
     <Dialog title={`METRC tag for ${p.code}`} onClose={onClose}>
-      <div className="field">
-        <label>Tag</label>
-        <div className="row tagrow">
-          <input className="mono-in grow-in" value={tag} autoFocus onChange={e => setTag(e.target.value.toUpperCase().replace(/\s/g, ''))} />
-          <ScanButton onScan={setTag} />
-        </div>
-      </div>
+      <TagField label="Tag" tag={tag} setTag={setTag} pallet={p.id} keep={p.package_tag} />
       <MetrcNote kind="tag" p={p} />
       <div className="row end">
         <button className="ghost" onClick={onClose}>Cancel</button>
@@ -285,8 +283,8 @@ export function MixedBuilder({ title, target, candidates, initial, whereOf, busy
   )
 }
 
-export function SingleForm({ where, strains, busy, onClose, onSubmit, tag: scanned }: {
-  where: string; strains: string[]; busy: boolean; onClose: () => void; onSubmit: (i: SingleInput) => void; tag?: string
+export function SingleForm({ where, slot, strains, busy, onClose, onSubmit, tag: scanned }: {
+  where: string; slot?: number; strains: string[]; busy: boolean; onClose: () => void; onSubmit: (i: SingleInput) => void; tag?: string
 }) {
   const [code, setCode] = useState('')
   const [strain, setStrain] = useState('')
@@ -308,7 +306,7 @@ export function SingleForm({ where, strains, busy, onClose, onSubmit, tag: scann
       </div>
       <div className="field"><label>Weight (lbs)</label>
         <input type="number" inputMode="decimal" value={w} onChange={e => setW(e.target.value)} /></div>
-      <TagField label="METRC tag" tag={tag} setTag={setTag} pending={pending} setPending={setPending} />
+      <TagField label="METRC tag" tag={tag} setTag={setTag} pending={pending} setPending={setPending} slot={slot} />
       <div className="field"><label>Harvest date (optional)</label><input type="date" value={hd} onChange={e => setHd(e.target.value)} /></div>
       <div className="field"><label>Note (optional)</label><input value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. found during count" /></div>
       <div className="row end">
@@ -335,8 +333,8 @@ export function PickMixed({ mixed, whereOf, onClose, onPick }: { mixed: { p: Pal
 }
 
 /** Merge started from an empty slot: pick a strain, check its partials, new tag, lands in this slot */
-export function MergeHere({ where, candidates, whereOf, busy, onClose, onSubmit }: {
-  where: string; candidates: Pallet[]; whereOf: (p: Pallet) => string; busy: boolean
+export function MergeHere({ where, slot, candidates, whereOf, busy, onClose, onSubmit }: {
+  where: string; slot?: number; candidates: Pallet[]; whereOf: (p: Pallet) => string; busy: boolean
   onClose: () => void; onSubmit: (ids: number[], tag: string | null, pending: boolean, note: string) => void
 }) {
   const [strain, setStrain] = useState('')
@@ -371,7 +369,7 @@ export function MergeHere({ where, candidates, whereOf, busy, onClose, onSubmit 
           {picked.size > 0 && <div className="muted">{picked.size} pallets · {lbs(total)}{picked.size < 2 ? ' · pick at least two' : ''}</div>}
         </div>
       )}
-      <TagField tag={tag} setTag={setTag} pending={pending} setPending={setPending} />
+      <TagField tag={tag} setTag={setTag} pending={pending} setPending={setPending} slot={slot} />
       <div className="field"><label>Note (optional)</label><input value={note} onChange={e => setNote(e.target.value)} /></div>
       <div className="row end">
         <button className="ghost" onClick={onClose}>Cancel</button>

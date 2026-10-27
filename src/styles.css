@@ -1090,3 +1090,18 @@ html:has(.app.shell), html:has(.app.shell) body { height: 100%; overflow: hidden
 .pill.m-mute { background: var(--empty); color: var(--muted); }
 .mlist { margin: 6px 0 2px; padding: 6px 8px; border-left: 3px solid var(--line); font-size: 13px; line-height: 1.45; }
 .mlist .neg { color: var(--bad); }
+
+/* plant tag runs on a planting (batch tags, flowering tags) */
+.tagrun { padding: 6px 0; }
+.tagrun + .tagrun { border-top: 1px solid var(--line); }
+.tagrun .mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; }
+.tagrun-pick { margin-top: 6px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; display: grid; gap: 6px; }
+.tagrun-pick input { width: 100%; }
+.tr-ok { color: var(--brand); }
+.tr-bad { color: var(--bad); }
+.tr-bad .mlist { color: var(--text, inherit); }
+.tagrun-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; }
+.tagrun-row > div:first-child { width: 100px; }
+.tagrun-row .field { margin: 0; }
+.tagrun-row .grow { flex: 1; min-width: 220px; }
+.tagrun-pick .tr-bad .mlist { margin-top: 4px; }

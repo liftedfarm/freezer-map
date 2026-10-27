@@ -7,9 +7,12 @@
 //   { action: 'manifest_pdf', license, manifest } the METRC manifest PDF (base64)
 //   { action: 'incoming', license? }        incoming METRC deliveries for our licenses (Distribution > Inbound)
 //   { action: 'inbound_receive', license, delivery_id }  receive a delivery in METRC (Live) and bring it into the app
+//   { action: 'tag_range', planting_id, purpose, count, first?, after?, save? }  plant tag runs for a planting:
+//        suggest the next clean run (no first), check a run (first), or check and hold it for the planting (save)
 import { asUser, caller, db, isLive, missing, rpc, runJob, send, t3, testConnection } from './_t3.js'
 import { incoming, loadChecklist, receiveDelivery } from './_xfer.js'
 import { enc, t3file, up } from './_core.js'
+import { checkRun, suggestRun } from './_tagrange.js'
 
 export const config = { maxDuration: 60 }
 
@@ -125,6 +128,16 @@ export default async function handler(req, res) {
       await db('events', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ user_email: me.email, type: 'inbound_delivery',
         note: `Manifest ${d.manifest} from ${d.from}`, details: { license: lic, site: l.site, manifest: d.manifest, from: d.from, packages: d.items.length, request, app } }) }).catch(() => {})
       return send(res, 200, { live, ok: true, info: `Received manifest ${d.manifest} in METRC. App: ${app.in} back in, ${app.new} new, ${app.skipped} not pallets.`, app })
+    }
+    if (body.action === 'tag_range') {
+      const purpose = body.purpose === 'flower' ? 'flower' : 'batch'
+      const a = { plantingId: Number(body.planting_id), purpose, count: Number(body.count), first: body.first, after: body.after }
+      if (!a.plantingId) return send(res, 400, { error: 'Which planting?' })
+      if (!body.first) return send(res, 200, await suggestRun(a))
+      const chk = await checkRun(a)
+      if (!body.save || !chk.ok) return send(res, 200, chk)
+      const held = await asUser(req, 'tag_assign', { p_planting: a.plantingId, p_purpose: purpose, p_first: chk.first, p_count: chk.count })
+      return send(res, 200, { ...chk, saved: true, held })
     }
     return send(res, 400, { error: 'Unknown action' })
   } catch (e) {

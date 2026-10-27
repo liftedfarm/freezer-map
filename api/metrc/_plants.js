@@ -5,6 +5,7 @@ import {
   Skip, Wait, all, db, enc, first, inputs, list, lc, mappedLocation, one, packageByTag, r4, reasonFrom, rpc, setting, strainFor,
   t3, tagIdFor, uomFrom, up, write, ymd, adjustReasons,
 } from './_core.js'
+import { heldRun } from './_tagrange.js'
 
 const day = (v, job) => (v ? String(v).slice(0, 10) : ymd(job.at))
 const progressOf = job => ({ ...(job.push_response?.progress ?? {}) })
@@ -134,6 +135,8 @@ async function plantingBatches(lic, pl) {
   return rows.filter(b => lc(b.locationName) === lc(loc.location) && lc(b.strainName) === lc(strain.name))
 }
 
+const BATCH_MAX = 100   // California: plants per immature plant batch tag
+
 export async function sendPlanting(job, ctx) {
   const d = job.details || {}
   const lic = job.license
@@ -150,23 +153,28 @@ export async function sendPlanting(job, ctx) {
   const pk = (await all('/v2/plantbatches/create/from-packages/source-packages', { licenseNumber: lic }, 10))
     .filter(p => isCount(p) && Number(p.quantity) > 0 && (lc(p.item?.strainName) === lc(strain.name) || lc(p.item?.strainName) === lc(pl.strain) || strainMatch(p.item?.name, pl.strain)))
     .sort((a, b) => String(a.packagedDate ?? '').localeCompare(String(b.packagedDate ?? '')))
-  const tags = (inp.tags ?? []).filter(t => !t.isUsed && !t.isArchived).sort((a, b) => String(a.label).localeCompare(String(b.label)))
+  // batch tags: the run picked on the planting, in order (CA: up to 100 plants per batch, the batch named by its tag)
+  const run = await heldRun(pl.id, 'batch')
+  if (!run) throw new Wait(`Pick the batch tag run on the planting first (Cultivation > Plantings > ${pl.strain}: one tag per 100 plants)`)
+  let next = prog.batches.length
   let left = want - prog.done
   const body = []
   for (const p of pk) {
     if (left <= 0) break
-    const n = Math.min(left, Math.floor(Number(p.quantity)))
+    let n = Math.min(left, Math.floor(Number(p.quantity)))
     if (n <= 0) continue
-    const t = tags.shift()
-    if (!t) throw new Error(`No plant tags available on ${lic} for the plant batches`)
     const type = (inp.plantBatchTypes ?? []).find(x => (/seed/i.test(p.item?.name ?? '') ? /seed/i : /clone/i).test(x.name))
     if (!type) throw new Error('METRC has no Clone / Seed plant batch type here')
-    body.push({ actualDate: day(pl.planted_on, job), plantedDate: day(pl.planted_on, job), locationId: loc.location_id, packageId: p.id,
-                plantBatchName: up(t.label), plantBatchTypeId: type.id, plantsCount: n, strainId: strain.id, _pkg: up(p.label) })
-    left -= n
+    while (n > 0) {
+      const k = Math.min(n, BATCH_MAX)
+      body.push({ actualDate: day(pl.planted_on, job), plantedDate: day(pl.planted_on, job), locationId: loc.location_id, packageId: p.id,
+                  plantBatchName: next < run.size ? run.at(next) : null, plantBatchTypeId: type.id, plantsCount: k, strainId: strain.id, _pkg: up(p.label) })
+      next++; n -= k; left -= k
+    }
   }
   if (!body.length) throw new Error(`No ${pl.strain} clone or seed packages on ${lic} in METRC to plant from (receive the nursery's manifest first)`)
   if (left > 0) throw new Error(`METRC only has ${want - prog.done - left} ${pl.strain} plants in packages on ${lic}; the planting is ${want - prog.done}. Receive the rest first, or fix the planting count.`)
+  if (body.some(b => !b.plantBatchName)) throw new Error(`This planting needs ${prog.batches.length + body.length} batch tags (up to ${BATCH_MAX} plants each, split by clone package); the run picked has ${run.size}. Pick a longer run on the planting.`)
   const send = body.map(({ _pkg, ...x }) => x)
   const resp = await write(ctx, '/v2/plantbatches/create/from-packages', lic, send)
   const what = body.map(b => `${b.plantBatchName}: ${b.plantsCount} from ${b._pkg}`).join('; ')
@@ -225,6 +233,21 @@ function tagRuns(lic) {
   }
 }
 
+/** pieces of the planting's held run, in order from where the flip got to (METRC promotes by tag id, start..end) */
+function heldRuns(ctx, lic, held, prog) {
+  let used = prog.done
+  return async function next(max) {
+    if (used >= held.size) return null
+    const n = Math.min(max, held.size - used)
+    const from = held.at(used), to = held.at(used + n - 1)
+    const path = '/v2/plantbatches/promote/source-tags'
+    const [a, b] = await Promise.all([tagIdFor(ctx, lic, path, from), tagIdFor(ctx, lic, path, to)])
+    if (Number(b) - Number(a) !== n - 1) throw new Error(`METRC's tag ids for ${from}..${to} aren't in sequence, so they can't go in one promote. Pick a different run.`)
+    used += n
+    return { start: a, end: b, count: n, from, to }
+  }
+}
+
 /** the flip: promote the planting's immature plants to Flowering, each with a plant tag (runs overnight in pieces) */
 export async function sendFlower(job, ctx) {
   const d = job.details || {}
@@ -240,7 +263,10 @@ export async function sendFlower(job, ctx) {
     if (prog.done > 0) throw new Skip(`Flipped ${prog.done} plants to flowering`)
     throw new Error(`No immature ${pl.strain} plants in METRC for this planting (in ${loc.location})`)
   }
-  const next = tagRuns(lic)
+  // the flowering tag run picked on the planting (flips queued before runs existed take the next available tags)
+  const held = await heldRun(pl.id, 'flower')
+  if (held && held.size < want) throw new Error(`The flowering tag run has ${held.size} tags for ${want} plants. Pick the run again on the planting.`)
+  const next = held ? heldRuns(ctx, lic, held, prog) : tagRuns(lic)
   const deadline = ctx.deadline ?? Date.now() + 40000
   const date = day(d.on, job)
   let sentNow = 0, lastBody = null, lastResp = null

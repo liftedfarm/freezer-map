@@ -5,6 +5,8 @@ import type { Ctx } from './calc'
 import type { CField, CultData, Planting, Receipt, Source } from './types'
 import { Choices, DateIn, F, NumIn, Pick, SaveBar, SelAll, SelBar, SelBox, SelButton, Sheet, StrainList, TextIn, errText, useSel } from './ui'
 import type { Flash } from './ui'
+import { TagRunBox, useHeldRuns } from './tagrun'
+import type { HeldRun } from './tagrun'
 
 const SOURCES: { v: Source; l: string }[] = [{ v: 'clone', l: 'Clone' }, { v: 'seed', l: 'Seed' }, { v: 'auto', l: 'Auto (seed)' }]
 
@@ -111,6 +113,7 @@ function PlantingSheet({ d, c, p, api, flash, onClose, onSaved }: { d: CultData;
   const set = (v: Partial<Planting>) => setX(o => ({ ...o, ...v }))
   const run = async (f: () => Promise<unknown>, m: string) => { setBusy(true); try { await f(); await onSaved(m) } catch (e) { flash(errText(e), true) } finally { setBusy(false) } }
   const site = c.site.get(x.site ?? 'OHR')
+  const held = useHeldRuns(api.sb, p.id)
   const autoAcres = x.plants && x.spacing_in ? plantingAcres({ ...x, acres: null } as Planting, site) : null
   return (
     <Sheet title={p.id ? p.strain : 'Add planting'} sub={p.id ? `${p.site} ${c.field.get(p.field_id ?? -1)?.code ?? ''} · planted ${fmtD(p.planted_on)}` : undefined} onClose={onClose} wide>
@@ -140,7 +143,11 @@ function PlantingSheet({ d, c, p, api, flash, onClose, onSaved }: { d: CultData;
         onChange={e => set({ trial: e.target.checked })} /> <span>Trial planting <span className="muted">(its pallets are T pallets; on by default for trial strains)</span></span></label>
       <F label="Notes"><textarea value={x.notes ?? ''} onChange={e => set({ notes: e.target.value || null })} /></F>
       {x.plants && x.est_lbs_per_plant ? <p className="cnote">Projected {n0(x.plants * x.est_lbs_per_plant)} lbs fresh frozen.</p> : null}
-      {p.id && <FlipBox p={p as Planting} busy={busy} onFlip={on => run(() => api.flip(p.id!, on), 'Flipped to flowering. METRC gets it on the overnight run.')} />}
+      {p.id && <div className="cnote">
+        <TagRunBox sb={api.sb} plantingId={p.id} purpose="batch" need={Math.ceil((p.plants ?? 0) / 100)} held={held.get('batch')} onChange={held.reload} />
+        {!p.flipped_on && <TagRunBox sb={api.sb} plantingId={p.id} purpose="flower" need={Math.max(0, (p.plants ?? 0) - (p.plant_loss ?? 0))} held={held.get('flower')} onChange={held.reload} />}
+      </div>}
+      {p.id && <FlipBox p={p as Planting} busy={busy} run={held.get('flower')} onFlip={on => run(() => api.flip(p.id!, on), 'Flipped to flowering. METRC gets it on the overnight run.')} />}
       <SaveBar busy={busy} disabled={!x.strain?.trim() || !x.site} onCancel={onClose}
         onSave={() => run(() => api.save('cult_plantings', { ...x, license: x.license ?? site?.license ?? null }), p.id ? 'Saved' : 'Planting added')}
         onDelete={p.id ? () => run(() => api.remove('cult_plantings', p.id!), 'Planting deleted') : undefined} />
@@ -149,13 +156,15 @@ function PlantingSheet({ d, c, p, api, flash, onClose, onSaved }: { d: CultData;
 }
 
 /** flip to flowering: the METRC to-do promotes the planting's immature plants with plant tags (overnight, Compliance) */
-function FlipBox({ p, busy, onFlip }: { p: Planting; busy: boolean; onFlip: (on: string | null) => void }) {
+function FlipBox({ p, busy, run, onFlip }: { p: Planting; busy: boolean; run: HeldRun | null; onFlip: (on: string | null) => void }) {
   const [on, setOn] = useState<string | null>(today())
-  if (p.flipped_on) return <p className="cnote">Flipped to flowering {fmtD(p.flipped_on)}{p.flipped_by ? ` by ${p.flipped_by.split('@')[0]}` : ''}.</p>
+  if (p.flipped_on) return <p className="cnote">Flipped to flowering {fmtD(p.flipped_on)}{p.flipped_by ? ` by ${p.flipped_by.split('@')[0]}` : ''}{run ? `, tags ${run.first_label} – ${run.last_label.slice(-9)}` : ''}.</p>
   const left = (p.plants ?? 0) - (p.plant_loss ?? 0)
+  const ready = !!run && run.tags === left
   return <div className="cnote row wrap" style={{ alignItems: 'center', gap: 8 }}>
     <span>Flip {n0(left)} plants to flowering on</span><DateIn value={on} onChange={setOn} />
-    <button className="ghost small" disabled={busy || left <= 0} onClick={() => { if (confirm(`Flip ${n0(left)} ${p.strain} plants to flowering? METRC tags each plant (overnight run).`)) onFlip(on) }}>Flip to flowering</button>
+    <button className="ghost small" disabled={busy || left <= 0 || !ready} onClick={() => { if (confirm(`Flip ${n0(left)} ${p.strain} plants to flowering with tags ${run!.first_label} – ${run!.last_label.slice(-9)}? METRC gets it on the overnight run.`)) onFlip(on) }}>Flip to flowering</button>
+    {!ready && left > 0 && <span className="muted">Pick the flowering tags first ({n0(left)}, one per plant).</span>}
   </div>
 }
 

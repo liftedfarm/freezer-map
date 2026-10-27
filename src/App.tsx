@@ -1177,11 +1177,11 @@ export default function App() {
           onSubmit={(lines, note) => submit(() => backend.createMixed(form.slot.id, lines, note), m => `${m.code} created with ${lines.length} package${lines.length === 1 ? '' : 's'}`, m => setPalletId(m.id))} />
       )}
       {form?.kind === 'newmerged' && (
-        <MergeHere where={slotLabel(form.slot)} candidates={looseList.filter(p => p.kind !== 'mixed' && p.strain && p.current_weight)} whereOf={where} busy={busy} onClose={() => setForm(null)}
+        <MergeHere where={slotLabel(form.slot)} slot={form.slot.id} candidates={looseList.filter(p => p.kind !== 'mixed' && p.strain && p.current_weight)} whereOf={where} busy={busy} onClose={() => setForm(null)}
           onSubmit={(ids, tag, pending, note) => submit(() => backend.mergePallets(ids, tag, pending, form.slot.id, note), m => `${m.code} created from ${ids.length} pallets`, m => setPalletId(m.id))} />
       )}
       {form?.kind === 'newsingle' && (
-        <SingleForm where={slotLabel(form.slot)} tag={form.tag} strains={strainNames} busy={busy} onClose={() => setForm(null)}
+        <SingleForm where={slotLabel(form.slot)} slot={form.slot.id} tag={form.tag} strains={strainNames} busy={busy} onClose={() => setForm(null)}
           onSubmit={i => submit(() => backend.createSingle(form.slot.id, i), p => `${p.code} created`, p => setPalletId(p.id))} />
       )}
       {form?.kind === 'pickmixed' && (
