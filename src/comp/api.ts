@@ -4,6 +4,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 
 function fail(error: { message: string } | null) {
   if (!error) return
+  if (/comp_reconcile_nursery/i.test(error.message)) throw new Error(`${error.message} (run 076_nursery_reconcile.sql in Supabase)`)
   if (/metrc_locations|metrc_strains|metrc_location_map|metrc_strain_map|metrc_plant|metrc_map_|metrc_app_transfers|metrc_stop_checks|touch_tags/i.test(error.message)) throw new Error(`${error.message} (run 075_metrc_phase12.sql in Supabase)`)
   if (/metrc_push|metrc_connection|metrc_set_mode|metrc_me|push_state/i.test(error.message)) throw new Error(`${error.message} (run 070_metrc_push.sql in Supabase)`)
   if (/reconcile_view|recon_apply|recon_ignores/i.test(error.message)) throw new Error(`${error.message} (run 074_recon_apply.sql in Supabase)`)
@@ -74,6 +75,8 @@ export interface MBatch { license: string; id: number; name: string | null; type
 export interface MCount { license: string; phase: string; location_id: number; location: string | null; strain: string; plants: number; oldest: string | null; newest: string | null }
 export interface LocMap { app_kind: 'field' | 'room' | 'drying' | 'packages'; app_ref: string; license: string; location_id: number; location: string | null }
 export interface StrainMap { app_strain: string; license: string; strain_id: number; strain: string | null }
+export interface NurseryRecon { kind: 'clones' | 'mothers'; issue: 'count' | 'not_in_metrc' | 'no_tag' | 'not_in_app' | 'closed_in_app'; tag: string | null; strain: string | null; name: string | null
+  app_n: number | null; metrc_n: number | null; metrc_item: string | null; metrc_location: string | null; metrc_state: string | null; ref_id: number | null; note: string | null }
 export interface MapData {
   locs: MLoc[]; strains: MStrain[]; batches: MBatch[]; counts: MCount[]; locMap: LocMap[]; strainMap: StrainMap[]
   fields: { id: number; site: string; code: string | null; name: string; active: boolean }[]
@@ -245,6 +248,7 @@ export class CompApi {
     if (!r.ok) throw new Error(j.error ?? `Error ${r.status}`)
     return j as T
   }
+  reconcileNursery() { return this.rpc<NurseryRecon[]>('comp_reconcile_nursery', {}) }
   reconcileLive(license: string) { return this.rpc<LiveRecon[]>('comp_reconcile_view', { p_license: license }) }
   reconApply(rows: { key: string; action: string; reason: string }[], dry: boolean) {
     return this.rpc<{ dry: boolean; done: number; skipped: number; rows: { key: string; action: string; ok: boolean; msg: string | null; code: string | null; issue: string }[] }>('comp_recon_apply', { p_rows: rows, p_dry: dry })
