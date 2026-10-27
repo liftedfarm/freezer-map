@@ -332,7 +332,8 @@ export async function sendHarvestPlants(job, ctx) {
   }
   let lastBody = null, lastResp = null
   // plants come from the field; once the field has none left, from the drying location (plants already moved in from the field)
-  const places = [...new Set([loc.location, dry.location].filter(Boolean))]
+  // details.metrc_location: harvest from this METRC location instead (the plants sit somewhere else in METRC than the app's field)
+  const places = d.metrc_location ? [String(d.metrc_location)] : [...new Set([loc.location, dry.location].filter(Boolean))]
   let at = 0
   while (prog.done < plants) {
     if (Date.now() > deadline) break
