@@ -10,6 +10,7 @@ import type { Flash } from './ui'
 import { ScanButton } from '../scan'
 import { can } from '../fold'
 import { nextTag } from './schedule'
+import { HarvestDayCard } from './harvestday'
 
 // Production > Harvest: log a harvest as it happens. Built for a phone in the field or the pack shed.
 // Fresh frozen: raw bins, then each pallet as it's made (it lands in Staging on the freezer map right away).
@@ -36,6 +37,8 @@ export function HarvestTab({ d, c, site, api, flash, onSaved, openFirst }: { d: 
   const aheadDays = [...new Set(ahead.map(h => h.planned_on!))].sort()
   const behind = day === now ? hs.filter(h => h.status === 'planned' && !h.stage && h.planned_on && h.planned_on < now) : []
   const done = hs.filter(h => h.status === 'done' && h.harvested_on === day)
+  // a harvest day card per site with fresh frozen work that day (the picked site only, when one is picked)
+  const daySites = site ? (hs.some(h => h.kind === 'ff') ? [site] : []) : [...new Set([...going, ...planned, ...done].filter(h => h.kind === 'ff').map(h => h.site))].sort()
   const card = (h: Harvest, extra?: string) => {
     const k = calcHarvest(c, h)
     const logged = h.kind === 'ff' ? k.palletLbs : h.kind === 'dry' ? sum(h.raw_bins) : Number(h.dry_lbs ?? 0)
@@ -56,6 +59,7 @@ export function HarvestTab({ d, c, site, api, flash, onSaved, openFirst }: { d: 
         <DateIn value={day} onChange={v => setDay(v ?? now)} />
         {day !== now && <button className="ghost small" onClick={() => setDay(now)}>Today</button>}
       </div>
+      {daySites.map(s => <HarvestDayCard key={`${s}-${day}`} site={s} day={day} api={api} flash={flash} />)}
       {going.length > 0 && <section><h3 className="csec">Harvesting now</h3>{going.map(h => card(h, `Started ${fmtD(h.harvested_on, true)}`))}</section>}
       <section><h3 className="csec">{day === now ? 'On the schedule today' : `Scheduled ${fmtD(day, true)}`}</h3>
         {planned.length ? planned.map(h => card(h)) : <p className="muted">Nothing scheduled{site ? ` at ${site}` : ''}{aheadDays.length ? '' : ' this week'}. Pick another day, or add the harvest on the Schedule.</p>}</section>
@@ -107,6 +111,7 @@ function LogPage({ h, d, c, api, flash, onSaved, back }: { h: Harvest; d: CultDa
       {(h.kind === 'ff' || h.kind === 'dry') && <Plants h={h} api={api} busy={busy} done={locked} run={run} leftBefore={leftBefore} />}
 
       {h.kind === 'ff' && <>
+        {(h.stage === 'harvesting' || done) && <HarvestDayCard site={h.site} day={h.stage === 'harvesting' ? today() : h.harvested_on ?? today()} api={api} flash={flash} />}
         <div className="ckpis hk">
           <div><b>{n0(k.palletLbs)}</b><span>lbs packed{k.estFF ? ` of ~${n0(k.estFF)}` : ''}</span></div>
           <div><b>{pallets.length}</b><span>pallets ({pallets.filter(p => p.pushed !== false).length} pushed)</span></div>
@@ -296,7 +301,7 @@ function PalletLog({ h, api, busy, done, pallets, run, prefix }: {
           ? <EditPallet key={p.id} p={p} busy={busy} onCancel={() => setEdit(null)} onSave={x => run(() => api.editPallet(p.id, x), `${x.code ?? p.code} fixed`).then(() => setEdit(null))} />
           : <div key={p.id} className="drow">
             {canPush && !done && <input type="checkbox" checked={pick.has(p.id)} onChange={() => tog(p.id)} aria-label={`Pick ${p.code}`} />}
-            <span className="grow"><b>{p.code}</b> <span className="muted">{p.boxes ? `${p.boxes} boxes · ` : ''}{p.package_tag ? p.package_tag.slice(-8) : <em className="warn-t">tag pending</em>}{p.partial ? ' · partial' : ''}</span></span>
+            <span className="grow"><b>{p.code}</b> <PalletTime p={p} api={api} run={run} busy={busy} /> <span className="muted">{p.boxes ? `${p.boxes} boxes · ` : ''}{p.package_tag ? p.package_tag.slice(-8) : <em className="warn-t">tag pending</em>}{p.partial ? ' · partial' : ''}</span></span>
             <b>{n0(Number(p.og_weight))} lbs</b>
             {!done && <><button className="ghost small" disabled={busy} onClick={() => setEdit(p.id)}>Edit</button>
               <button className="ghost small" disabled={busy} title="Logged by mistake" onClick={() => run(() => api.removePallet(p.id), `${p.code} removed`)}>✕</button></>}
@@ -312,7 +317,7 @@ function PalletLog({ h, api, busy, done, pallets, run, prefix }: {
       {pushed.length > 0 && <>
         {waiting.length > 0 && <h4 className="csec">Pushed <span className="muted">{pushed.length} · {n0(sum(pushed.map(p => p.og_weight)))} lbs</span></h4>}
         <div className="dlist">{[...pushed].reverse().map(p => (
-          <div key={p.id} className="drow"><span className="grow"><b>{p.code}</b> <span className="muted">{p.boxes ? `${p.boxes} boxes · ` : ''}{p.package_tag ? p.package_tag.slice(-8) : 'tag pending'}{p.partial ? ' · partial' : ''}</span></span>
+          <div key={p.id} className="drow"><span className="grow"><b>{p.code}</b> <PalletTime p={p} api={api} run={run} busy={busy} /> <span className="muted">{p.boxes ? `${p.boxes} boxes · ` : ''}{p.package_tag ? p.package_tag.slice(-8) : 'tag pending'}{p.partial ? ' · partial' : ''}</span></span>
             <b>{n0(Number(p.og_weight))} lbs</b>
             {!done && canUnpush && <button className="ghost small" disabled={busy} title="Take it back to Not pushed (only if METRC hasn't been done)" onClick={() => run(() => api.unpush(p.id), `${p.code} un-pushed`)}>Un-push</button>}
             {done && <button className="ghost small" disabled={busy} title="Logged by mistake" onClick={() => run(() => api.removePallet(p.id), `${p.code} removed`)}>✕</button>}
@@ -320,6 +325,22 @@ function PalletLog({ h, api, busy, done, pallets, run, prefix }: {
       </>}
     </section>
   )
+}
+
+/** when the pallet was finished: the save time unless someone fixed it. Tap to fix (Jordan's sheet: the time the last box was tagged). */
+function PalletTime({ p, api, run, busy }: { p: LogPallet; api: CultApi; run: (f: () => Promise<unknown>, ok: string) => Promise<void>; busy: boolean }) {
+  const at = p.built_at ?? p.created_at
+  const [ed, setEd] = useState<string | null>(null)
+  if (!at) return null
+  const d = new Date(at)
+  const hhmm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  const shown = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+  if (ed != null) return <span className="ptime"><input type="time" value={ed} autoFocus onChange={e => setEd(e.target.value)} aria-label={`${p.code} time`}
+    onKeyDown={e => { if (e.key === 'Escape') setEd(null) }} />
+    <button className="primary small" disabled={busy || !ed} onClick={() => run(() => api.setPalletTime(p.id, ed), `${p.code} time ${ed}`).then(() => setEd(null))}>Save</button>
+    {p.built_at && <button className="ghost small" disabled={busy} title="Back to when it was saved" onClick={() => run(() => api.setPalletTime(p.id, null), `${p.code} back to its save time`).then(() => setEd(null))}>Reset</button>}
+    <button className="ghost small" onClick={() => setEd(null)}>✕</button></span>
+  return <a className="ptime binfix" title={p.built_at ? 'Time fixed by hand. Tap to change.' : 'When it was saved. Tap to fix.'} onClick={() => !busy && setEd(hhmm)}>{shown}{p.built_at ? '*' : ''}</a>
 }
 
 function EditPallet({ p, busy, onSave, onCancel }: { p: LogPallet; busy: boolean; onSave: (x: { lbs: number | null; boxes: number | null; code?: string; tag?: string | null; pending?: boolean; partial: boolean }) => void; onCancel: () => void }) {

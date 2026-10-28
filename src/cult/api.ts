@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { CPallet, CWeight, CSite, CField, CTest, CultData, CultSettings, CultTable, Demand, Harvest, LogRow, NurseryOrder, Pick, PlanData, PlanRow, Planting, Protocol, Receipt, StrainLite, YieldHist } from './types'
+import type { BonusData } from './bonuscalc'
+import type { HarvestDay, CPallet, CWeight, CSite, CField, CTest, CultData, CultSettings, CultTable, Demand, Harvest, LogRow, NurseryOrder, Pick, PlanData, PlanRow, Planting, Protocol, Receipt, StrainLite, YieldHist } from './types'
 
 function fail(error: { message: string } | null) {
   if (error) throw new Error(error.message)
@@ -198,6 +199,23 @@ export class CultApi {
     return this.rpc<{ pushed: number; wet_lbs: number; packed_lbs: number; new_wet: number; new_plants: number }>('cult_push', { p_harvest: harvestId, p_pallets: pallets, p_allow_pending: allowPending })
   }
   unpush(palletId: number) { return this.rpc('cult_unpush', { p_pallet: palletId }) }
+
+  // ---------- harvest day + Live Bonus (084) ----------
+  private async rpc84<T = unknown>(fn: string, args: object): Promise<T> {
+    const { data, error } = await this.sb.rpc(fn, args)
+    if (error && /Could not find the function|does not exist/.test(error.message)) throw new Error('Run 084_harvest_days.sql in Supabase first')
+    fail(error); return data as T
+  }
+  harvestDay(site: string, day: string) { return this.rpc84<HarvestDay>('harvest_day_get', { p_site: site, p_day: day }) }
+  saveHarvestDay(site: string, day: string, p: Partial<Record<keyof HarvestDay, string | number | null>>) { return this.rpc84<number>('harvest_day_save', { p_site: site, p_day: day, p }) }
+  breakStart(site: string, day: string, kind: 'break' | 'lunch', at: string | null = null) { return this.rpc84<number>('harvest_break_start', { p_site: site, p_day: day, p_kind: kind, p_at: at }) }
+  breakEnd(id: number, at: string | null = null) { return this.rpc84('harvest_break_end', { p_id: id, p_at: at }) }
+  breakEdit(id: number, kind: string, start: string, end: string | null) { return this.rpc84('harvest_break_edit', { p_id: id, p_kind: kind, p_start: start, p_end: end }) }
+  breakRemove(id: number) { return this.rpc84('harvest_break_remove', { p_id: id }) }
+  setPalletTime(id: number, time: string | null) { return this.rpc84('cult_set_pallet_time', { p_pallet: id, p_time: time }) }
+  bonusLive(token: string, day: string | null = null) { return this.rpc84<BonusData | null>('bonus_live', { p_token: token, p_day: day }) }
+  bonusLink(site: string) { return this.rpc84<string>('bonus_link', { p_site: site }) }
+  bonusLinkReset(site: string) { return this.rpc84<string>('bonus_link_reset', { p_site: site }) }
   /** flip a planting to flowering (075): METRC promotes its immature plants with plant tags, overnight */
   flip(plantingId: number, on: string | null) { return this.rpc('cult_flip', { p_planting: plantingId, p_on: on }) }
   continueTomorrow(harvestId: number, plants: number | null, on: string | null, notes: string | null) {

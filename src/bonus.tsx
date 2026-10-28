@@ -1,0 +1,172 @@
+import { useEffect, useRef, useState } from 'react'
+import type { Backend } from './api'
+import { clock, computeBonus, SPEED_MAX, SPEED_RED, SPEED_YELLOW, speedLevel } from './cult/bonuscalc'
+import type { BonusData, BonusView, Level } from './cult/bonuscalc'
+import './bonus.css'
+
+// Live Bonus: the TV screen in the pack shed. Public link /?bonus=<token> (one per site, from Production > Harvest).
+// No login. Refreshes every 20 seconds; the clock ticks in between. Spanish on purpose: it's for the crew.
+
+const DIAS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
+const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
+const fecha = (day: string) => { const d = new Date(`${day}T12:00:00`); return `${DIAS[d.getDay()]} ${d.getDate()} de ${MESES[d.getMonth()]}` }
+const money = (n: number) => `$${n.toFixed(2)}`
+const n0 = (n: number) => Math.round(n).toLocaleString('en-US')
+const pct = (n: number, max: number) => `${Math.max(0, Math.min(100, (n / max) * 100)).toFixed(1)}%`
+const STATUS: Record<Level, string> = { g: 'VAN BIEN · EN CAMINO', y: 'CERCA · HAY QUE APURAR', r: 'LEJOS DE LA META', wait: 'ESPERANDO LA PRIMERA TARIMA' }
+const MISSING: Record<string, string> = { 'box start': 'hora de la primera caja', people: 'personas', buckers: 'buckers', 'La Meta': 'la meta' }
+
+export function BonusScreen({ backend, token }: { backend: Backend; token: string }) {
+  const [d, setD] = useState<BonusData | null | undefined>(undefined)
+  const [at, setAt] = useState(Date.now())
+  const [, tick] = useState(0)
+  const day = new URLSearchParams(location.search).get('day')
+  const stage = useRef<HTMLDivElement>(null)
+  const [scale, setScale] = useState(1)
+
+  useEffect(() => {
+    document.title = 'Bono en vivo · Lifted Farms'
+    document.documentElement.lang = 'es'
+    const l = document.createElement('link')
+    l.rel = 'stylesheet'
+    l.href = 'https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700;800&family=Barlow:wght@500;600&display=swap'
+    document.head.appendChild(l)
+  }, [])
+  useEffect(() => {
+    const sb = backend.client()
+    if (!sb) { setD(null); return }
+    let stop = false
+    const load = () => sb.rpc('bonus_live', { p_token: token, p_day: day || null }).then(({ data, error }) => {
+      if (stop) return
+      if (error) { if (d === undefined) setD(null); return }       // keep the last good numbers on a blip
+      setD((data ?? null) as BonusData | null); setAt(Date.now())
+    })
+    load()
+    const a = setInterval(load, 20000), b = setInterval(() => tick(x => x + 1), 15000)
+    return () => { stop = true; clearInterval(a); clearInterval(b) }
+  }, [token])
+  useEffect(() => {
+    const fit = () => setScale(Math.min(window.innerWidth / 1920, window.innerHeight / 1080))
+    fit(); window.addEventListener('resize', fit)
+    return () => window.removeEventListener('resize', fit)
+  }, [])
+
+  if (d === undefined) return <div className="bz-wrap"><p className="bz-msg">Cargando…</p></div>
+  if (!d) return <div className="bz-wrap"><p className="bz-msg">Este enlace no funciona. Pide uno nuevo en Producción › Cosecha.</p></div>
+  const nowMin = d.now_min + (d.is_today ? (Date.now() - at) / 60000 : 0)
+  const v = computeBonus(d, nowMin)
+  return (
+    <div className="bz-wrap">
+      <div className="bz" ref={stage} style={{ transform: `scale(${scale})` }} data-level={v.level}>
+        <header className="bz-top">
+          <div className="bz-brand"><span className="bz-logo">lifted</span><span className="bz-dim">Cosecha en vivo · {d.site}</span></div>
+          <div className="bz-var"><span className="bz-cap">Variedad ahora</span><b>{v.variety ?? '—'}</b></div>
+          <div className="bz-clock"><b>{d.is_today ? clock(nowMin) : 'Día cerrado'}</b><span className="bz-dim">{fecha(d.day)}</span></div>
+        </header>
+        <main className="bz-main">
+          <Hero v={v} />
+          <div className="bz-col">
+            <Meta v={v} />
+            <Speed v={v} />
+          </div>
+        </main>
+        <Bottom v={v} />
+        {(!v.ready || v.onBreak) && <div className="bz-banner">
+          {v.onBreak ? `${v.onBreak.kind === 'lunch' ? 'Almuerzo' : 'Descanso'} desde ${clock((Number(v.onBreak.start_at.slice(0, 2)) * 60) + Number(v.onBreak.start_at.slice(3, 5)))}. El tiempo no cuenta.`
+            : `Falta en la tarjeta del día: ${v.missing.map(m => MISSING[m] ?? m).join(', ')}`}</div>}
+      </div>
+    </div>
+  )
+}
+
+function Hero({ v }: { v: BonusView }) {
+  const label = v.won ? 'Bono ganado · por hora' : 'Bono en juego · por hora'
+  const big = v.won ? money(v.bonusNow) : money(v.bonusAtStake)
+  const sub = v.level === 'wait' ? 'Los números empiezan con la primera tarima.'
+    : v.won ? `Sigue subiendo con cada libra. Proyectado: ${money(v.bonusProj || v.bonusNow)} por hora.`
+    : v.corr != null && v.hurdle != null ? `Faltan ${n0(v.hurdle - v.corr)} libras por persona para ganarlo.` : ''
+  return (
+    <section className="bz-card bz-hero">
+      <div className="bz-pill"><i />{v.won ? '¡META ALCANZADA!' : STATUS[v.level]}</div>
+      <div className="bz-herobody">
+        <div className="bz-herolab">{label}</div>
+        <div className={`bz-heroval${v.won ? ' won' : ''}`}>{big}</div>
+        <div className="bz-herosub">{sub}</div>
+      </div>
+      <div className="bz-pay">
+        <div><span className="bz-cap">Pago por hora</span><b>{money(v.payNow)}</b></div>
+        <div><span className="bz-cap">Al final del día</span><b>{money(v.payProj)}</b></div>
+        <div><span className="bz-cap">Base</span><b className="bz-dim">{money(v.hourly)}</b></div>
+      </div>
+    </section>
+  )
+}
+
+function Meta({ v }: { v: BonusView }) {
+  const meta = v.hurdle ?? 0, corr = v.corr ?? 0, proj = v.proj ?? 0
+  const scale = Math.max(meta * 1.3, proj * 1.05, corr * 1.05, 1)
+  return (
+    <section className="bz-card bz-sm">
+      <div className="bz-head"><b>La meta</b><span className="bz-dim">libras por persona hoy</span></div>
+      <div className="bz-nums">
+        <div><span className="bz-cap">Ahora</span><b className={`bz-xl${v.won ? ' won' : ''}`}>{v.corr != null ? v.corr.toFixed(1) : '—'}</b></div>
+        <div><span className="bz-cap">Meta</span><b className="bz-l">{v.hurdle != null ? n0(v.hurdle) : '—'}</b></div>
+        <div><span className="bz-cap">Proyección</span><b className="bz-l lv">{v.proj != null && v.pallets ? n0(v.proj) : '—'}</b></div>
+      </div>
+      <div className="bz-bar">
+        <div className="bz-track" />
+        <div className={`bz-fill${v.won ? ' won' : ''}`} style={{ width: pct(corr, scale) }} />
+        {v.pallets > 0 && <div className="bz-proj" style={{ left: pct(proj, scale) }} />}
+        {meta > 0 && <div className="bz-mark" style={{ left: pct(meta, scale) }} />}
+      </div>
+      <div className="bz-legend"><span>Barra: libras por persona hasta ahora</span><span>Línea blanca: meta · Línea punteada: proyección</span></div>
+    </section>
+  )
+}
+
+function Speed({ v }: { v: BonusView }) {
+  const lv = speedLevel(v.speed)
+  const behind = !v.won && v.need != null && (v.speed == null || v.need > v.speed)
+  return (
+    <section className="bz-card bz-sm">
+      <div className="bz-head"><b>Velocidad</b><span className="bz-dim">libras por bucker por hora</span></div>
+      <div className="bz-speed">
+        <b className={`bz-xl sp-${lv}`}>{v.speed != null ? Math.round(v.speed) : '—'}</b>
+        <span>{v.won ? 'Meta ya alcanzada' : v.need == null ? '' : v.speed != null && v.need <= v.speed ? 'A este ritmo llegan a la meta' : `Necesitan ${Math.ceil(v.need)} para llegar a la meta`}</span>
+      </div>
+      <div className="bz-bar">
+        <div className="bz-zones"><i style={{ width: pct(SPEED_RED, SPEED_MAX) }} /><i style={{ width: pct(SPEED_YELLOW - SPEED_RED, SPEED_MAX) }} /><i /></div>
+        {v.speed != null && <div className={`bz-fill sp-${lv}`} style={{ width: pct(Math.min(v.speed, SPEED_MAX), SPEED_MAX) }} />}
+        {behind && <div className="bz-mark" style={{ left: pct(Math.min(v.need!, SPEED_MAX), SPEED_MAX) }} />}
+      </div>
+      <div className="bz-legend"><span>Rojo &lt; {SPEED_RED} · Amarillo {SPEED_RED} a {SPEED_YELLOW} · Verde &gt; {SPEED_YELLOW}</span><span>{behind ? 'Línea blanca: velocidad necesaria' : ''}</span></div>
+    </section>
+  )
+}
+
+function Bottom({ v }: { v: BonusView }) {
+  // speed at each pallet (last 28), grouped by variety, shaded per variety
+  const shown = v.series.slice(-28)
+  const groups: { strain: string; bars: typeof shown }[] = []
+  for (const s of shown) { const g = groups[groups.length - 1]; if (g && g.strain === s.strain) g.bars.push(s); else groups.push({ strain: s.strain, bars: [s] }) }
+  const tiles = [
+    { label: 'Libras empacadas', value: n0(v.packed), sub: 'hoy' },
+    { label: 'Tarimas', value: String(v.pallets), sub: 'hoy' },
+    { label: 'Min. por tarima', value: v.avgPalletMin != null ? v.avgPalletMin.toFixed(1) : '—', sub: 'promedio' },
+    { label: 'Personas', value: v.people != null ? String(v.people) : '—', sub: v.buckers != null ? `${v.buckers} buckers` : '' },
+    { label: 'Horas', value: v.workedH.toFixed(1), sub: `de ${v.estHours} trabajadas` },
+  ]
+  return (
+    <section className="bz-bottom">
+      <div className="bz-card bz-spark">
+        <span className="bz-cap">Velocidad por tarima</span>
+        <div className="bz-groups">{groups.length ? groups.map((g, i) => (
+          <div key={i} className={`bz-group b${i % 2}`} style={{ flexGrow: g.bars.length }}>
+            <span className="bz-glab">{g.strain}</span>
+            <div className="bz-bars">{g.bars.map(b => <i key={b.code} className={`sp-${speedLevel(b.v)}`} style={{ height: pct(Math.min(b.v, SPEED_MAX), SPEED_MAX) }} title={`${b.code} · ${Math.round(b.v)}`} />)}</div>
+          </div>)) : <span className="bz-dim">Sin tarimas todavía</span>}</div>
+      </div>
+      {tiles.map(t => <div key={t.label} className="bz-card bz-tile"><span className="bz-cap">{t.label}</span><b>{t.value}</b><span className="bz-dim">{t.sub}</span></div>)}
+    </section>
+  )
+}

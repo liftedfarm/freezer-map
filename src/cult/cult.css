@@ -151,3 +151,16 @@
 .combo-list li { padding: 7px 12px; cursor: pointer; font-size: 14px; color: var(--ink); }
 .combo-list li.hi, .combo-list li:hover { background: var(--empty); }
 .hahead-d { font-weight: 600; font-size: 13px; margin: 10px 2px 4px; opacity: .8; }
+
+/* harvest day card (084) */
+.hdaycard { border-color: color-mix(in srgb, var(--accent, #2f7d5b) 45%, var(--line)); }
+.hday3 { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+.hday3 label .row { gap: 6px; flex-wrap: nowrap; }
+.hday3 label .row input { flex: 1; min-width: 0; }
+.hbreak { flex-wrap: wrap; gap: 6px; }
+.hbreak input, .hbreak select { padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); font-size: 15px; }
+.hbonus { margin-top: 8px; gap: 8px; }
+.hbonus a.ghost { text-decoration: none; display: inline-flex; align-items: center; }
+.ptime { font-size: 13px; margin: 0 4px; }
+span.ptime { display: inline-flex; gap: 4px; align-items: center; }
+span.ptime input { padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); font-size: 14px; }

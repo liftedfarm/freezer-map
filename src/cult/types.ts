@@ -44,6 +44,15 @@ export interface CPallet {
   id: number; code: string; harvest_id: number; og_weight: number | null; current_weight: number | null; status: string
   package_tag: string | null; harvest_date: string | null; slot_id: number | null; parent_id: number | null
   boxes?: number | null; partial?: boolean; tag_pending?: boolean; pushed?: boolean; notes?: string | null
+  created_at?: string | null; built_at?: string | null
+}
+
+/** one site's harvest day (084): labor card + breaks, shared by every variety that day */
+export interface HarvestDay {
+  id?: number; is_new: boolean; site: string; day: string
+  room_start: string | null; box_start: string | null; people: number | null; buckers: number | null; cutters: number | null
+  est_hours: number; hurdle: number | null; hourly: number; per_lb: number; notes?: string | null
+  breaks: { id: number; kind: 'break' | 'lunch'; start_at: string; end_at: string | null }[]
 }
 /** one weight logged on the Harvest screen (026) */
 export interface CWeight { id: number; harvest_id: number; kind: 'raw' | 'tote' | 'dry'; lbs: number; pushed?: boolean; tag: string | null; note: string | null; created_by: string | null; created_at: string }

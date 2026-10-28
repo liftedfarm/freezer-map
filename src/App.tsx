@@ -32,6 +32,7 @@ import type { InvAction } from './metrc'
 import { ReservesView, SALES_TITLES } from './reserves'
 import type { SalesMode } from './reserves'
 import { Portal, PortalLink, PortalLogin } from './portal'
+import { BonusScreen } from './bonus'
 import { DistDashboard } from './distdash'
 import { CULT_TABS, CULT_TAIL } from './cult/tabs'
 import type { CultTab } from './cult/tabs'
@@ -588,6 +589,8 @@ export default function App() {
   const link = linkParams.get('invite') ? { kind: 'invite' as const, code: linkParams.get('invite')! } : linkParams.get('reset') ? { kind: 'reset' as const, code: linkParams.get('reset')! } : null
   const docToken = linkParams.get('doc')
   if (docToken) return <SharedDocPage backend={backend} token={docToken} />
+  const bonusToken = linkParams.get('bonus')
+  if (bonusToken) return <BonusScreen backend={backend} token={bonusToken} />
   if (link) return <PortalLink backend={backend} kind={link.kind} code={link.code} onDone={refreshUser} />
   if (user === undefined) return <Splash />
   if (!user) return IS_PORTAL ? <PortalLogin backend={backend} onDone={refreshUser} /> : <Login />
