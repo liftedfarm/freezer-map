@@ -166,3 +166,5 @@
 .ptime { font-size: 13px; margin: 0 4px; }
 span.ptime { display: inline-flex; gap: 4px; align-items: center; }
 span.ptime input { padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); font-size: 14px; }
+.hend { margin-top: 10px; gap: 10px; align-items: center; }
+.hpause { border-color: #d39b1c; }

@@ -203,14 +203,17 @@ export class CultApi {
   // ---------- harvest day + Live Bonus (084) ----------
   private async rpc84<T = unknown>(fn: string, args: object): Promise<T> {
     const { data, error } = await this.sb.rpc(fn, args)
+    if (error && (/harvest_day_breaks_kind_check/.test(error.message) || (/Could not find the function|does not exist/.test(error.message) && /harvest_day_(end|reopen)/.test(fn)))) throw new Error('Run 087_harvest_pause_end.sql in Supabase first')
     if (error && /Could not find the function|does not exist/.test(error.message)) throw new Error('Run 084_harvest_days.sql in Supabase first')
     fail(error); return data as T
   }
   harvestDay(site: string, day: string) { return this.rpc84<HarvestDay>('harvest_day_get', { p_site: site, p_day: day }) }
   saveHarvestDay(site: string, day: string, p: Partial<Record<keyof HarvestDay, string | number | null>>) { return this.rpc84<number>('harvest_day_save', { p_site: site, p_day: day, p }) }
-  breakStart(site: string, day: string, kind: 'break' | 'lunch', at: string | null = null) { return this.rpc84<number>('harvest_break_start', { p_site: site, p_day: day, p_kind: kind, p_at: at }) }
+  breakStart(site: string, day: string, kind: 'break' | 'lunch' | 'pause', at: string | null = null) { return this.rpc84<number>('harvest_break_start', { p_site: site, p_day: day, p_kind: kind, p_at: at }) }
   breakEnd(id: number, at: string | null = null) { return this.rpc84('harvest_break_end', { p_id: id, p_at: at }) }
   breakEdit(id: number, kind: string, start: string, end: string | null) { return this.rpc84('harvest_break_edit', { p_id: id, p_kind: kind, p_start: start, p_end: end }) }
+  endDay(site: string, day: string) { return this.rpc84('harvest_day_end', { p_site: site, p_day: day, p_at: null }) }
+  reopenDay(site: string, day: string) { return this.rpc84('harvest_day_reopen', { p_site: site, p_day: day }) }
   breakRemove(id: number) { return this.rpc84('harvest_break_remove', { p_id: id }) }
   setPalletTime(id: number, time: string | null) { return this.rpc84('cult_set_pallet_time', { p_pallet: id, p_time: time }) }
   bonusLive(token: string, day: string | null = null) { return this.rpc84<BonusData | null>('bonus_live', { p_token: token, p_day: day }) }

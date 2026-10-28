@@ -14,6 +14,7 @@ const money = (n: number) => `$${n.toFixed(2)}`
 const hhmm = (s: string | null | undefined) => (s ? s.slice(0, 5) : '')
 const nowHHMM = () => { const d = new Date(); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` }
 const fmtT = (s: string | null | undefined) => { const m = hm(s); return m == null ? '' : clock(m) }
+const KIND: Record<string, string> = { break: 'Break', lunch: 'Lunch', pause: 'Line paused' }
 
 type Form = { room_start: string; box_start: string; people: number | null; buckers: number | null; cutters: number | null; est_hours: number | null; hurdle: number | null; hourly: number | null; per_lb: number | null }
 const toForm = (d: HarvestDay): Form => ({ room_start: hhmm(d.room_start), box_start: hhmm(d.box_start), people: d.people, buckers: d.buckers, cutters: d.cutters,
@@ -65,7 +66,7 @@ export function HarvestDayCard({ site, day, api, flash, startOpen }: { site: str
         <div><b>{live.avgPalletMin != null ? live.avgPalletMin.toFixed(1) : '—'}</b><span>min / pallet</span></div>
         <div><b>{money(live.won ? live.bonusNow : live.bonusAtStake)}</b><span>{live.won ? 'bonus / hr earned' : 'bonus / hr at stake'}</span></div>
       </div>}
-      {!open && <p className="muted small">{summary}{going ? ` · ${going.kind === 'lunch' ? 'lunch' : 'break'} since ${fmtT(going.start_at)}` : ''}</p>}
+      {!open && <p className="muted small">{summary}{going ? ` · ${KIND[going.kind].toLowerCase()} since ${fmtT(going.start_at)}` : ''}{d.end_at ? ` · ended ${fmtT(d.end_at)}` : ''}</p>}
       {open && <>
         {d.is_new && <p className="cnote">Not started yet. The numbers are from the last harvest day at {site}; fix them and Save.</p>}
         <div className="hpal hday3">
@@ -86,7 +87,7 @@ export function HarvestDayCard({ site, day, api, flash, startOpen }: { site: str
         <h4 className="csec">Breaks <span className="muted">time on a break doesn't count toward pallet times or speed</span></h4>
         {d.breaks.length > 0 && <div className="dlist">{d.breaks.map(b => edBreak?.id === b.id
           ? <div key={b.id} className="drow hbreak">
-              <select value={edBreak.kind} onChange={e => setEdBreak({ ...edBreak, kind: e.target.value })}><option value="break">Break</option><option value="lunch">Lunch</option></select>
+              <select value={edBreak.kind} onChange={e => setEdBreak({ ...edBreak, kind: e.target.value })}><option value="break">Break</option><option value="lunch">Lunch</option><option value="pause">Line paused</option></select>
               <input type="time" value={edBreak.start} onChange={e => setEdBreak({ ...edBreak, start: e.target.value })} aria-label="Start" />
               <input type="time" value={edBreak.end} onChange={e => setEdBreak({ ...edBreak, end: e.target.value })} aria-label="End" />
               <button className="primary small" disabled={busy || !edBreak.start} onClick={() => run(() => api.breakEdit(b.id, edBreak.kind, edBreak.start, edBreak.end || null), 'Break fixed').then(() => setEdBreak(null))}>Save</button>
@@ -94,16 +95,23 @@ export function HarvestDayCard({ site, day, api, flash, startOpen }: { site: str
               <button className="ghost small" disabled={busy} onClick={() => run(() => api.breakRemove(b.id), 'Break removed').then(() => setEdBreak(null))}>✕</button>
             </div>
           : <div key={b.id} className="drow">
-              <span className="grow"><b>{b.kind === 'lunch' ? 'Lunch' : 'Break'}</b> <span className="muted">{fmtT(b.start_at)} to {b.end_at ? fmtT(b.end_at) : 'now'}{b.end_at ? ` · ${(hm(b.end_at)! - hm(b.start_at)!)} min` : ''}</span></span>
-              {edit && !b.end_at && <button className="primary small" disabled={busy} onClick={() => run(() => api.breakEnd(b.id), `${b.kind === 'lunch' ? 'Lunch' : 'Break'} ended`)}>End now</button>}
+              <span className="grow"><b>{KIND[b.kind] ?? b.kind}</b> <span className="muted">{fmtT(b.start_at)} to {b.end_at ? fmtT(b.end_at) : 'now'}{b.end_at ? ` · ${(hm(b.end_at)! - hm(b.start_at)!)} min` : ''}</span></span>
+              {edit && !b.end_at && <button className="primary small" disabled={busy} onClick={() => run(() => api.breakEnd(b.id), b.kind === 'pause' ? 'Line running again' : `${KIND[b.kind]} ended`)}>End now</button>}
               {edit && <button className="ghost small" disabled={busy} onClick={() => setEdBreak({ id: b.id, kind: b.kind, start: hhmm(b.start_at), end: hhmm(b.end_at) })}>Edit</button>}
             </div>)}</div>}
-        {edit && !going && <div className="row wrap">
+        {edit && !going && !d.end_at && <div className="row wrap">
           {isToday && <><button className="ghost" disabled={busy} onClick={() => run(() => api.breakStart(site, day, 'break'), 'Break started')}>Start break now</button>
-            <button className="ghost" disabled={busy} onClick={() => run(() => api.breakStart(site, day, 'lunch'), 'Lunch started')}>Start lunch now</button></>}
+            <button className="ghost" disabled={busy} onClick={() => run(() => api.breakStart(site, day, 'lunch'), 'Lunch started')}>Start lunch now</button>
+            <button className="ghost hpause" disabled={busy} title="Line down, technical issue: the time doesn't count" onClick={() => run(() => api.breakStart(site, day, 'pause'), 'Line paused')}>⏸ Pause the line</button></>}
           <button className="linkbtn" disabled={busy} onClick={() => { const s = window.prompt('Break start (HH:MM, 24-hour)', '10:00'); if (s && /^\d{1,2}:\d{2}$/.test(s)) run(() => api.breakStart(site, day, 'break', s), 'Break added') }}>Add a past break…</button>
         </div>}
       </>}
+      {open && edit && !d.is_new && <div className="row wrap hend">
+        {d.end_at
+          ? <><span className="muted">Day ended at {fmtT(d.end_at)}. The bonus screen shows the final numbers.</span>
+              <button className="linkbtn" disabled={busy} onClick={() => run(() => api.reopenDay(site, day), 'Day reopened')}>Reopen the day</button></>
+          : <button className="ghost" disabled={busy} onClick={() => window.confirm(`End the ${site} harvest day now? Anything still running (a break or pause) ends too, and the bonus screen shows the final numbers.`) && run(() => api.endDay(site, day), 'Harvest day ended')}>End the day</button>}
+      </div>}
       {url && <div className="row wrap hbonus">
         <a className="ghost small" href={url} target="_blank" rel="noreferrer">Open Live Bonus screen</a>
         <button className="ghost small" onClick={() => navigator.clipboard?.writeText(url).then(() => flash('Link copied. Open it on the TV.'), () => window.prompt('Copy this link', url))}>Copy TV link</button>

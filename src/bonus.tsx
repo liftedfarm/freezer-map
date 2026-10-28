@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Backend } from './api'
-import { clock, computeBonus, SPEED_MAX, SPEED_RED, SPEED_YELLOW, speedLevel } from './cult/bonuscalc'
+import { clock, computeBonus, hm, SPEED_MAX, SPEED_RED, SPEED_YELLOW, speedLevel } from './cult/bonuscalc'
 import type { BonusData, BonusView, Level } from './cult/bonuscalc'
 import './bonus.css'
 
@@ -61,10 +61,10 @@ export function BonusScreen({ backend, token }: { backend: Backend; token: strin
         <div className="bz-top">
           <div className="bz-brand"><img className="bz-logo" src="/logo-light.svg" alt="Lifted Farms" /><span className="bz-dim">Cosecha en vivo · {d.site}</span></div>
           <div className="bz-var"><span className="bz-cap">Variedad ahora</span><b>{v.variety ?? '—'}</b></div>
-          <div className="bz-clock"><b>{d.is_today ? clock(nowMin) : 'Día cerrado'}</b><span className="bz-dim">{fecha(d.day)}</span></div>
+          <div className="bz-clock"><b>{v.ended ? `Terminó ${clock(hm(v.ended)!)}` : d.is_today ? clock(nowMin) : 'Día cerrado'}</b><span className="bz-dim">{fecha(d.day)}</span></div>
         </div>
         {(!v.ready || v.onBreak) && <div className="bz-banner">
-          {v.onBreak ? `${v.onBreak.kind === 'lunch' ? 'Almuerzo' : 'Descanso'} desde ${clock((Number(v.onBreak.start_at.slice(0, 2)) * 60) + Number(v.onBreak.start_at.slice(3, 5)))}. El tiempo no cuenta.`
+          {v.onBreak ? (v.onBreak.kind === 'pause' ? `Línea en pausa desde ${clock(hm(v.onBreak.start_at)!)}. El tiempo no cuenta.` : `${v.onBreak.kind === 'lunch' ? 'Almuerzo' : 'Descanso'} desde ${clock(hm(v.onBreak.start_at)!)}. El tiempo no cuenta.`)
             : `Falta en la tarjeta del día: ${v.missing.map(m => MISSING[m] ?? m).join(', ')}`}</div>}
         <div className="bz-main">
           <Hero v={v} />
@@ -80,14 +80,17 @@ export function BonusScreen({ backend, token }: { backend: Backend; token: strin
 }
 
 function Hero({ v }: { v: BonusView }) {
-  const label = v.won ? 'Bono ganado · por hora' : 'Bono en juego · por hora'
-  const big = v.won ? money(v.bonusNow) : money(v.bonusAtStake)
-  const sub = v.level === 'wait' ? (v.pallets ? 'Completen la tarjeta del día en Producción › Cosecha.' : 'Los números empiezan con la primera tarima.')
+  const over = !!v.ended && !v.won
+  const label = v.won ? 'Bono ganado · por hora' : over ? 'Sin bono hoy' : 'Bono en juego · por hora'
+  const big = v.won ? money(v.bonusNow) : over ? money(0) : money(v.bonusAtStake)
+  const sub = over ? (v.corr != null && v.hurdle != null ? `Faltaron ${n0(v.hurdle - v.corr)} libras por persona.` : '')
+    : v.ended && v.won ? `Día terminado. ${n0(v.packed)} libras empacadas.`
+    : v.level === 'wait' ? (v.pallets ? 'Completen la tarjeta del día en Producción › Cosecha.' : 'Los números empiezan con la primera tarima.')
     : v.won ? `Sigue subiendo con cada libra. Proyectado: ${money(v.bonusProj || v.bonusNow)} por hora.`
     : v.corr != null && v.hurdle != null ? `Faltan ${n0(v.hurdle - v.corr)} libras por persona para ganarlo.` : ''
   return (
     <div className="bz-card bz-hero">
-      <div className="bz-pill"><i />{v.won ? '¡META ALCANZADA!' : v.level === 'wait' && v.pallets ? 'FALTAN DATOS DEL DÍA' : STATUS[v.level]}</div>
+      <div className="bz-pill"><i />{v.won ? '¡META ALCANZADA!' : over ? 'DÍA TERMINADO' : v.level === 'wait' && v.pallets ? 'FALTAN DATOS DEL DÍA' : STATUS[v.level]}</div>
       <div className="bz-herorow">
         <div className="bz-herobody">
           <div className="bz-herolab">{label}</div>
@@ -140,7 +143,7 @@ function Meta({ v }: { v: BonusView }) {
       <div className="bz-nums">
         <div><span className="bz-cap">Ahora</span><b className={`bz-xl${v.won ? ' won' : ''}`}>{v.corr != null ? v.corr.toFixed(1) : '—'}</b></div>
         <div><span className="bz-cap">Meta</span><b className="bz-l">{v.hurdle != null ? n0(v.hurdle) : '—'}</b></div>
-        <div><span className="bz-cap">Proyección</span><b className="bz-l lv">{v.proj != null && v.pallets ? n0(v.proj) : '—'}</b></div>
+        <div><span className="bz-cap">{v.ended ? 'Final' : 'Proyección'}</span><b className="bz-l lv">{v.proj != null && v.pallets ? n0(v.proj) : '—'}</b></div>
       </div>
       <div className="bz-bar">
         <div className="bz-track" />

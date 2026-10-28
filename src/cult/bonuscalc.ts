@@ -6,7 +6,7 @@
 
 export interface BonusCard {
   room_start: string | null; box_start: string | null; people: number | null; buckers: number | null; cutters: number | null
-  est_hours: number; hurdle: number | null; hourly: number; per_lb: number
+  est_hours: number; hurdle: number | null; hourly: number; per_lb: number; end_at?: string | null
 }
 export interface BonusBreak { kind: string; start_at: string; end_at: string | null }
 export interface BonusPallet { code: string; strain: string; lbs: number; min: number }
@@ -49,7 +49,7 @@ export interface BonusView {
   corr: number | null; hurdle: number | null; proj: number | null; won: boolean; level: Level
   bonusNow: number; bonusProj: number; bonusAtStake: number; hourly: number; payNow: number; payProj: number
   speed: number | null; need: number | null; avgPalletMin: number | null
-  workedH: number; estHours: number; onBreak: BonusBreak | null; variety: string | null
+  workedH: number; estHours: number; onBreak: BonusBreak | null; variety: string | null; ended: string | null
   series: { strain: string; v: number; min: number; code: string }[]
 }
 
@@ -61,7 +61,9 @@ export function computeBonus(d: BonusData, nowMin: number): BonusView {
   const people = c?.people ?? null, buckers = c?.buckers ?? null, hurdle = c?.hurdle ?? null
   const est = Number(c?.est_hours ?? 8) || 8, perLb = Number(c?.per_lb ?? 0.25), hourly = Number(c?.hourly ?? 18)
   const missing = [!c?.box_start && 'box start', !people && 'people', !buckers && 'buckers', !hurdle && 'La Meta'].filter(Boolean) as string[]
-  const now = d.is_today ? nowMin : Math.max(nowMin, ps.length ? ps[ps.length - 1].min : 0)
+  const endMin = hm(c?.end_at)
+  const live = d.is_today && endMin == null
+  const now = endMin != null ? endMin : d.is_today ? nowMin : Math.max(nowMin, ps.length ? ps[ps.length - 1].min : 0)
 
   const packed = ps.reduce((s, p) => s + Number(p.lbs || 0), 0)
   const series: BonusView['series'] = []
@@ -82,23 +84,23 @@ export function computeBonus(d: BonusData, nowMin: number): BonusView {
   const avgPalletMin = gaps.length ? gaps.reduce((s, g) => s + g, 0) / gaps.length : null
 
   const workedH = start != null ? worked(d.breaks, start, now, now) / 60 : 0
-  const remaining = d.is_today ? Math.max(0, est - workedH) : 0
+  const remaining = live ? Math.max(0, est - workedH) : 0
   const projPacked = packed + lbsPerHr * remaining
   const corr = people ? packed / people : null
   const proj = people ? projPacked / people : null
   const won = corr != null && hurdle != null && corr > hurdle
   const ratio = proj != null && hurdle ? proj / hurdle : null
-  const level: Level = !ps.length || ratio == null ? 'wait' : won ? 'g' : ratio >= 1.05 ? 'g' : ratio >= 0.9 ? 'y' : 'r'
+  const level: Level = !ps.length || ratio == null ? 'wait' : won ? 'g' : !live && endMin != null ? 'r' : ratio >= 1.05 ? 'g' : ratio >= 0.9 ? 'y' : 'r'
   const per = (lbs: number) => (people ? lbs * perLb / people / est : 0)
   const bonusNow = won ? per(packed) : 0
   const bonusProj = proj != null && hurdle != null && proj > hurdle ? per(projPacked) : 0
   const bonusAtStake = people && hurdle ? per(Math.max(projPacked, hurdle * people)) : 0
   const need = !won && people && hurdle && buckers && remaining > 0 ? Math.max(0, (hurdle * people - packed) / (buckers * remaining)) : null
-  const onBreak = d.is_today ? d.breaks.find(b => !b.end_at) ?? null : null
+  const onBreak = live ? d.breaks.find(b => !b.end_at) ?? null : null
 
   return {
     ready: missing.length === 0, missing, packed, pallets: ps.length, people, buckers, corr, hurdle, proj, won, level,
     bonusNow, bonusProj, bonusAtStake, hourly, payNow: hourly + bonusNow, payProj: hourly + bonusProj,
-    speed, need, avgPalletMin, workedH, estHours: est, onBreak, variety: last?.strain ?? null, series,
+    speed, need, avgPalletMin, workedH, estHours: est, onBreak, variety: last?.strain ?? null, series, ended: endMin != null ? c!.end_at! : null,
   }
 }

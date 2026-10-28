@@ -51,8 +51,8 @@ export interface CPallet {
 export interface HarvestDay {
   id?: number; is_new: boolean; site: string; day: string
   room_start: string | null; box_start: string | null; people: number | null; buckers: number | null; cutters: number | null
-  est_hours: number; hurdle: number | null; hourly: number; per_lb: number; notes?: string | null
-  breaks: { id: number; kind: 'break' | 'lunch'; start_at: string; end_at: string | null }[]
+  est_hours: number; hurdle: number | null; hourly: number; per_lb: number; notes?: string | null; end_at?: string | null
+  breaks: { id: number; kind: 'break' | 'lunch' | 'pause'; start_at: string; end_at: string | null }[]
 }
 /** one weight logged on the Harvest screen (026) */
 export interface CWeight { id: number; harvest_id: number; kind: 'raw' | 'tote' | 'dry'; lbs: number; pushed?: boolean; tag: string | null; note: string | null; created_by: string | null; created_at: string }
