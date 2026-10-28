@@ -92,7 +92,9 @@ export async function planTransfer(ctx, spec) {
 
   if (checks.some(c => !c.ok)) return { checks, body: null, type }
   const unitLb = (inp.unitsOfMeasure ?? []).find(u => /^(lb|pound)/i.test(u.abbreviation ?? u.name ?? ''))?.id
-  const dep = new Date(Date.now() + 5 * 60000)
+  // the departure time picked at Depart (loaded the night before, leaving early), never earlier than 5 minutes from now
+  const planned = spec.loadId ? (await db(`loads?id=eq.${Number(spec.loadId)}&select=depart_planned`).catch(() => []))?.[0]?.depart_planned : null
+  const dep = new Date(Math.max(Date.now() + 5 * 60000, planned ? new Date(planned).getTime() : 0))
   const arr = new Date(dep.getTime() + (Number(await setting('comp.metrc_transit_hours', '3')) || 3) * 3600000)
   const gross = !!type.requiresPackagesGrossWeight, destGross = !!type.requiresDestinationGrossWeight
   const total = r4(found.reduce((s, p) => s + Number(p.m.quantity || 0), 0))

@@ -245,6 +245,7 @@ export function LoadView({ ctx, loadId, onBack, onEdit }: { ctx: LoadCtx; loadId
   const [ship, setShip] = useState<Map<number, StopShipping>>(new Map())
   const [left, setLeft] = useState<{ invoices?: { id: number; inv: string; total: number; customer: string }[] } | null>(null)
   const [manifestFor, setManifestFor] = useState<{ stop: number; value: string } | null>(null)
+  const [departAsk, setDepartAsk] = useState(false)
   const [carrier, setCarrier] = useState<string | null>(null)
   useEffect(() => {
     const sb = ctx.api.client(); if (!sb) return
@@ -369,10 +370,30 @@ export function LoadView({ ctx, loadId, onBack, onEdit }: { ctx: LoadCtx; loadId
           <button className="primary small" disabled={ctx.busy} onClick={depart}>Depart again</button>
           <button className="ghost small" disabled={ctx.busy} onClick={() => ctx.confirm(`Send ${l.code} back to loading? Its manifest to-dos are cancelled. (Only works if METRC hasn't made a manifest yet.)`, 'Back to loading', departBack)}>Back to loading</button>
         </div></div>}
-      {left && (l.status === 'in_transit' || l.status === 'delivered') && <div className="okbox">
-        <b>{isPickup(l) ? 'Picked up.' : 'Left.'}</b> {left.invoices?.length ? <>Invoices made: {left.invoices.map(i => `${i.inv} ${i.customer} ${money(i.total)}`).join(' · ')}. They go to QuickBooks in 30 minutes unless someone changes them.</> : 'No invoices (transfer only).'}
-        {' '}Print the METRC manifest from each stop below.
-        <div className="row end"><button className="ghost small" onClick={() => setLeft(null)}>OK</button></div></div>}
+      {left && (l.status === 'in_transit' || l.status === 'delivered') && (() => {
+        const dep = l.departed_at ? new Date(l.departed_at) : new Date()
+        const at = (d: Date) => d.toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+        const stops = ctx.stops.filter(s => s.load_id === l.id && s.manifest && /^\d{6,}$/.test(s.manifest.trim())).sort((a, b) => a.seq - b.seq)
+        return <div className="okbox">
+          <b>{isPickup(l) ? 'Picked up' : 'Departs'} {at(dep)}.</b> {left.invoices?.length ? <>Invoices made: {left.invoices.map(i => `${i.inv} ${i.customer} ${money(i.total)}`).join(' · ')}. They go to QuickBooks at {at(new Date(dep.getTime() + 30 * 60000))} (30 minutes after departure) unless someone changes them.</> : 'No invoices (transfer only).'}
+          {stops.length > 0 && <div className="row wrap" style={{ marginTop: 8, gap: 6 }}>
+            {stops.map(s => <button key={s.id} className="primary small" onClick={() => {
+              const sb = ctx.api.client(); const fr = ctx.items.filter(i => i.stop_id === s.id).map(i => i.from_site).filter(Boolean) as string[]
+              const lic = siteLicense(lics, fr[0] ?? '')
+              if (sb && lic) openMetrcManifest(sb, lic, s.manifest!.trim()).catch(e => ctx.run(() => Promise.reject(e), ''))
+            }}>Print manifest {s.manifest} · stop {s.seq} {ctx.customers.find(c => c.id === s.customer_id)?.name ?? ''}</button>)}
+          </div>}
+          {!stops.length && <> Print the METRC manifest from each stop below.</>}
+          <div className="row end"><button className="ghost small" onClick={() => setLeft(null)}>OK</button></div></div>
+      })()}
+      {departAsk && <DepartSheet l={l} pickup={isPickup(l)} n={items.length} metrcOn={metrcOn} busy={ctx.busy} onClose={() => setDepartAsk(false)}
+        onGo={async at => {
+          setDepartAsk(false)
+          const sb = ctx.api.client()
+          if (sb) { try { await rpc(sb, 'set_depart_time', { p_load: l.id, p_at: at.toISOString() }) } catch (e) {
+            const m = (e as Error).message; if (!/set_depart_time|schema cache/i.test(m)) { await ctx.run(() => Promise.reject(e), ''); return } } }
+          await depart()
+        }} />}
 
       {isPickup(l) && <PickupPanel load={l} canEdit={canEdit} onSave={v => ctx.run(() => rpc(ctx.api.client(), 'set_pickup_driver',
         { p_load: l.id, p_driver: v.driver, p_dl: v.dl, p_make: v.make, p_model: v.model, p_plate: v.plate, p_license: v.license }), 'Driver saved')} />}
@@ -512,7 +533,7 @@ export function LoadView({ ctx, loadId, onBack, onEdit }: { ctx: LoadCtx; loadId
           const blocked = (blockers?.length ?? 0) > 0
           return <button className="primary" disabled={ctx.busy || !items.length || unloaded > 0 || metrcBlock.length > 0 || blocked}
             title={unloaded ? `${unloaded} not loaded yet` : metrcBlock.length ? `METRC checklist not green: stop ${metrcBlock.join(', ')}` : blocked ? 'See the list above' : ''}
-            onClick={() => ctx.confirm(`${isPickup(l) ? 'They are leaving' : 'Truck is leaving'} with ${items.length} pallet${items.length === 1 ? '' : 's'}?${metrcOn ? ' The app makes the METRC manifests first, then' : ' The app'} marks the orders shipped and makes the invoices${isPickup(l) ? ' (no shipping)' : ''}.`, go, depart)}>
+            onClick={() => setDepartAsk(true)}>
             {unloaded ? `${go} (${unloaded} not loaded)` : metrcBlock.length ? `${go} (METRC check)` : blocked ? `${go} (not ready)` : go}</button>
         })()}
         {canEdit && <button className="ghost" disabled={ctx.busy} onClick={() => ctx.confirm(`Cancel ${l.code}? Planned pallets stay where they are${(ctx.orders ?? []).some(o => o.stop?.load_id === l.id) ? ', and its orders go back to Ready in Fulfillment' : ''}.`, 'Cancel load', async () => { if (await ctx.run(async () => { await ctx.api.cancelLoad(l.id); await ctx.refreshOrders?.() }, `${l.code} cancelled`)) onBack() })}>Cancel load</button>}
@@ -733,4 +754,37 @@ export function PickLoad({ ctx, ps, onClose }: { ctx: LoadCtx; ps: Pallet[]; onC
       </div>
     </div>
   )
+}
+
+/** Depart: when the truck actually leaves (default now; the night before for an early start) */
+function DepartSheet({ l, pickup, n, metrcOn, busy, onClose, onGo }: {
+  l: Load; pickup: boolean; n: number; metrcOn: boolean; busy: boolean; onClose: () => void; onGo: (at: Date) => void
+}) {
+  const local = (d: Date) => { const p = (x: number) => String(x).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}` }
+  const [v, setV] = useState(local(new Date()))
+  const at = new Date(v)
+  const ok = !isNaN(at.getTime()) && at.getTime() > Date.now() - 12 * 3600000 && at.getTime() < Date.now() + 3 * 86400000
+  const later = ok && at.getTime() > Date.now() + 10 * 60000
+  const fmt = (d: Date) => d.toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+  return <div className="scrim" onClick={onClose}>
+    <div className="sheet form" onClick={e => e.stopPropagation()}>
+      <div className="sheet-h"><h2>{pickup ? 'Picked up' : 'Depart'} {l.code}</h2><button className="ghost" onClick={onClose}>✕</button></div>
+      <p>{pickup ? 'They are leaving' : 'Truck is leaving'} with {n} pallet{n === 1 ? '' : 's'}.</p>
+      <div className="field"><label>Departure time</label>
+        <input type="datetime-local" value={v} onChange={e => setV(e.target.value)} />
+        <div className="row" style={{ gap: 6, marginTop: 6 }}>
+          <button className="ghost small" onClick={() => setV(local(new Date()))}>Now</button>
+          {[5, 6, 7].map(h => { const d = new Date(); d.setDate(d.getDate() + (new Date().getHours() >= h ? 1 : 0)); d.setHours(h, 0, 0, 0)
+            return <button key={h} className="ghost small" onClick={() => setV(local(d))}>{d.getDate() !== new Date().getDate() ? 'Tomorrow ' : ''}{h}:00 am</button> })}
+        </div>
+        {!ok && <div className="warn-t small-note">Pick a time between 12 hours ago and 3 days from now.</div>}
+      </div>
+      <div className="metrcnote"><b>What happens now</b> {metrcOn ? 'The METRC manifests are made right away' : 'The orders are marked shipped'}{metrcOn ? ` (estimated departure ${ok ? fmt(at) : '…'}), so you can print them tonight. The orders are marked shipped` : ''} and the invoices are made. {!pickup && <>Customer invoices go to QuickBooks at <b>{ok ? fmt(new Date(at.getTime() + 30 * 60000)) : '…'}</b>, 30 minutes after departure.</>}
+        {later && <> The load shows In transit from now; the pallets are on the truck.</>}</div>
+      <div className="row end">
+        <button className="ghost" onClick={onClose}>Cancel</button>
+        <button className="primary" disabled={busy || !ok} onClick={() => onGo(at)}>{pickup ? 'Picked up' : later ? `Depart at ${fmt(at)}` : 'Depart now'}</button>
+      </div>
+    </div>
+  </div>
 }
