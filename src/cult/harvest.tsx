@@ -99,7 +99,7 @@ function HCard({ h, c, extra, onOpen }: { h: Harvest; c: Ctx; extra?: string; on
   const est = h.kind === 'ff' ? k.estFF : h.kind === 'dry' ? k.estRaw : k.estBiomass
   const logged = h.kind === 'ff' ? k.palletLbs : h.kind === 'dry' ? (k.actRaw ?? 0) : Number(h.dry_lbs ?? 0)
   const rawLbs = sum(h.raw_bins)
-  const pct = est && logged ? Math.min(100, Math.round((logged / est) * 100)) : null
+  const pct = est ? Math.min(100, Math.round(((logged || 0) / est) * 100)) : null
   const facts: string[] = []
   if (plants) facts.push(`${n0(plants)} plants`)
   if (h.kind === 'ff') {
@@ -124,7 +124,7 @@ function HCard({ h, c, extra, onOpen }: { h: Harvest; c: Ctx; extra?: string; on
         <div className="hfacts">{facts.map((f, i) => <span key={i}>{f}</span>)}</div>
         {(going || logged > 0) && h.kind === 'ff' ? <div className="hprog">
             <div className="hprog-bar"><i style={{ width: `${pct ?? 0}%` }} /></div>
-            <span>{k.pallets.length} pallet{k.pallets.length === 1 ? '' : 's'} · <b>{n0(logged)}</b> lbs packed{est ? ` of ~${n0(est)} (${pct}%)` : ''}{rawLbs ? ` · ${n0(rawLbs)} lbs raw in ${h.raw_bins.length} bins` : ''}</span>
+            <span>{k.pallets.length} pallet{k.pallets.length === 1 ? '' : 's'} · <b>{n0(logged)}</b> lbs packed{est ? ` of ~${n0(est)} (${pct}%)` : ''}{rawLbs ? ` · ${n0(rawLbs)} lbs raw in ${h.raw_bins.length} bin${h.raw_bins.length === 1 ? '' : 's'}` : ''}</span>
           </div>
           : <div className="muted small">{extra ?? STEP[h.kind]}{logged > 0 ? ` · ${n0(logged)} lbs logged` : ''}</div>}
         {going && extra && <div className="muted small">{extra}</div>}
