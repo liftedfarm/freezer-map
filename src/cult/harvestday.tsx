@@ -69,10 +69,10 @@ export function HarvestDayCard({ site, day, api, flash, startOpen }: { site: str
       {open && <>
         {d.is_new && <p className="cnote">Not started yet. The numbers are from the last harvest day at {site}; fix them and Save.</p>}
         <div className="hpal hday3">
-          <label><span>Room start</span><div className="row"><input type="time" value={f.room_start} disabled={!edit} onChange={e => set({ room_start: e.target.value })} />
-            {edit && isToday && !f.room_start && <button className="ghost small" onClick={() => set({ room_start: nowHHMM() })}>Now</button>}</div></label>
-          <label><span>First box tagged</span><div className="row"><input type="time" value={f.box_start} disabled={!edit} onChange={e => set({ box_start: e.target.value })} />
-            {edit && isToday && !f.box_start && <button className="ghost small" onClick={() => set({ box_start: nowHHMM() })}>Now</button>}</div></label>
+          <label><span>Room start{edit && isToday && !f.room_start && <> · <a className="linkbtn" onClick={e => { e.preventDefault(); set({ room_start: nowHHMM() }) }}>now</a></>}</span>
+            <input type="time" value={f.room_start} disabled={!edit} onChange={e => set({ room_start: e.target.value })} /></label>
+          <label><span>First box tagged{edit && isToday && !f.box_start && <> · <a className="linkbtn" onClick={e => { e.preventDefault(); set({ box_start: nowHHMM() }) }}>now</a></>}</span>
+            <input type="time" value={f.box_start} disabled={!edit} onChange={e => set({ box_start: e.target.value })} /></label>
           <label><span>People (labor chart)</span><NumIn value={f.people} onChange={v => set({ people: v })} /></label>
           <label><span>Buckers</span><NumIn value={f.buckers} onChange={v => set({ buckers: v })} /></label>
           <label><span>Cutters</span><NumIn value={f.cutters} onChange={v => set({ cutters: v })} /></label>

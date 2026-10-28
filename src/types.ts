@@ -7,6 +7,7 @@ export interface Freezer {
   site: Site
   number: number
   kind?: 'freezer' | 'staging' | 'trailer'
+  active?: boolean
   status: FreezerStatus
   notes?: string | null
 }

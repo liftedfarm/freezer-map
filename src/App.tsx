@@ -33,6 +33,7 @@ import { ReservesView, SALES_TITLES } from './reserves'
 import type { SalesMode } from './reserves'
 import { Portal, PortalLink, PortalLogin } from './portal'
 import { BonusScreen } from './bonus'
+import { DistLocations } from './locations'
 import { DistDashboard } from './distdash'
 import { CULT_TABS, CULT_TAIL } from './cult/tabs'
 import type { CultTab } from './cult/tabs'
@@ -608,8 +609,8 @@ export default function App() {
   )
   if (!snap || !ix) return <Splash />
 
-  const siteFreezers = snap.freezers.filter(f => f.site === site && (f.kind ?? 'freezer') === 'freezer').sort((a, b) => a.number - b.number)
-  const siteTrailers = snap.freezers.filter(f => f.site === site && f.kind === 'trailer').sort((a, b) => a.number - b.number)
+  const siteFreezers = snap.freezers.filter(f => f.site === site && (f.kind ?? 'freezer') === 'freezer' && f.active !== false).sort((a, b) => a.number - b.number)
+  const siteTrailers = snap.freezers.filter(f => f.site === site && f.kind === 'trailer' && f.active !== false).sort((a, b) => a.number - b.number)
   const unplaced = snap.pallets.filter(p => p.status === 'unslotted' && !p.container_id)
   const review = snap.pallets.filter(p => p.needs_review)
   const pendingTags = snap.pallets.filter(p => p.tag_pending)
@@ -742,7 +743,7 @@ export default function App() {
   const invStrains = snap.pallets.reduce((m, p) => p.strain ? m.set(p.strain, (m.get(p.strain) ?? 0) + 1) : m, new Map<string, number>())
   // each module's settings, used in the module and again in Admin > Settings
   const distSettings = <SettingsView key="dist-set" backend={backend} flash={flash} onChanged={() => { reload() }} inventoryStrains={invStrains} title="Distribution settings" lists={['strains']}
-    extra={[{ k: 'vehicles', l: 'Vehicles', node: <CompFleet sb={backend.client()} flash={flash} dept="distribution" /> }, { k: 'people', l: 'People', node: <ModulePeople sb={backend.client()} module="distribution" flash={flash} /> }]} />
+    extra={[{ k: 'locations', l: 'Locations', node: <DistLocations sb={backend.client()} flash={flash} onChanged={() => { reload() }} /> }, { k: 'vehicles', l: 'Vehicles', node: <CompFleet sb={backend.client()} flash={flash} dept="distribution" /> }, { k: 'people', l: 'People', node: <ModulePeople sb={backend.client()} module="distribution" flash={flash} /> }]} />
   const salesSettings = <SettingsView key="sales-set" backend={backend} flash={flash} onChanged={() => { reload() }} inventoryStrains={invStrains} title="Sales settings" focus="sales"
     lists={['customers', 'strains']} canTerms={salesAdmin} extra={[{ k: 'terms', l: 'Payment terms', node: <TermsPanel backend={backend} flash={flash} canEdit={salesAdmin} /> },
       { k: 'deadlines', l: 'Reserve deadlines', node: <DeadlinesPanel backend={backend} flash={flash} /> },

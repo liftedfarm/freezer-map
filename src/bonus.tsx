@@ -59,7 +59,7 @@ export function BonusScreen({ backend, token }: { backend: Backend; token: strin
     <div className="bz-wrap">
       <div className={`bz${!v.ready || v.onBreak ? ' banner' : ''}`} ref={stage} style={{ transform: `translate(${fit.x}px, ${fit.y}px) scale(${fit.s})` }} data-level={v.level}>
         <div className="bz-top">
-          <div className="bz-brand"><img className="bz-logo" src="/logo-dark.svg" alt="Lifted Farms" /><span className="bz-dim">Cosecha en vivo · {d.site}</span></div>
+          <div className="bz-brand"><img className="bz-logo" src="/logo-light.svg" alt="Lifted Farms" /><span className="bz-dim">Cosecha en vivo · {d.site}</span></div>
           <div className="bz-var"><span className="bz-cap">Variedad ahora</span><b>{v.variety ?? '—'}</b></div>
           <div className="bz-clock"><b>{d.is_today ? clock(nowMin) : 'Día cerrado'}</b><span className="bz-dim">{fecha(d.day)}</span></div>
         </div>
@@ -110,24 +110,24 @@ function StatusIcon({ level, won }: { level: Level; won: boolean }) {
   const dark = '#0D1310'
   if (won || level === 'g') return (
     <svg className={`bz-icon${won ? ' won' : ''}`} viewBox="0 0 100 100" role="img" aria-label="En meta">
-      <circle cx="50" cy="50" r="46" fill="var(--g)" />
-      <path d="M28 52 L44 67 L73 35" fill="none" stroke={dark} strokeWidth="11" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="50" cy="50" r="46" fill="var(--gi)" />
+      <path d="M28 52 L44 67 L73 35" fill="none" stroke="#FFFFFF" strokeWidth="11" strokeLinecap="round" strokeLinejoin="round" />
     </svg>)
   if (level === 'y') return (
     <svg className="bz-icon" viewBox="0 0 100 100" role="img" aria-label="Cerca">
-      <path d="M50 6 Q54 6 56.5 10.5 L95 82 Q97.5 88 91 90 L9 90 Q2.5 88 5 82 L43.5 10.5 Q46 6 50 6 Z" fill="var(--y)" />
+      <path d="M50 6 Q54 6 56.5 10.5 L95 82 Q97.5 88 91 90 L9 90 Q2.5 88 5 82 L43.5 10.5 Q46 6 50 6 Z" fill="var(--yi)" />
       <rect x="44" y="30" width="12" height="34" rx="6" fill={dark} />
       <circle cx="50" cy="76" r="7" fill={dark} />
     </svg>)
   if (level === 'r') return (
     <svg className="bz-icon" viewBox="0 0 100 100" role="img" aria-label="Lejos">
-      <path d="M31 4 H69 L96 31 V69 L69 96 H31 L4 69 V31 Z" fill="var(--r)" />
-      <path d="M33 33 L67 67 M67 33 L33 67" stroke={dark} strokeWidth="11" strokeLinecap="round" />
+      <path d="M31 4 H69 L96 31 V69 L69 96 H31 L4 69 V31 Z" fill="var(--ri)" />
+      <path d="M33 33 L67 67 M67 33 L33 67" stroke="#FFFFFF" strokeWidth="11" strokeLinecap="round" />
     </svg>)
   return (
     <svg className="bz-icon" viewBox="0 0 100 100" role="img" aria-label="Esperando">
-      <circle cx="50" cy="50" r="43" fill="none" stroke="#56685E" strokeWidth="7" />
-      <path d="M50 24 V50 L66 62" fill="none" stroke="#9FB3A8" strokeWidth="8" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="50" cy="50" r="43" fill="none" stroke="#B5C2BA" strokeWidth="7" />
+      <path d="M50 24 V50 L66 62" fill="none" stroke="#56665D" strokeWidth="8" strokeLinecap="round" strokeLinejoin="round" />
     </svg>)
 }
 
@@ -148,7 +148,7 @@ function Meta({ v }: { v: BonusView }) {
         {v.pallets > 0 && <div className="bz-proj" style={{ left: pct(proj, scale) }} />}
         {meta > 0 && <div className="bz-mark" style={{ left: pct(meta, scale) }} />}
       </div>
-      <div className="bz-legend"><span>Blanca: meta</span><span>Punteada: proyección</span></div>
+      <div className="bz-legend"><span>Negra: meta</span><span>Punteada: proyección</span></div>
     </div>
   )
 }
@@ -168,7 +168,7 @@ function Speed({ v }: { v: BonusView }) {
         {v.speed != null && <div className={`bz-fill sp-${lv}`} style={{ width: pct(Math.min(v.speed, SPEED_MAX), SPEED_MAX) }} />}
         {behind && <div className="bz-mark" style={{ left: pct(Math.min(v.need!, SPEED_MAX), SPEED_MAX) }} />}
       </div>
-      <div className="bz-legend"><span>Rojo &lt; {SPEED_RED} · Amarillo {SPEED_RED} a {SPEED_YELLOW} · Verde &gt; {SPEED_YELLOW}</span><span>{behind ? 'Blanca: velocidad necesaria' : ''}</span></div>
+      <div className="bz-legend"><span>Rojo &lt; {SPEED_RED} · Amarillo {SPEED_RED} a {SPEED_YELLOW} · Verde &gt; {SPEED_YELLOW}</span><span>{behind ? 'Negra: velocidad necesaria' : ''}</span></div>
     </div>
   )
 }

@@ -154,7 +154,9 @@
 
 /* harvest day card (084) */
 .hdaycard { border-color: color-mix(in srgb, var(--accent, #2f7d5b) 45%, var(--line)); }
-.hday3 { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+.hday3 { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
+.hday3 label > span { white-space: nowrap; }
+.hday3 input { min-width: 0; box-sizing: border-box; }
 .hday3 label .row { gap: 6px; flex-wrap: nowrap; }
 .hday3 label .row input { flex: 1; min-width: 0; }
 .hbreak { flex-wrap: wrap; gap: 6px; }

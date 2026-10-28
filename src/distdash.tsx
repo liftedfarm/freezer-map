@@ -33,7 +33,7 @@ const n0 = (n: number) => Math.round(n).toLocaleString()
 export function Overview({ ctx }: { ctx: SideCtx }) {
   const stats = useMemo(() => {
     const calc = (sites: Site[]) => {
-      const fz = ctx.snap.freezers.filter(f => sites.includes(f.site) && (f.kind ?? 'freezer') === 'freezer')
+      const fz = ctx.snap.freezers.filter(f => sites.includes(f.site) && (f.kind ?? 'freezer') === 'freezer' && f.active !== false)
       let open = 0, withOpen = 0, pallets = 0, w = 0
       for (const f of fz) {
         const slots = ctx.slotsOf(f.id)
@@ -124,7 +124,7 @@ export function Activity({ ctx }: { ctx: SideCtx }) {
 export interface SalesNums { orders: number; requests: number; isAdmin: boolean; go: () => void }
 
 export function DistDashboard({ ctx, sales, goMap, fulfill, staged }: { ctx: SideCtx; sales?: SalesNums; goMap: () => void; fulfill?: { open: number; ready: number; waiting: number; go: () => void }; staged?: { n: number; lbs: number; sites: string[]; go: () => void } }) {
-  const fz = ctx.snap.freezers.filter(f => (f.kind ?? 'freezer') === 'freezer')
+  const fz = ctx.snap.freezers.filter(f => (f.kind ?? 'freezer') === 'freezer' && f.active !== false)
   const per = useMemo(() => {
     const out = new Map<number, { slots: number; used: number; pallets: number; lbs: number; open: number }>()
     for (const f of fz) {
