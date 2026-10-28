@@ -225,6 +225,8 @@ function describe(ix: Index, e: InvEvent, names?: Map<number, string>) {
     case 'weight_adjust': { const d = e.details as { from?: number | null; to?: number; reason?: string } | null
       const r = WEIGHT_REASONS.find(x => x.k === d?.reason)
       return `${code} weight adjusted ${d?.from != null ? `from ${lbs(d.from)} ` : ''}to ${lbs(d?.to)}${r ? ` (${r.l})` : ''}` }
+    case 'weight_audit': { const d = e.details as { from?: number | null; to?: number } | null
+      return `${code} weight set ${d?.from != null ? `from ${lbs(d.from)} ` : ''}to ${lbs(d?.to)} in the app only (audit, not sent to METRC)` }
     case 'freezer_status': {
       const f = e.freezer_id != null ? ix.freezer.get(e.freezer_id) : undefined
       const d = e.details as { from?: string; to?: string } | null
@@ -1220,7 +1222,11 @@ export default function App() {
       )}
       {form?.kind === 'weight' && (
         <WeightForm p={form.p} busy={busy} onClose={() => setForm(null)}
-          onSubmit={(w, note, reason) => submit(() => backend.adjustWeight(form.p.id, w, note, reason), () => 'Weight updated')} />
+          canAppOnly={!!me?.access?.owner || !!me?.access?.perms?.distribution?.audit_weight}
+          onSubmit={(w, note, reason, appOnly) => submit(() => appOnly
+            ? (async () => { const { error } = await backend.client()!.rpc('adjust_weight_app_only', { p_pallet_id: form.p.id, p_weight: w, p_note: note })
+                if (error) throw new Error(/adjust_weight_app_only|schema cache/i.test(error.message) ? `${error.message} (run 097_audit_weight.sql in Supabase)` : error.message) })()
+            : backend.adjustWeight(form.p.id, w, note, reason), () => appOnly ? 'Weight updated in the app only (nothing to METRC)' : 'Weight updated')} />
       )}
       {form?.kind === 'newchoice' && (
         <NewPalletChooser where={slotLabel(form.slot)} onClose={() => setForm(null)}

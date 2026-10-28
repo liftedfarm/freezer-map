@@ -142,10 +142,14 @@ export function TagForm({ p, busy, onClose, onSubmit }: { p: Pallet; busy: boole
   )
 }
 
-export function WeightForm({ p, busy, onClose, onSubmit }: { p: Pallet; busy: boolean; onClose: () => void; onSubmit: (w: number, note: string, reason: string) => void }) {
+export function WeightForm({ p, busy, onClose, onSubmit, canAppOnly }: {
+  p: Pallet; busy: boolean; onClose: () => void; canAppOnly?: boolean
+  onSubmit: (w: number, note: string, reason: string, appOnly: boolean) => void
+}) {
   const [w, setW] = useState(p.current_weight != null ? String(p.current_weight) : '')
   const [note, setNote] = useState('')
   const [reason, setReason] = useState(defaultReason(p))
+  const [appOnly, setAppOnly] = useState(false)
   const n = parseFloat(w)
   const diff = n >= 0 && p.current_weight != null ? Math.round((n - p.current_weight) * 100) / 100 : null
   return (
@@ -154,13 +158,16 @@ export function WeightForm({ p, busy, onClose, onSubmit }: { p: Pallet; busy: bo
       <div className="field"><label>New weight (lbs)</label>
         <input type="number" inputMode="decimal" min="0" step="0.01" value={w} autoFocus onChange={e => setW(e.target.value)} />
         {diff != null && diff !== 0 && <div className="muted">{diff > 0 ? '+' : ''}{lbs(diff)}</div>}</div>
-      <div className="field"><label>Reason</label>
-        <div className="choices col">{WEIGHT_REASONS.map(r => <button key={r.k} className={reason === r.k ? 'on' : ''} onClick={() => setReason(r.k)}><b>{r.l}</b> <span className="muted">{r.hint}</span></button>)}</div></div>
-      <div className="field"><label>Note (optional)</label><input value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. reweighed on scale 2" /></div>
-      <MetrcNote kind="weight" p={p} reason={reason} />
+      {canAppOnly && <label className="check"><input type="checkbox" checked={appOnly} onChange={e => setAppOnly(e.target.checked)} />
+        <span><b>App only (audit)</b> <span className="muted">fix the app's number, nothing goes to METRC</span></span></label>}
+      {!appOnly && <div className="field"><label>Reason</label>
+        <div className="choices col">{WEIGHT_REASONS.map(r => <button key={r.k} className={reason === r.k ? 'on' : ''} onClick={() => setReason(r.k)}><b>{r.l}</b> <span className="muted">{r.hint}</span></button>)}</div></div>}
+      <div className="field"><label>{appOnly ? 'Why (goes in the history)' : 'Note (optional)'}</label><input value={note} onChange={e => setNote(e.target.value)} placeholder={appOnly ? 'e.g. METRC already right after the 10/28 audit' : 'e.g. reweighed on scale 2'} /></div>
+      {appOnly ? <div className="metrcnote"><b>METRC</b> Nothing. Only the app's weight changes. Use it when METRC is already right or you're fixing METRC by hand.</div>
+        : <MetrcNote kind="weight" p={p} reason={reason} />}
       <div className="row end">
         <button className="ghost" onClick={onClose}>Cancel</button>
-        <button className="primary" disabled={!(n >= 0) || busy} onClick={() => onSubmit(n, note, reason)}>Save</button>
+        <button className="primary" disabled={!(n >= 0) || busy || (appOnly && !note.trim())} onClick={() => onSubmit(n, note, reason, appOnly)}>Save</button>
       </div>
     </Dialog>
   )
