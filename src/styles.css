@@ -1113,3 +1113,4 @@ html:has(.app.shell), html:has(.app.shell) body { height: 100%; overflow: hidden
 .locform label.wide { grid-column: 1 / -1; }
 .locform input, .locform select { width: 100%; box-sizing: border-box; min-width: 0; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); font-size: 15px; }
 .drow.locoff { opacity: .6; }
+.dcard.locedit { margin: 4px 0 10px; border-color: var(--brand); }
