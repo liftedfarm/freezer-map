@@ -22,7 +22,7 @@ export function BonusScreen({ backend, token }: { backend: Backend; token: strin
   const [, tick] = useState(0)
   const day = new URLSearchParams(location.search).get('day')
   const stage = useRef<HTMLDivElement>(null)
-  const [scale, setScale] = useState(1)
+  const [fit, setFit] = useState({ s: 1, x: 0, y: 0 })
 
   useEffect(() => {
     document.title = 'Bono en vivo · Lifted Farms'
@@ -46,9 +46,9 @@ export function BonusScreen({ backend, token }: { backend: Backend; token: strin
     return () => { stop = true; clearInterval(a); clearInterval(b) }
   }, [token])
   useEffect(() => {
-    const fit = () => setScale(Math.min(window.innerWidth / 1920, window.innerHeight / 1080))
-    fit(); window.addEventListener('resize', fit)
-    return () => window.removeEventListener('resize', fit)
+    const go = () => { const s = Math.min(window.innerWidth / 1920, window.innerHeight / 1080); setFit({ s, x: (window.innerWidth - 1920 * s) / 2, y: (window.innerHeight - 1080 * s) / 2 }) }
+    go(); window.addEventListener('resize', go)
+    return () => window.removeEventListener('resize', go)
   }, [])
 
   if (d === undefined) return <div className="bz-wrap"><p className="bz-msg">Cargando…</p></div>
@@ -57,23 +57,23 @@ export function BonusScreen({ backend, token }: { backend: Backend; token: strin
   const v = computeBonus(d, nowMin)
   return (
     <div className="bz-wrap">
-      <div className="bz" ref={stage} style={{ transform: `scale(${scale})` }} data-level={v.level}>
-        <header className="bz-top">
+      <div className="bz" ref={stage} style={{ transform: `translate(${fit.x}px, ${fit.y}px) scale(${fit.s})` }} data-level={v.level}>
+        <div className="bz-top">
           <div className="bz-brand"><span className="bz-logo">lifted</span><span className="bz-dim">Cosecha en vivo · {d.site}</span></div>
           <div className="bz-var"><span className="bz-cap">Variedad ahora</span><b>{v.variety ?? '—'}</b></div>
           <div className="bz-clock"><b>{d.is_today ? clock(nowMin) : 'Día cerrado'}</b><span className="bz-dim">{fecha(d.day)}</span></div>
-        </header>
-        <main className="bz-main">
+        </div>
+        {(!v.ready || v.onBreak) && <div className="bz-banner">
+          {v.onBreak ? `${v.onBreak.kind === 'lunch' ? 'Almuerzo' : 'Descanso'} desde ${clock((Number(v.onBreak.start_at.slice(0, 2)) * 60) + Number(v.onBreak.start_at.slice(3, 5)))}. El tiempo no cuenta.`
+            : `Falta en la tarjeta del día: ${v.missing.map(m => MISSING[m] ?? m).join(', ')}`}</div>}
+        <div className="bz-main">
           <Hero v={v} />
           <div className="bz-col">
             <Meta v={v} />
             <Speed v={v} />
           </div>
-        </main>
+        </div>
         <Bottom v={v} />
-        {(!v.ready || v.onBreak) && <div className="bz-banner">
-          {v.onBreak ? `${v.onBreak.kind === 'lunch' ? 'Almuerzo' : 'Descanso'} desde ${clock((Number(v.onBreak.start_at.slice(0, 2)) * 60) + Number(v.onBreak.start_at.slice(3, 5)))}. El tiempo no cuenta.`
-            : `Falta en la tarjeta del día: ${v.missing.map(m => MISSING[m] ?? m).join(', ')}`}</div>}
       </div>
     </div>
   )
@@ -82,12 +82,12 @@ export function BonusScreen({ backend, token }: { backend: Backend; token: strin
 function Hero({ v }: { v: BonusView }) {
   const label = v.won ? 'Bono ganado · por hora' : 'Bono en juego · por hora'
   const big = v.won ? money(v.bonusNow) : money(v.bonusAtStake)
-  const sub = v.level === 'wait' ? 'Los números empiezan con la primera tarima.'
+  const sub = v.level === 'wait' ? (v.pallets ? 'Completen la tarjeta del día en Producción › Cosecha.' : 'Los números empiezan con la primera tarima.')
     : v.won ? `Sigue subiendo con cada libra. Proyectado: ${money(v.bonusProj || v.bonusNow)} por hora.`
     : v.corr != null && v.hurdle != null ? `Faltan ${n0(v.hurdle - v.corr)} libras por persona para ganarlo.` : ''
   return (
-    <section className="bz-card bz-hero">
-      <div className="bz-pill"><i />{v.won ? '¡META ALCANZADA!' : STATUS[v.level]}</div>
+    <div className="bz-card bz-hero">
+      <div className="bz-pill"><i />{v.won ? '¡META ALCANZADA!' : v.level === 'wait' && v.pallets ? 'FALTAN DATOS DEL DÍA' : STATUS[v.level]}</div>
       <div className="bz-herobody">
         <div className="bz-herolab">{label}</div>
         <div className={`bz-heroval${v.won ? ' won' : ''}`}>{big}</div>
@@ -98,7 +98,7 @@ function Hero({ v }: { v: BonusView }) {
         <div><span className="bz-cap">Al final del día</span><b>{money(v.payProj)}</b></div>
         <div><span className="bz-cap">Base</span><b className="bz-dim">{money(v.hourly)}</b></div>
       </div>
-    </section>
+    </div>
   )
 }
 
@@ -106,7 +106,7 @@ function Meta({ v }: { v: BonusView }) {
   const meta = v.hurdle ?? 0, corr = v.corr ?? 0, proj = v.proj ?? 0
   const scale = Math.max(meta * 1.3, proj * 1.05, corr * 1.05, 1)
   return (
-    <section className="bz-card bz-sm">
+    <div className="bz-card bz-sm">
       <div className="bz-head"><b>La meta</b><span className="bz-dim">libras por persona hoy</span></div>
       <div className="bz-nums">
         <div><span className="bz-cap">Ahora</span><b className={`bz-xl${v.won ? ' won' : ''}`}>{v.corr != null ? v.corr.toFixed(1) : '—'}</b></div>
@@ -120,7 +120,7 @@ function Meta({ v }: { v: BonusView }) {
         {meta > 0 && <div className="bz-mark" style={{ left: pct(meta, scale) }} />}
       </div>
       <div className="bz-legend"><span>Barra: libras por persona hasta ahora</span><span>Línea blanca: meta · Línea punteada: proyección</span></div>
-    </section>
+    </div>
   )
 }
 
@@ -128,7 +128,7 @@ function Speed({ v }: { v: BonusView }) {
   const lv = speedLevel(v.speed)
   const behind = !v.won && v.need != null && (v.speed == null || v.need > v.speed)
   return (
-    <section className="bz-card bz-sm">
+    <div className="bz-card bz-sm">
       <div className="bz-head"><b>Velocidad</b><span className="bz-dim">libras por bucker por hora</span></div>
       <div className="bz-speed">
         <b className={`bz-xl sp-${lv}`}>{v.speed != null ? Math.round(v.speed) : '—'}</b>
@@ -140,7 +140,7 @@ function Speed({ v }: { v: BonusView }) {
         {behind && <div className="bz-mark" style={{ left: pct(Math.min(v.need!, SPEED_MAX), SPEED_MAX) }} />}
       </div>
       <div className="bz-legend"><span>Rojo &lt; {SPEED_RED} · Amarillo {SPEED_RED} a {SPEED_YELLOW} · Verde &gt; {SPEED_YELLOW}</span><span>{behind ? 'Línea blanca: velocidad necesaria' : ''}</span></div>
-    </section>
+    </div>
   )
 }
 
@@ -157,7 +157,7 @@ function Bottom({ v }: { v: BonusView }) {
     { label: 'Horas', value: v.workedH.toFixed(1), sub: `de ${v.estHours} trabajadas` },
   ]
   return (
-    <section className="bz-bottom">
+    <div className="bz-bottom">
       <div className="bz-card bz-spark">
         <span className="bz-cap">Velocidad por tarima</span>
         <div className="bz-groups">{groups.length ? groups.map((g, i) => (
@@ -167,6 +167,6 @@ function Bottom({ v }: { v: BonusView }) {
           </div>)) : <span className="bz-dim">Sin tarimas todavía</span>}</div>
       </div>
       {tiles.map(t => <div key={t.label} className="bz-card bz-tile"><span className="bz-cap">{t.label}</span><b>{t.value}</b><span className="bz-dim">{t.sub}</span></div>)}
-    </section>
+    </div>
   )
 }

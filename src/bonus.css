@@ -20,19 +20,19 @@
 .bz-main { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 28px; flex: 1; min-height: 0; overflow: hidden; }
 .bz-col { display: flex; flex-direction: column; gap: 28px; min-height: 0; }
 .bz-card { background: #16201B; border-radius: 28px; box-sizing: border-box; }
-.bz-hero { border: 2px solid var(--lv); padding: 44px 52px; display: flex; flex-direction: column; justify-content: space-between; }
+.bz-hero { border: 2px solid var(--lv); padding: 36px 48px; min-height: 0; overflow: hidden; display: flex; flex-direction: column; justify-content: space-between; }
 .bz-pill { align-self: flex-start; display: flex; align-items: center; gap: 14px; background: var(--lvt); color: var(--lv); border-radius: 999px; padding: 12px 28px;
   font: 800 34px 'Barlow Semi Condensed', sans-serif; letter-spacing: 1px; }
 .bz-pill i { width: 22px; height: 22px; border-radius: 50%; background: var(--lv); }
 .bz-herobody { display: flex; flex-direction: column; gap: 8px; }
 .bz-herolab, .bz-herosub { font-size: 34px; color: #C9D6CE; }
 .bz-herosub { font-size: 30px; }
-.bz-heroval { font: 800 250px/0.9 'Barlow Semi Condensed', sans-serif; letter-spacing: -6px; }
+.bz-heroval { font: 800 220px/0.9 'Barlow Semi Condensed', sans-serif; letter-spacing: -6px; }
 .bz-heroval.won, .bz-xl.won, .bz-fill.won { color: var(--g); }
 .bz-pay { display: flex; gap: 40px; border-top: 2px solid #24322B; padding-top: 28px; }
 .bz-pay > div { display: flex; flex-direction: column; gap: 4px; }
 .bz-pay b { font: 700 56px 'Barlow Semi Condensed', sans-serif; }
-.bz-sm { padding: 26px 36px; display: flex; flex-direction: column; justify-content: space-between; gap: 10px; flex: 1; min-height: 0; overflow: hidden; }
+.bz-sm { padding: 20px 32px; display: flex; flex-direction: column; justify-content: space-between; gap: 10px; flex: 1; min-height: 0; overflow: hidden; }
 .bz-head { display: flex; justify-content: space-between; align-items: baseline; font-size: 24px; }
 .bz-head b { font-size: 30px; font-weight: 600; }
 .bz-nums { display: flex; gap: 36px; align-items: flex-end; }
@@ -66,5 +66,7 @@
 .bz-bars i { flex: 1; border-radius: 3px 3px 0 0; }
 .bz-tile { padding: 22px 26px; display: flex; flex-direction: column; justify-content: space-between; font-size: 20px; }
 .bz-tile b { font: 700 64px/1 'Barlow Semi Condensed', sans-serif; }
-.bz-banner { position: absolute; left: 56px; right: 56px; bottom: 250px; background: rgba(245,184,61,0.16); color: #F5B83D; border: 2px solid #F5B83D;
+.bz-banner { flex: none; margin: -12px 0 -8px; background: rgba(245,184,61,0.16); color: #F5B83D; border: 2px solid #F5B83D;
   border-radius: 18px; padding: 14px 24px; font: 700 30px 'Barlow Semi Condensed', sans-serif; text-align: center; }
+.bz-wrap .bz-top, .bz-wrap .bz-main, .bz-wrap .bz-bottom { max-width: none; margin-left: 0; margin-right: 0; width: auto; }
+.bz-pill { white-space: nowrap; }
