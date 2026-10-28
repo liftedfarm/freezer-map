@@ -104,11 +104,14 @@ export async function sendCombine(job, ctx) {
   if (!m.package_tag) throw new Wait(`${m.code} has no METRC tag yet (tag pending). Set the tag, then send.`)
   const tag = up(m.package_tag)
   if (await packageByTag(job.license, tag)) throw new Skip(`METRC already has ${tag}`)
-  const parts = await db(`pallets?merged_into=eq.${m.id}&select=id,code,package_tag,current_weight&order=code`)
-  if (!parts?.length) throw new Error('No source packages found for this combine')
+  // whole pallets merged in (emptied and finished), and pieces taken off pallets that stay (Fulfillment's combine for an order)
+  const whole = await db(`pallets?merged_into=eq.${m.id}&select=id,code,package_tag,current_weight&order=code`) ?? []
+  const cut = await db(`events?type=eq.combine_part&details->>into_id=eq.${m.id}&select=pallet_id,lbs&order=id`) ?? []
+  const cutPallets = cut.length ? await db(`pallets?id=in.(${[...new Set(cut.map(e => e.pallet_id))].join(',')})&select=id,code,package_tag,current_weight`) ?? [] : []
+  if (!whole.length && !cut.length) throw new Error('No source packages found for this combine')
   const t = await tol()
-  const sources = []
-  for (const s of parts) {
+  const sources = [], names = []
+  for (const s of whole) {
     if (!s.package_tag) throw new Error(`${s.code} has no METRC tag in the app`)
     const p = await packageByTag(job.license, s.package_tag)
     if (!p) throw new Error(`${up(s.package_tag)} (${s.code}) isn't an active package on ${job.license} in METRC`)
@@ -117,7 +120,22 @@ export async function sendCombine(job, ctx) {
     if (Math.abs(r4(p.quantity) - app) > t) {
       throw new Error(`${s.code}: METRC has ${p.quantity} lb, the app had ${app} lb when combined (more than the ${t} lb tolerance). Adjust ${up(s.package_tag)} in METRC first, or fix it with Reconcile.`)
     }
-    sources.push({ tag: s.package_tag, p, take: r4(p.quantity), finish: true })   // every source is emptied, so finish it
+    sources.push({ tag: s.package_tag, p, take: r4(p.quantity), finish: true })   // every whole source is emptied, so finish it
+    names.push(s.code)
+  }
+  for (const e of cut) {
+    const s = cutPallets.find(x => x.id === e.pallet_id)
+    if (!s) throw new Error(`A pallet this combine took from (#${e.pallet_id}) is gone from the app`)
+    if (!s.package_tag) throw new Error(`${s.code} has no METRC tag in the app`)
+    const p = await packageByTag(job.license, s.package_tag)
+    if (!p) throw new Error(`${up(s.package_tag)} (${s.code}) isn't an active package on ${job.license} in METRC`)
+    lbsOnly(p, s.package_tag)
+    const take = r4(e.lbs)
+    if (r4(p.quantity) + t < take) throw new Error(`METRC has only ${p.quantity} lb in ${up(s.package_tag)} (${s.code}); the combine takes ${take}. Fix ${s.code}'s weight first.`)
+    // the pallet is used up in the app and METRC has about what's taken: take it all and finish it
+    const finish = Number(s.current_weight ?? 1) <= 0.0001 && Math.abs(r4(p.quantity) - take) <= t
+    sources.push({ tag: s.package_tag, p, take: finish ? r4(p.quantity) : take, finish })
+    names.push(`${s.code} (${take} lb)`)
   }
   const items = [...new Set(sources.map(s => itemId(s.p)))]
   if (items.length > 1) throw new Error(`The sources are different METRC items (${[...new Set(sources.map(s => s.p.item?.name))].join(' / ')}). Combine them by hand.`)
@@ -125,7 +143,7 @@ export async function sendCombine(job, ctx) {
   if (units.length > 1) throw new Error('The sources are in different units in METRC. Combine them by hand.')
   return createFromPackages(ctx, job, {
     tag, qty: r4(m.og_weight ?? m.current_weight), item: items[0], sources,
-    note: `Lifted app combine: ${m.code} from ${parts.map(s => s.code).join(', ')}`,
+    note: `Lifted app combine: ${m.code} from ${names.join(', ')}`,
   })
 }
 
