@@ -58,10 +58,12 @@ export function TagInput({ value, onChange, where = {}, keep, disabled, placehol
     ;(async () => {
       const sb = c.sb!
       const [{ data: pal }, { data: lists }] = await Promise.all([
-        sb.from('pallets').select('code,status').eq('package_tag', q).limit(1),
+        sb.from('pallets').select('id,code,status').eq('package_tag', q).limit(1),
         sb.from('metrc_tags').select('license').eq('label', q).limit(3)])
       if (!on) return
-      const p = (pal ?? [])[0] as { code: string; status: string } | undefined
+      const p = (pal ?? [])[0] as { id: number; code: string; status: string } | undefined
+      // just saved on this same pallet: nothing wrong
+      if (p && where.pallet != null && p.id === where.pallet) { setWhy({ tag: q, text: '' }); return }
       const other = ((lists ?? []) as { license: string }[]).map(x => x.license).filter(l => l !== pool?.license)
       const text = p ? `Already on ${p.code} in the app (${p.status.replace('_', ' ')}). A tag can only be on one pallet.`
         : other.length ? `That tag is on ${other.join(', ')}'s list, not ${pool?.license}'s (the license this pallet is on).`
@@ -110,6 +112,6 @@ export function TagInput({ value, onChange, where = {}, keep, disabled, placehol
     {!compact && pool?.from_metrc && <div className="muted small-note">{pool.license}{pool.free != null ? ` · ${pool.free.toLocaleString()} available` : ''}
       {only && digits ? <> · <b>Enter</b> for …{only.slice(-9)}</> : q.length >= 2 && !full && hits?.q === q ? ` · ${hits.tags.length >= 200 ? '200+' : hits.tags.length} match` : ''}</div>}
     {compact && only && digits && <div className="muted small-note">Enter for …{only.slice(-9)}</div>}
-    {off && why?.tag === q && <div className="warn-t small-note">{why.text}</div>}
+    {off && why?.tag === q && why.text && <div className="warn-t small-note">{why.text}</div>}
   </div>
 }
