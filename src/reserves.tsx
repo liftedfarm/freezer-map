@@ -395,7 +395,8 @@ function OrderEditor({ backend, o, strains, flash, onChanged }: {
 }) {
   const [so, setSo] = useState(o.so_number ?? '')
   const [shipOn, setShipOn] = useState(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` })
-  const [edits, setEdits] = useState<Record<number, { lbs: string; price: string }>>({})
+  const [edits, setEdits] = useState<Record<number, { lbs: string; price: string; year: number }>>({})
+  const cy = new Date().getFullYear()
   const [add, setAdd] = useState({ strain: '', lbs: '' })
   const [busy, setBusy] = useState(false)
   const run = async (f: () => Promise<void>, ok: string) => {
@@ -412,15 +413,19 @@ function OrderEditor({ backend, o, strains, flash, onChanged }: {
           const e = edits[l.id]
           return (
             <tr key={l.id}>
-              <td>{l.strain}{l.is_sample && <span className="pill sample">sample{Number(l.hold_lbs ?? 0) > 0 ? ` · holding ${n0(Number(l.hold_lbs))}` : ""}</span>}{l.product && l.product !== 'fresh_frozen' ? <span className="pill prod">{PRODUCT_LABEL[l.product]}</span> : null}<span className="muted">{l.farm ? ` · ${l.farm}` : ''}{l.crop_year ? ` · ${l.crop_year}` : ''}</span>{l.price_override && <div className="muted small">price overridden</div>}</td>
+              <td>{l.strain}{!e && l.crop_year && l.crop_year !== cy ? <span className="pill old">{l.crop_year} crop</span> : null}{e && <Select className="inline" value={e.year} title="Crop year" onChange={x => setEdits({ ...edits, [l.id]: { ...e, year: Number(x.target.value) } })}>
+                {[...new Set([cy, cy - 1, cy - 2, l.crop_year ?? cy])].sort((a, b) => b - a).map(y => <option key={y} value={y}>{y} crop</option>)}</Select>}{l.is_sample && <span className="pill sample">sample{Number(l.hold_lbs ?? 0) > 0 ? ` · holding ${n0(Number(l.hold_lbs))}` : ""}</span>}{l.product && l.product !== 'fresh_frozen' ? <span className="pill prod">{PRODUCT_LABEL[l.product]}</span> : null}<span className="muted">{l.farm ? ` · ${l.farm}` : ''}{l.crop_year ? ` · ${l.crop_year}` : ''}</span>{l.price_override && <div className="muted small">price overridden</div>}</td>
               {e ? <>
                 <td className="num"><input className="qty" type="number" step="10" min="0" value={e.lbs} onChange={x => setEdits({ ...edits, [l.id]: { ...e, lbs: x.target.value } })} /></td>
                 <td className="num"><input className="qty" type="number" step="0.5" min="0" value={e.price} onChange={x => setEdits({ ...edits, [l.id]: { ...e, price: x.target.value } })} /></td>
-                <td className="num"><button className="primary small" disabled={busy} onClick={() => run(() => backend.setOrderLine(o.id, l.id, l.strain, Number(e.lbs), e.price === '' ? null : Number(e.price)), Number(e.lbs) === 0 ? 'Line removed' : 'Line saved')}>Save</button></td>
+                <td className="num"><button className="primary small" disabled={busy} onClick={() => run(async () => {
+                  if (Number(e.lbs) > 0 && e.year !== (l.crop_year ?? cy)) { const { error } = await backend.client()!.rpc('set_order_line_year', { p_line: l.id, p_year: e.year }); if (error) throw new Error(/set_order_line_year|schema cache/i.test(error.message) ? `${error.message} (run 098_crop_years.sql in Supabase)` : error.message) }
+                  await backend.setOrderLine(o.id, l.id, l.strain, Number(e.lbs), e.price === '' ? null : Number(e.price))
+                }, Number(e.lbs) === 0 ? 'Line removed' : 'Line saved')}>Save</button></td>
               </> : <>
                 <td className="num">{n0(Number(l.lbs))}</td>
                 <td className="num">{l.price_per_lb != null ? `$${Number(l.price_per_lb).toFixed(2)}` : ''}</td>
-                {open_ && <td className="num"><button className="ghost small" onClick={() => setEdits({ ...edits, [l.id]: { lbs: String(l.lbs), price: l.price_per_lb != null ? String(l.price_per_lb) : '' } })}>Edit</button></td>}
+                {open_ && <td className="num"><button className="ghost small" onClick={() => setEdits({ ...edits, [l.id]: { lbs: String(l.lbs), price: l.price_per_lb != null ? String(l.price_per_lb) : '', year: l.crop_year ?? cy } })}>Edit</button></td>}
               </>}
             </tr>
           )

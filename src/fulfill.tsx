@@ -103,10 +103,12 @@ function OrderPage({ o, back, backend, reload, flash, pallets, heldBy, onLoad, i
     if (!p) return false
     if (o.lines.some(l => l.picks.some(pk => pk.pallet_id === p.id))) { flash(`${p.code} is already on this order`); return true }
     const prod = (x: { product?: string | null }) => x.product ?? 'fresh_frozen'
-    const fits = o.lines.filter(l => !l.cant_fill && canon(l.strain) === canon(p.strain) && prod(l) === prod(p))
+    const sameYear = (l: FLine) => p.crop_year == null || l.crop_year == null || p.crop_year === l.crop_year
+    const fits = o.lines.filter(l => !l.cant_fill && canon(l.strain) === canon(p.strain) && prod(l) === prod(p) && sameYear(l))
     const line = fits.find(l => got(l) < Number(l.lbs)) ?? fits[0]
     const other = heldBy.get(p.id)
     const why = other ? `Held for ${other.customer} · ${other.so ?? 'another order'}. Unassign it there first.`
+      : !line && o.lines.some(l => canon(l.strain) === canon(p.strain) && prod(l) === prod(p)) ? `Wrong crop year: ${p.code} is ${p.crop_year} crop, the ${p.strain} line wants ${o.lines.filter(l => canon(l.strain) === canon(p.strain)).map(l => l.crop_year).join(' / ')}.`
       : !line ? (o.lines.some(l => canon(l.strain) === canon(p.strain))
         ? `Wrong product: this is ${PRODUCT_LABEL[prod(p) as keyof typeof PRODUCT_LABEL] ?? prod(p)}, and the ${p.strain} line wants ${o.lines.filter(l => canon(l.strain) === canon(p.strain)).map(l => PRODUCT_LABEL[prod(l) as keyof typeof PRODUCT_LABEL]).join(' or ')}.`
         : `Wrong strain: ${p.strain ?? 'this pallet has no strain'}${p.strain ? " isn't on this order" : ''}. This order is ${[...new Set(o.lines.map(l => l.strain))].join(', ')}.`)
@@ -188,7 +190,8 @@ function OrderPage({ o, back, backend, reload, flash, pallets, heldBy, onLoad, i
                 {g === 0 && <button className="ghost small" disabled={busy} onClick={() => run(() => backend.cantFill(l.id, true), `${l.strain} marked can't fill`)}>Can't fill</button>}</div>}
               {editable && adding === l.id && <Pick line={l} need={Math.max(0, Number(l.lbs) - g)} busy={busy} close={() => setAdding(null)}
                 cands={pallets.filter(p => p.status === 'in_freezer' && p.pushed !== false && !p.container_id && p.kind !== 'mixed' && (p.current_weight ?? 0) > 0
-                  && canon(p.strain) === canon(l.strain) && (p.product ?? 'fresh_frozen') === (l.product ?? 'fresh_frozen') && !heldBy.has(p.id) && !onLoad(p.id) && !inRun?.(p.id))}
+                  && canon(p.strain) === canon(l.strain) && (p.product ?? 'fresh_frozen') === (l.product ?? 'fresh_frozen')
+                  && (p.crop_year == null || l.crop_year == null || p.crop_year === l.crop_year) && !heldBy.has(p.id) && !onLoad(p.id) && !inRun?.(p.id))}
                 where={where} rank={rank}
                 onWhole={p => run(() => backend.pickPallet(l.id, p.id), `${p.code} assigned`).then(() => setAdding(null))}
                 onPart={(p, lbs, tag) => run(() => backend.pickPart(l.id, p.id, lbs, tag), `${n0(lbs)} lbs from ${p.code} assigned. Split it when you pull it.`).then(() => setAdding(null))} />}

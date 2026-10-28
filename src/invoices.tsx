@@ -181,6 +181,41 @@ export function licenseWarning(c: Customer): string | null {
   return null
 }
 
+const CUR_YEAR = new Date().getFullYear()
+const sk = (strain: string, product: string) => `${strain.trim().toLowerCase()}|${product}`
+/** lbs on hand per strain + product + crop year (pallets in freezers or waiting for a spot) */
+function useStockByYear(backend: Backend) {
+  const [m, setM] = useState<Map<string, Map<number, number>> | null>(null)
+  useEffect(() => {
+    const sb = backend.client(); if (!sb) return
+    let on = true
+    ;(async () => {
+      const out = new Map<string, Map<number, number>>()
+      for (let a = 0; ; a += 1000) {
+        const { data, error } = await sb.from('pallets').select('strain,product,crop_year,current_weight').in('status', ['in_freezer', 'unslotted'])
+          .eq('kind', 'package').not('strain', 'is', null).order('id').range(a, a + 999)
+        if (error || !data) break
+        for (const p of data as { strain: string; product: string | null; crop_year: number | null; current_weight: number | null }[]) {
+          if (p.crop_year == null) continue
+          const k = sk(p.strain, p.product ?? 'fresh_frozen'); const y = out.get(k) ?? new Map<number, number>()
+          y.set(p.crop_year, (y.get(p.crop_year) ?? 0) + Number(p.current_weight ?? 0)); out.set(k, y)
+        }
+        if (data.length < 1000) break
+      }
+      if (on) setM(out)
+    })().catch(() => {})
+    return () => { on = false }
+  }, [])
+  return m
+}
+/** the year to sell from: this year if it's in stock, else the newest year that is */
+const pickYear = (stock: Map<string, Map<number, number>> | null, strain: string, product: string) => {
+  const y = stock?.get(sk(strain, product)); if (!y) return CUR_YEAR
+  if ((y.get(CUR_YEAR) ?? 0) > 0) return CUR_YEAR
+  const has = [...y.entries()].filter(([, l]) => l > 0).map(([yr]) => yr).sort((a, b) => b - a)
+  return has[0] ?? CUR_YEAR
+}
+
 export function NewOrderSheet({ backend, customers, strains, flash, onClose, onDone }: {
   backend: Backend; customers: Customer[]; strains: Strain[]; flash: Flash; onClose: () => void; onDone: (id: number) => void
 }) {
@@ -193,7 +228,10 @@ export function NewOrderSheet({ backend, customers, strains, flash, onClose, onD
   const [quoted, setQuoted] = useState(false)
   const [est, setEst] = useState<{ charge: number | null; descr: string | null; rule: string; problem: string | null } | null>(null)
   const [terms, setTerms] = useState<PaymentTerm[]>([])
-  const [lines, setLines] = useState<{ strain: string; lbs: string; price: string; product: Product; sample?: boolean; hold?: string }[]>([{ strain: '', lbs: '', price: '', product: 'fresh_frozen' }])
+  const [lines, setLines] = useState<{ strain: string; lbs: string; price: string; product: Product; sample?: boolean; hold?: string; year: number; yearSet?: boolean }[]>([{ strain: '', lbs: '', price: '', product: 'fresh_frozen', year: CUR_YEAR }])
+  const stock = useStockByYear(backend)
+  // strain or product changed: the year follows what's in stock, until someone picks a year by hand
+  useEffect(() => { setLines(ls => ls.map(l => l.yearSet || !l.strain.trim() ? l : { ...l, year: pickYear(stock, l.strain, l.product) })) }, [stock])
   const [busy, setBusy] = useState(false)
   useEffect(() => { backend.paymentTerms().then(setTerms).catch(() => {}) }, [])
   const c = customers.find(x => x.id === cust)
@@ -209,7 +247,7 @@ export function NewOrderSheet({ backend, customers, strains, flash, onClose, onD
   async function save() {
     setBusy(true)
     try {
-      const ls: NewOrderLine[] = lines.filter(l => l.strain.trim() && Number(l.lbs) > 0).map(l => ({ strain: l.strain.trim(), lbs: Number(l.lbs), price: l.price === '' ? null : Number(l.price), product: l.product }))
+      const ls: NewOrderLine[] = lines.filter(l => l.strain.trim() && Number(l.lbs) > 0).map(l => ({ strain: l.strain.trim(), lbs: Number(l.lbs), price: l.price === '' ? null : Number(l.price), product: l.product, crop_year: l.year }))
       const o = await backend.createOrder(cust!, ls, po, wanted || null, notes, termsCode || null)
       const used = lines.filter(l => l.strain.trim() && Number(l.lbs) > 0)
       if (used.some(l => l.sample)) {
@@ -242,13 +280,20 @@ export function NewOrderSheet({ backend, customers, strains, flash, onClose, onD
           <datalist id="no-strains">{strains.filter(s => s.active).map(s => <option key={s.id} value={s.name} />)}</datalist>
           {lines.map((l, i) => (<div key={i} className="nolinewrap">
             <div className="row noline">
-              <Select value={l.product} aria-label="Product" onChange={e => setLines(ls => ls.map((x, j) => j === i ? { ...x, product: e.target.value as Product } : x))}>
+              <Select value={l.product} aria-label="Product" onChange={e => setLines(ls => ls.map((x, j) => j === i ? { ...x, product: e.target.value as Product, year: x.yearSet ? x.year : pickYear(stock, x.strain, e.target.value) } : x))}>
                 {SALE_PRODUCTS.map(p => <option key={p} value={p}>{PRODUCT_LABEL[p]}</option>)}</Select>
-              <ListInput list="no-strains" placeholder="Strain" value={l.strain} onChange={e => setLines(ls => ls.map((x, j) => j === i ? { ...x, strain: e.target.value } : x))} />
+              <ListInput list="no-strains" placeholder="Strain" value={l.strain} onChange={e => setLines(ls => ls.map((x, j) => j === i ? { ...x, strain: e.target.value, year: x.yearSet ? x.year : pickYear(stock, e.target.value, x.product) } : x))} />
+              <Select value={l.year} aria-label="Crop year" title="Crop year" onChange={e => setLines(ls => ls.map((x, j) => j === i ? { ...x, year: Number(e.target.value), yearSet: true } : x))}>
+                {[...new Set([CUR_YEAR, CUR_YEAR - 1, CUR_YEAR - 2, ...(stock?.get(sk(l.strain, l.product))?.keys() ?? [])])].sort((a, b) => b - a).map(y => <option key={y} value={y}>{y}</option>)}</Select>
               <input type="number" placeholder="lbs" value={l.lbs} onChange={e => setLines(ls => ls.map((x, j) => j === i ? { ...x, lbs: e.target.value } : x))} />
               <input type="number" placeholder="$/lb" value={l.price} onChange={e => setLines(ls => ls.map((x, j) => j === i ? { ...x, price: e.target.value } : x))} />
               {lines.length > 1 && <button className="ghost small" onClick={() => setLines(ls => ls.filter((_, j) => j !== i))}>✕</button>}
             </div>
+            {l.strain.trim() && stock && (() => {
+              const y = stock.get(sk(l.strain, l.product)); const here = y?.get(l.year) ?? 0
+              const txt = y ? [...y.entries()].filter(([, v]) => v > 0).sort((a, b) => b[0] - a[0]).map(([yr, v]) => `${yr}: ${Math.round(v).toLocaleString()} lb`).join(' · ') : ''
+              return <div className={`small-note ${here > 0 ? 'muted' : 'warn-t'}`}>{txt ? `In stock: ${txt}` : 'None in stock'}{here > 0 ? '' : ` · none from ${l.year}`}</div>
+            })()}
             {l.product === 'fresh_frozen' && <div className="row nosample">
               <label className="check"><input type="checkbox" checked={!!l.sample} onChange={e => setLines(ls => ls.map((x, j) => j === i ? { ...x, sample: e.target.checked } : x))} /> Sample</label>
               {l.sample && <><input type="number" step="10" min="0" placeholder="hold lbs" value={l.hold ?? ''} onChange={e => setLines(ls => ls.map((x, j) => j === i ? { ...x, hold: e.target.value } : x))} />
@@ -256,7 +301,7 @@ export function NewOrderSheet({ backend, customers, strains, flash, onClose, onD
             </div>}
           </div>
           ))}
-          <button className="ghost small" onClick={() => setLines(ls => [...ls, { strain: '', lbs: '', price: '', product: ls[ls.length - 1]?.product ?? 'fresh_frozen' }])}>+ Line</button></div>
+          <button className="ghost small" onClick={() => setLines(ls => [...ls, { strain: '', lbs: '', price: '', product: ls[ls.length - 1]?.product ?? 'fresh_frozen', year: CUR_YEAR }])}>+ Line</button></div>
         {lines.some(l => l.sample) && <p className="muted small">Sample lines hold the "hold lbs" for {c?.name ?? 'the customer'} from now until {c?.sample_hold_days ?? 10} days after the order ships. Cancelling the order drops the hold.</p>}
         <div className="grid2">
           <div className="field"><label>Customer PO</label><input value={po} onChange={e => setPo(e.target.value)} /></div>
