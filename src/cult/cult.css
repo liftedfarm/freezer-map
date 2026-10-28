@@ -195,3 +195,5 @@ span.ptime input { padding: 4px 6px; border: 1px solid var(--line); border-radiu
 .hdl-grip { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 40px; font-size: 20px; color: var(--muted); cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; border-radius: 6px; }
 .hdl-grip:active { cursor: grabbing; background: var(--line); color: var(--ink); }
 .ctable tr.dragging td { opacity: .45; }
+.cdatew { display: inline-flex; align-items: center; gap: 6px; }
+.cdow { display: inline-block; min-width: 2.4em; font-size: 13px; }

@@ -108,7 +108,7 @@ export function ScheduleTab({ d, c, site, q, onOpen, api, flash, onSaved }: { d:
                           onPointerUp={() => { const t = drop, id = drag.current; drag.current = null; setDragging(null); setDrop(null); stopScroll(); const tgt = t && rows.find(x => x.id === t.id); if (id != null && tgt) move(id, tgt, t!.after) }}
                           onPointerCancel={() => { drag.current = null; setDragging(null); setDrop(null); stopScroll() }}>⠿</span>}</td>}
                         <td className="nowrap">{mode === 'upcoming' && h.status === 'planned'
-                          ? <span onClick={e => e.stopPropagation()}><input type="date" className="cdate" value={h.planned_on ?? ''} aria-label={`${h.strain} harvest date`}
+                          ? <span className="cdatew" onClick={e => e.stopPropagation()}><b className="cdow">{h.planned_on ? new Date(`${h.planned_on}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short' }) : ''}</b><input type="date" className="cdate" value={h.planned_on ?? ''} aria-label={`${h.strain} harvest date`}
                               onChange={e => { const v = e.target.value || null; if (v !== h.planned_on) bulk(() => api.save<Harvest>('cult_harvests', { id: h.id, planned_on: v }), `${h.strain} moved to ${fmtD(v, true)}`)() }} /></span>
                           : fmtD(h.planned_on, true)}{h.status === 'done' && h.harvested_on && h.harvested_on !== h.planned_on && <div className="muted small">cut {fmtD(h.harvested_on)}</div>}</td>
                         <td>{h.strain}{trialOf(h) && <> <span className="kpill k-trial" title="Trial strain">T</span></>}{(h.day_no ?? 1) > 1 && <> <span className="kpill s-planned">Day {h.day_no}</span></>}
