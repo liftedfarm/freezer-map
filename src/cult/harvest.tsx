@@ -39,20 +39,8 @@ export function HarvestTab({ d, c, site, api, flash, onSaved, openFirst }: { d: 
   const done = hs.filter(h => h.status === 'done' && h.harvested_on === day)
   // a harvest day card per site with fresh frozen work that day (the picked site only, when one is picked)
   const daySites = site ? (hs.some(h => h.kind === 'ff') ? [site] : []) : [...new Set([...going, ...planned, ...done].filter(h => h.kind === 'ff').map(h => h.site))].sort()
-  const card = (h: Harvest, extra?: string) => {
-    const k = calcHarvest(c, h)
-    const logged = h.kind === 'ff' ? k.palletLbs : h.kind === 'dry' ? sum(h.raw_bins) : Number(h.dry_lbs ?? 0)
-    const est = h.kind === 'ff' ? k.estFF : h.kind === 'dry' ? k.estRaw : k.estBiomass
-    return (
-      <button key={h.id} className="li setrow hcard" onClick={() => { setOpenId(h.id); scrollTop() }}>
-        <div className="grow">
-          <div><b>{h.strain}</b> <span className="muted">{h.site} {fieldName(c, h.field_id)}</span> <span className={`kpill k-${h.kind}`}>{KIND_LABEL[h.kind]}</span></div>
-          <div className="muted">{extra ?? STEP[h.kind]}{h.kind === 'ff' && k.pallets.length ? ` · ${k.pallets.length} pallets` : ''}{logged ? ` · ${n0(logged)} lbs logged` : ''}{est ? ` of ~${n0(est)} est.` : ''}</div>
-        </div>
-        <span className="hgo">›</span>
-      </button>
-    )
-  }
+  const card = (h: Harvest, extra?: string) => <HCard key={h.id} h={h} c={c} extra={extra} onOpen={() => { setOpenId(h.id); scrollTop() }} />
+  const order = (a: Harvest, b: Harvest) => (a.sched_order ?? 1e9) - (b.sched_order ?? 1e9) || a.site.localeCompare(b.site) || a.strain.localeCompare(b.strain)
   return (
     <div className="hlog">
       <div className="row wrap hday">
@@ -62,14 +50,87 @@ export function HarvestTab({ d, c, site, api, flash, onSaved, openFirst }: { d: 
       {daySites.map(s => <HarvestDayCard key={`${s}-${day}`} site={s} day={day} api={api} flash={flash} />)}
       {going.length > 0 && <section><h3 className="csec">Harvesting now</h3>{going.map(h => card(h, `Started ${fmtD(h.harvested_on, true)}`))}</section>}
       <section><h3 className="csec">{day === now ? 'On the schedule today' : `Scheduled ${fmtD(day, true)}`}</h3>
-        {planned.length ? planned.map(h => card(h)) : <p className="muted">Nothing scheduled{site ? ` at ${site}` : ''}{aheadDays.length ? '' : ' this week'}. Pick another day, or add the harvest on the Schedule.</p>}</section>
-      <section><h3 className="csec">Next 7 days <span className="muted">through {fmtD(weekEnd, true)}</span></h3>
-        {aheadDays.length ? aheadDays.map(dd => <div key={dd} className="hahead"><div className="hahead-d">{fmtD(dd, true)}</div>{ahead.filter(h => h.planned_on === dd).map(h => card(h))}</div>)
+        {planned.length ? <DayGroup key={`d-${day}`} label={day === now ? 'Today' : fmtD(day, true)} hs={[...planned].sort(order)} c={c} card={card} startOpen />
+          : <p className="muted">Nothing scheduled{site ? ` at ${site}` : ''}{aheadDays.length ? '' : ' this week'}. Pick another day, or add the harvest on the Schedule.</p>}</section>
+      <section><h3 className="csec">Next 7 days <span className="muted">through {fmtD(weekEnd, true)} · tap a day to see its harvests</span></h3>
+        {aheadDays.length ? aheadDays.map(dd => <DayGroup key={dd} label={fmtD(dd, true)} hs={ahead.filter(h => h.planned_on === dd).sort(order)} c={c} card={card} />)
           : <p className="muted">Nothing else scheduled{site ? ` at ${site}` : ''} in the next 7 days.</p>}</section>
       {drying.length > 0 && <section><h3 className="csec">Drying</h3>{drying.map(h => card(h, `Cut ${fmtD(h.harvested_on, true)} · enter the dry weight when it's out`))}</section>}
       {behind.length > 0 && <section><h3 className="csec">Not logged yet <span className="muted">from earlier days</span></h3>{behind.map(h => card(h, `Scheduled ${fmtD(h.planned_on, true)}`))}</section>}
       {done.length > 0 && <section><h3 className="csec">Finished {day === now ? 'today' : fmtD(day, true)}</h3>{done.map(h => card(h, 'Done'))}</section>}
     </div>
+  )
+}
+
+/** a day on the harvest list: totals first (Jordan: projected FF lbs, dry lbs), tap to see the strains */
+function DayGroup({ label, hs, c, card, startOpen }: { label: string; hs: Harvest[]; c: Ctx; card: (h: Harvest) => JSX.Element; startOpen?: boolean }) {
+  const [open, setOpen] = useState(!!startOpen)
+  const ks = hs.map(h => calcHarvest(c, h))
+  const ff = sum(ks.map(k => k.estFF)), dry = sum(ks.map(k => k.estDry)), raw = sum(ks.map(k => k.estRaw)), bio = sum(ks.map(k => k.estBiomass))
+  const plants = sum(hs.filter(h => h.kind === 'ff' || h.kind === 'dry').map(h => h.plants))
+  const buck = sum(ks.map(k => k.buckPeople)), deleaf = sum(ks.map(k => k.deleafPeople)), ice = sum(ks.map(k => k.dryIce))
+  const sites = [...new Set(hs.map(h => h.site))].join(' + ')
+  return (
+    <div className={`hdaygrp${open ? ' open' : ''}`}>
+      <button className="hdaysum" onClick={() => setOpen(o => !o)} aria-expanded={open}>
+        <div className="hdaysum-h"><b>{label}</b> <span className="muted">{sites} · {hs.length} harvest{hs.length === 1 ? '' : 's'}</span><span className="hgo">{open ? '▾' : '▸'}</span></div>
+        <div className="hdaysum-k">
+          {ff > 0 && <span><b>~{n0(ff)}</b> FF lbs</span>}
+          {dry > 0 && <span><b>~{n0(dry)}</b> dry lbs <em className="muted">({n0(raw)} wet)</em></span>}
+          {bio > 0 && <span><b>~{n0(bio)}</b> biomass lbs</span>}
+          {plants > 0 && <span><b>{n0(plants)}</b> plants</span>}
+          {buck > 0 && <span><b>{n0(buck)}</b> buckers</span>}
+          {deleaf > 0 && <span><b>{n0(deleaf)}</b> deleafers</span>}
+          {ice > 0 && <span><b>{n0(ice)}</b> lbs dry ice</span>}
+        </div>
+      </button>
+      {open && <div className="hdaygrp-list">{hs.map(h => card(h))}</div>}
+    </div>
+  )
+}
+
+/** one harvest on the list: what it is, how big, and where it's at */
+function HCard({ h, c, extra, onOpen }: { h: Harvest; c: Ctx; extra?: string; onOpen: () => void }) {
+  const k = calcHarvest(c, h)
+  const pl = h.planting_id ? c.planting.get(h.planting_id) : undefined
+  const trial = !!pl?.trial || c.field.get(h.field_id ?? -1)?.kind === 'trials'
+  const going = h.stage === 'harvesting'
+  const plants = h.plants_harvested ?? h.plants
+  const est = h.kind === 'ff' ? k.estFF : h.kind === 'dry' ? k.estRaw : k.estBiomass
+  const logged = h.kind === 'ff' ? k.palletLbs : h.kind === 'dry' ? (k.actRaw ?? 0) : Number(h.dry_lbs ?? 0)
+  const rawLbs = sum(h.raw_bins)
+  const pct = est && logged ? Math.min(100, Math.round((logged / est) * 100)) : null
+  const facts: string[] = []
+  if (plants) facts.push(`${n0(plants)} plants`)
+  if (h.kind === 'ff') {
+    if (k.estFF) facts.push(`~${n0(k.estFF)} lbs FF${h.est_lbs_per_plant ? ` (${n1(h.est_lbs_per_plant)}/plant)` : ''}`)
+    if (!going && h.status === 'planned') {
+      if (k.deleafPeople) facts.push(`${k.deleafPeople} deleafers`)
+      if (k.buckPeople) facts.push(`${k.buckPeople} buckers`)
+      if (k.dryIce) facts.push(`${n0(k.dryIce)} lbs dry ice`)
+    }
+  } else if (h.kind === 'dry') {
+    if (k.estRaw) facts.push(`~${n0(k.estRaw)} lbs wet`)
+    if (k.estDry) facts.push(`~${n0(k.estDry)} lbs dry`)
+  } else {
+    if (h.acres) facts.push(`${n1(h.acres)} acres`)
+    if (k.estBiomass) facts.push(`~${n0(k.estBiomass)} lbs biomass`)
+  }
+  if (h.metrc_name) facts.push(h.metrc_name)
+  return (
+    <button className="li setrow hcard" onClick={onOpen}>
+      <div className="grow">
+        <div><b>{h.strain}</b>{trial && <> <span className="kpill k-trial" title="Trial strain">T</span></>}{(h.day_no ?? 1) > 1 && <> <span className="kpill s-planned">Day {h.day_no}</span></>} <span className="muted">{h.site} {fieldName(c, h.field_id)}</span> <span className={`kpill k-${h.kind}`}>{KIND_LABEL[h.kind]}</span></div>
+        <div className="hfacts">{facts.map((f, i) => <span key={i}>{f}</span>)}</div>
+        {(going || logged > 0) && h.kind === 'ff' ? <div className="hprog">
+            <div className="hprog-bar"><i style={{ width: `${pct ?? 0}%` }} /></div>
+            <span>{k.pallets.length} pallet{k.pallets.length === 1 ? '' : 's'} · <b>{n0(logged)}</b> lbs packed{est ? ` of ~${n0(est)} (${pct}%)` : ''}{rawLbs ? ` · ${n0(rawLbs)} lbs raw in ${h.raw_bins.length} bins` : ''}</span>
+          </div>
+          : <div className="muted small">{extra ?? STEP[h.kind]}{logged > 0 ? ` · ${n0(logged)} lbs logged` : ''}</div>}
+        {going && extra && <div className="muted small">{extra}</div>}
+      </div>
+      <span className="hgo">›</span>
+    </button>
   )
 }
 

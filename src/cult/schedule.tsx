@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import type { CultApi } from './api'
 import { KIND_LABEL, KIND_SHORT, addDays, calcHarvest, fieldName, fmtD, isBiomass, monday, n0, n1, n2, pct, sum, today } from './calc'
 import type { Ctx } from './calc'
@@ -21,11 +21,30 @@ export function ScheduleTab({ d, c, site, q, onOpen, api, flash, onSaved }: { d:
     (kind === 'all' || (kind === 'biomass') === isBiomass(h.kind)) &&
     (mode === 'all' || (mode === 'done' ? h.status === 'done' : h.status === 'planned' && (!h.planned_on || h.planned_on >= addDays(now, -7)))) &&
     (!ql || `${h.strain} ${fieldName(c, h.field_id)} ${h.site} ${h.notes ?? ''}`.toLowerCase().includes(ql))
-  ).sort((a, b) => (a.planned_on ?? '9999').localeCompare(b.planned_on ?? '9999') || a.site.localeCompare(b.site) || a.strain.localeCompare(b.strain)),
+  ).sort((a, b) => (a.planned_on ?? '9999').localeCompare(b.planned_on ?? '9999') || (a.sched_order ?? 1e9) - (b.sched_order ?? 1e9) || a.site.localeCompare(b.site) || a.strain.localeCompare(b.strain)),
   [d, c, site, mode, kind, ql])
   const weeks = new Map<string, Harvest[]>()
   for (const h of rows) { const w = h.planned_on ? monday(h.planned_on) : 'none'; (weeks.get(w) ?? weeks.set(w, []).get(w)!).push(h) }
   const trialOf = (h: Harvest) => !!(h.planting_id && c.planting.get(h.planting_id)?.trial) || c.field.get(h.field_id ?? -1)?.kind === 'trials'
+  // drag a planned harvest to reorder (desktop): it takes the date of the row it's dropped next to, and its place in that day
+  const drag = useRef<number | null>(null)
+  const [drop, setDrop] = useState<{ id: number; after: boolean } | null>(null)
+  const canDrag = mode === 'upcoming' && !sel.on
+  async function move(id: number, target: Harvest, after: boolean) {
+    const h = rows.find(x => x.id === id)
+    if (!h || !target.planned_on || id === target.id) return
+    const day = rows.filter(x => x.planned_on === target.planned_on && x.id !== id)
+    const at = day.findIndex(x => x.id === target.id) + (after ? 1 : 0)
+    day.splice(at, 0, h)
+    try {
+      for (let i = 0; i < day.length; i++) {
+        const x = day[i], o = (i + 1) * 10
+        if (x.id === id) await api.save<Harvest>('cult_harvests', { id, planned_on: target.planned_on, sched_order: o })
+        else if (x.sched_order !== o) await api.save<Harvest>('cult_harvests', { id: x.id, sched_order: o })
+      }
+      await onSaved(`${h.strain} moved to ${fmtD(target.planned_on, true)}, #${at + 1} that day`)
+    } catch (e) { flash(/sched_order/.test(errText(e)) ? 'Run 088_harvest_order.sql in Supabase first' : errText(e), true) }
+  }
   const late = d.harvests.filter(h => h.status === 'planned' && h.planned_on && h.planned_on < now && (!site || h.site === site))
 
   return (
@@ -59,7 +78,14 @@ export function ScheduleTab({ d, c, site, q, onOpen, api, flash, onSaved }: { d:
                       : h.kind === 'dry' ? (k.actRaw != null ? <><b>{n0(k.actRaw)}</b> <span className="muted">raw ✓</span></> : k.estRaw != null ? <span title="raw lbs">{n0(k.estRaw)} raw</span> : '')
                       : k.estBiomass != null ? `${n0(k.estBiomass)} dry` : h.acres ? `${n1(h.acres)} ac` : ''
                     return (
-                      <tr key={h.id} className={`tap ${h.status}`} onClick={() => sel.on ? sel.toggle(h.id) : onOpen(h)}>
+                      <tr key={h.id} className={`tap ${h.status}${drop?.id === h.id ? (drop.after ? ' dropa' : ' dropb') : ''}`} onClick={() => sel.on ? sel.toggle(h.id) : onOpen(h)}
+                        draggable={canDrag && h.status === 'planned'}
+                        onDragStart={e => { drag.current = h.id; e.dataTransfer.effectAllowed = 'move' }}
+                        onDragEnd={() => { drag.current = null; setDrop(null) }}
+                        onDragOver={e => { if (!canDrag || drag.current == null || !h.planned_on || h.status !== 'planned') return; e.preventDefault()
+                          const r = e.currentTarget.getBoundingClientRect(); const after = e.clientY > r.top + r.height / 2
+                          if (drop?.id !== h.id || drop.after !== after) setDrop({ id: h.id, after }) }}
+                        onDrop={e => { e.preventDefault(); const id = drag.current; const a = drop?.after ?? false; drag.current = null; setDrop(null); if (id != null) move(id, h, a) }}>
                         <SelBox sel={sel} id={h.id} />
                         <td className="nowrap">{mode === 'upcoming' && h.status === 'planned'
                           ? <span onClick={e => e.stopPropagation()}><input type="date" className="cdate" value={h.planned_on ?? ''} aria-label={`${h.strain} harvest date`}
@@ -89,7 +115,7 @@ export function ScheduleTab({ d, c, site, q, onOpen, api, flash, onSaved }: { d:
         { label: 'Cancel harvests', run: async ids => bulk(() => api.updateMany('cult_harvests', ids, { status: 'cancelled' }), `${ids.length} cancelled`)() },
         { label: 'Back to planned', run: async ids => bulk(() => api.updateMany('cult_harvests', ids, { status: 'planned' }), `${ids.length} back to planned`)() },
         { label: 'Delete', danger: true, run: async ids => bulk(() => api.removeMany('cult_harvests', ids), `Deleted ${ids.length} harvests`)() }]} />
-      <p className="cnote">Lbs are fresh frozen estimates (plants × lbs/plant) until a harvest is logged, then what came in (✓). People = man-hours ÷ the site's work day. Dry ice is for fresh frozen, ordered the Wednesday the week before.</p>
+      <p className="cnote">On a computer, drag a planned harvest up or down to reorder it; dropped next to another day's harvest, it takes that day. Lbs are fresh frozen estimates (plants × lbs/plant) until a harvest is logged, then what came in (✓). People = man-hours ÷ the site's work day. Dry ice is for fresh frozen, ordered the Wednesday the week before.</p>
     </>
   )
 }

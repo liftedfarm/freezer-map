@@ -21,6 +21,7 @@ export interface Planting {
   flipped_on?: string | null; flipped_by?: string | null
 }
 export interface Harvest {
+  sched_order?: number | null
   id: number; crop_year: number; site: SiteCode; field_id: number | null; strain: string; planting_id: number | null
   kind: HarvestKind; status: HarvestStatus; planned_on: string | null; plants: number | null
   est_lbs_per_plant: number | null; est_raw_per_plant: number | null; deleaf_rate: number | null; buck_rate: number | null

@@ -168,3 +168,24 @@ span.ptime { display: inline-flex; gap: 4px; align-items: center; }
 span.ptime input { padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); font-size: 14px; }
 .hend { margin-top: 10px; gap: 10px; align-items: center; }
 .hpause { border-color: #d39b1c; }
+
+/* Harvest list: day summaries and richer cards */
+.hdaygrp { border: 1px solid var(--line); border-radius: 14px; margin: 8px 0; background: var(--panel); overflow: hidden; }
+.hdaysum { display: block; width: 100%; text-align: left; background: transparent; border: 0; padding: 12px 14px; color: var(--ink); font: inherit; cursor: pointer; }
+.hdaysum-h { display: flex; gap: 8px; align-items: baseline; }
+.hdaysum-h b { font-size: 16px; }
+.hdaysum-h .hgo { margin-left: auto; }
+.hdaysum-k { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 6px; font-size: 14px; color: var(--muted); }
+.hdaysum-k b { color: var(--ink); font-size: 16px; }
+.hdaysum-k em { font-style: normal; }
+.hdaygrp-list { padding: 0 10px 10px; display: grid; gap: 6px; }
+.hfacts { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 13px; color: var(--muted); margin: 3px 0; }
+.hprog { display: grid; gap: 4px; font-size: 13px; color: var(--muted); margin-top: 4px; }
+.hprog b { color: var(--ink); }
+.hprog-bar { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
+.hprog-bar i { display: block; height: 100%; background: var(--brand); }
+
+/* Schedule: drag to reorder (088) */
+@media (hover: hover) { .ctable tr[draggable="true"] { cursor: grab; } }
+.ctable tr.dropb td { box-shadow: inset 0 3px 0 var(--brand); }
+.ctable tr.dropa td { box-shadow: inset 0 -3px 0 var(--brand); }
