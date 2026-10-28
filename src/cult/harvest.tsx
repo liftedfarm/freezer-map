@@ -1,4 +1,5 @@
 import { StrainLink } from '../strainCard'
+import { TagInput } from '../taginput'
 import { useBack, scrollTop } from '../nav'
 import { useEffect, useRef, useState } from 'react'
 import type { CultApi } from './api'
@@ -7,7 +8,6 @@ import type { Ctx } from './calc'
 import type { CPallet, CWeight, CultData, Harvest } from './types'
 import { DateIn, errText, F, NumIn, TextIn } from './ui'
 import type { Flash } from './ui'
-import { ScanButton } from '../scan'
 import { can } from '../fold'
 import { nextTag } from './schedule'
 import { HarvestDayCard } from './harvestday'
@@ -196,7 +196,7 @@ function LogPage({ h, d, c, api, flash, onSaved, back }: { h: Harvest; d: CultDa
 
       {h.kind === 'combine' && <>
         <div className="ckpis hk"><div><b>{n0(sum(totes.map(w => w.lbs)))}</b><span>lbs dry{k.estBiomass ? ` of ~${n0(k.estBiomass)}` : ''}</span></div><div><b>{totes.length}</b><span>totes</span></div></div>
-        <Weights title="Totes" kind="tote" rows={totes} busy={busy} done={locked} unit="tote" withTag
+        <Weights title="Totes" kind="tote" rows={totes} busy={busy} done={locked} unit="tote" site={h.site} withTag
           onAdd={(lbs, tag) => run(() => api.logWeight(h.id, 'tote', lbs, tag), `Tote ${n0(lbs)} lbs`)} onRemove={id => run(() => api.removeWeight(id), 'Removed')} />
       </>}
 
@@ -254,8 +254,8 @@ function Plants({ h, api, busy, done, run, leftBefore }: { h: Harvest; api: Cult
   )
 }
 /** a list of weights with a quick add box (Enter adds). Tap a bin to fix it while it isn't in METRC yet. */
-function Weights({ title, kind, rows, busy, done, unit, withTag, admin, onAdd, onRemove, onEdit }: {
-  title: string; kind: string; rows: CWeight[]; busy: boolean; done: boolean; unit: string; withTag?: boolean; admin?: boolean
+function Weights({ title, kind, rows, busy, done, unit, withTag, site, admin, onAdd, onRemove, onEdit }: {
+  title: string; kind: string; rows: CWeight[]; busy: boolean; done: boolean; unit: string; withTag?: boolean; site?: string; admin?: boolean
   onAdd: (lbs: number, tag: string | null) => void; onRemove: (id: number) => void; onEdit?: (id: number, lbs: number) => void
 }) {
   const [v, setV] = useState('')
@@ -271,7 +271,7 @@ function Weights({ title, kind, rows, busy, done, unit, withTag, admin, onAdd, o
         {rows.some(r => r.pushed) && rows.some(r => !r.pushed) && <span className="muted small">{rows.filter(r => !r.pushed).length} not in METRC yet</span>}</div>
       {!done && <div className="hadd">
         <input ref={ref} type="number" inputMode="decimal" placeholder={`${unit} lbs`} value={v} onChange={e => setV(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') add() }} data-kind={kind} />
-        {withTag && <><input placeholder="Tag (optional)" value={tag} onChange={e => setTag(e.target.value)} /><ScanButton onScan={setTag} disabled={busy} /></>}
+        {withTag && <TagInput compact value={tag} onChange={setTag} where={{ site: site ?? null, purpose: 'harvest' }} disabled={busy} placeholder="Tag (optional)" />}
         <button className="primary" disabled={busy || !(Number(v) > 0)} onClick={add}>Add {unit}</button>
       </div>}
       {rows.length > 0 && <div className="binrow">{rows.map((r, i) => ed?.id === r.id
@@ -349,7 +349,7 @@ function PalletLog({ h, api, busy, done, pallets, run, prefix }: {
           <input value={shownCode} placeholder={`${prefix}…`} onChange={e => { setCode(e.target.value.toUpperCase().replace(/\s/g, '')); setTag(null) }} style={{ width: 110 }} /></label>
         <label className="htag"><span>METRC tag {tag == null && code == null && next?.tag ? (next.available === false ? <em className="warn-t">(from the pallet #, but not on METRC's available list: check it)</em> : <em className="muted">(from the pallet #)</em>)
           : tag == null && code != null ? <em className="muted">(from the pallet # when saved)</em> : !shownTag ? <em className="muted">(blank = pending)</em> : null}</span>
-          <div className="row"><input value={shownTag} onChange={e => setTag(e.target.value.toUpperCase().replace(/\s/g, ''))} placeholder={code != null ? 'Auto from pallet #' : 'Scan or type'} /><ScanButton onScan={t => setTag(t)} disabled={busy} /></div></label>
+          <TagInput value={shownTag} onChange={setTag} where={{ site: h.site, purpose: 'harvest' }} disabled={busy} placeholder={code != null ? 'Auto from pallet #' : 'Last digits or scan'} /></label>
         {shownCode && pallets.some(p => p.code === shownCode) && <p className="warn-t small">{shownCode} is already on this harvest.</p>}
         <label className="check"><input type="checkbox" checked={partial} onChange={e => setPartial(e.target.checked)} /> <span>Last pallet (partial)</span></label>
         <button className="primary" disabled={busy || !(Number(lbs) > 0)} onClick={save}>Save pallet</button>
@@ -418,7 +418,7 @@ function EditPallet({ p, busy, onSave, onCancel }: { p: LogPallet; busy: boolean
         <label><span>Boxes</span><NumIn value={boxes} onChange={setBoxes} /></label>
         <label><span>Pallet #</span><input value={code} onChange={e => setCode(e.target.value.toUpperCase().replace(/\s/g, ''))} /></label>
         <label className="htag"><span>METRC tag {code !== p.code && !tagChanged ? <em className="muted">(follows the new pallet #)</em> : null}</span>
-          <div className="row"><input value={tag} onChange={e => setTag(e.target.value.toUpperCase().replace(/\s/g, ''))} placeholder="blank = pending" /><ScanButton onScan={setTag} disabled={busy} /></div></label>
+          <TagInput value={tag} onChange={setTag} where={{ pallet: p.id, purpose: 'harvest' }} keep={p.package_tag} disabled={busy} placeholder="Last digits or scan (blank = pending)" /></label>
         <label className="check"><input type="checkbox" checked={partial} onChange={e => setPartial(e.target.checked)} /> <span>Partial</span></label>
         <div className="row"><button className="ghost" onClick={onCancel}>Cancel</button>
           <button className="primary" disabled={busy || !(Number(lbs) > 0)} onClick={() => onSave({ lbs, boxes, partial, ...(code !== p.code ? { code } : {}),
@@ -441,7 +441,7 @@ function StripLog({ h, api, busy, done, dry, run, estDry }: { h: Harvest; api: C
   )
   return <>
     <div className="ckpis hk"><div><b>{n0(sum(dry.map(w => w.lbs)))}</b><span>lbs dry{estDry ? ` of ~${n0(estDry)}` : ''}</span></div><div><b>{dry.length}</b><span>weights</span></div></div>
-    <Weights title="Dry weight" kind="dry" rows={dry} busy={busy} done={done} unit="weight" withTag onAdd={(lbs, tag) => run(() => api.logWeight(h.id, 'dry', lbs, tag), `Dry ${n0(lbs)} lbs`)} onRemove={id => run(() => api.removeWeight(id), 'Removed')} />
+    <Weights title="Dry weight" kind="dry" rows={dry} busy={busy} done={done} unit="weight" site={h.site} withTag onAdd={(lbs, tag) => run(() => api.logWeight(h.id, 'dry', lbs, tag), `Dry ${n0(lbs)} lbs`)} onRemove={id => run(() => api.removeWeight(id), 'Removed')} />
   </>
 }
 
@@ -526,8 +526,7 @@ function BulkPallets({ h, api, busy, run, prefix, pallets }: { h: Harvest; api: 
         <div key={i} className="palrow bfrow">
           <span className="muted small">{i + 1}</span>
           <input inputMode="decimal" placeholder="lbs" value={r.lbs} onChange={e => set(i, { lbs: e.target.value })} />
-          <input className="mono-in" placeholder="METRC tag (blank = pending)" value={r.tag} onChange={e => set(i, { tag: e.target.value.toUpperCase().replace(/\s/g, ''), auto: false })} />
-          <ScanButton compact onScan={tag => set(i, { tag })} />
+          <TagInput compact value={r.tag} onChange={tag => set(i, { tag, auto: false })} where={{ site: h.site, purpose: 'harvest' }} placeholder="Tag: last digits (blank = pending)" />
           <input className="bfcode" placeholder={`${prefix}…`} value={r.code} onChange={e => set(i, { code: e.target.value.toUpperCase().replace(/\s/g, ''), tag: '', auto: true })} title="Pallet # (the tag follows it when saved)" />
           <button className="ghost small" onClick={() => setRows(rs => rs.filter((_, j) => j !== i))}>✕</button>
         </div>

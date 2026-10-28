@@ -1,6 +1,6 @@
 import { TextIn } from './cult/ui'
-import { useEffect, useId, useMemo, useState } from 'react'
-import { useTagSearch } from './tagSuggest'
+import { useMemo, useState } from 'react'
+import { TagInput } from './taginput'
 import { ScanButton } from './scan'
 import type { MixLine, Pallet, SingleInput } from './types'
 import { MetrcNote, WEIGHT_REASONS, defaultReason } from './metrc'
@@ -26,22 +26,10 @@ function TagField({ tag, setTag, pending, setPending, label = 'New METRC tag', p
   tag: string; setTag: (v: string) => void; pending?: boolean; setPending?: (v: boolean) => void; label?: string
   pallet?: number | null; slot?: number | null; keep?: string | null
 }) {
-  // suggestions come from the license of the pallet (or the slot it's going into); typing searches every available tag there
-  const { pool, tags, off } = useTagSearch({ pallet, slot }, tag)
-  const lid = useId()
-  // autofill: an empty box starts with the next available tag (Compliance > Settings > METRC tags)
-  useEffect(() => { if (pool?.autofill && pool.tags.length && !tag && !pending && setPending) setTag(pool.tags[0]) }, [pool])
   return (
     <div className="field">
-      <label>{label}{pool?.from_metrc && pool.tags.length > 0 && <span className="muted"> · next available: {pool.tags[0].slice(-8)}</span>}</label>
-      <div className="row tagrow">
-        <input className="mono-in grow-in" value={tag} disabled={pending} placeholder="1A40603000…" list={`tl${lid}`}
-          onChange={e => setTag(e.target.value.toUpperCase().replace(/\s/g, ''))} />
-        <datalist id={`tl${lid}`}>{tags.map(t => <option key={t} value={t} />)}</datalist>
-        <ScanButton disabled={pending} onScan={setTag} />
-      </div>
-      {pool?.from_metrc && <div className="muted small-note">{pool.license}{pool.free != null ? ` · ${pool.free.toLocaleString()} tags available` : ''}{tag.trim().length >= 3 && tag.trim().length < 24 ? ` · ${tags.length >= 200 ? '200+' : tags.length} match` : ''}</div>}
-      {off && tag !== keep && <div className="warn-t small-note">Not on METRC's available list for {pool?.license} (used, voided, another license, or held for something else). Check the tag.</div>}
+      <label>{label}</label>
+      <TagInput value={tag} onChange={setTag} where={{ pallet, slot }} keep={keep} disabled={pending} autofill={!!setPending && !pending} />
       {setPending && <label className="check"><input type="checkbox" checked={!!pending} onChange={e => setPending(e.target.checked)} /> Tag pending, I'll add it later</label>}
     </div>
   )
@@ -263,9 +251,7 @@ export function MixedBuilder({ title, target, candidates, initial, whereOf, busy
           {l.whole
             ? <div className="muted">Keeps tag {l.p.package_tag ?? '(none)'}</div>
             : <div className="row">
-                <input className="mono-in grow-in" placeholder="New METRC tag" disabled={l.pending} value={l.tag}
-                  onChange={e => upd(i, { tag: e.target.value.toUpperCase().replace(/\s/g, '') })} />
-                <ScanButton disabled={l.pending} onScan={t => upd(i, { tag: t })} />
+                <TagInput value={l.tag} onChange={t => upd(i, { tag: t })} where={{ pallet: l.p.id }} disabled={l.pending} placeholder="New METRC tag: last digits or scan" />
                 <label className="check"><input type="checkbox" checked={l.pending} onChange={e => upd(i, { pending: e.target.checked, ...(e.target.checked && l.auto ? { tag: '' } : {}) })} /> Pending</label>
               </div>}
           {!l.whole && l.auto && <div className="muted small-note">Next tag in the range (ends <b>{l.tag.slice(-6)}</b>), filled in for you. Scan or type over it if you're using a different one.</div>}

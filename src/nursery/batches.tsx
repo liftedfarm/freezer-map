@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
+import { TagInput } from '../taginput'
 import type { NurseryApi } from './api'
 import type { NCtx } from './calc'
 import { GEN_LABEL, GEN_WHAT, STAGE_LABEL, addDays, batchName, daysBetween, fmtD, live, n0, rooted, strainKey, tagsNeeded, today } from './calc'
@@ -57,17 +58,6 @@ export function BatchSheet({ d, c, b: b0, api, flash, onClose, onSaved }: { d: N
   const [x, setX] = useState<Partial<Batch>>(() => ({ site, cut_on: today(), tags: [], lost: 0, gen: 4,
     room_id: isNew ? d.rooms.find(r => r.active && r.kind === 'trailer')?.id ?? null : null, ...b0 }))
   const [tagText, setTagText] = useState((b0.tags ?? []).join('\n'))
-  const [pkgTags, setPkgTags] = useState<string[]>([])
-  // clone package tag: suggestions from METRC's available package tags, filled in for a new batch when autofill is on
-  useEffect(() => {
-    let on = true
-    Promise.all([api.nextTags(x.site ?? site, 20, 'package'), api.tagAutofill()]).then(([p, auto]) => {
-      if (!on) return
-      setPkgTags(p)
-      if (auto && isNew && !x.package_tag && p[0]) set({ package_tag: p[0] })
-    })
-    return () => { on = false }
-  }, [x.site])
   const [busy, setBusy] = useState(false)
   const [good, setGood] = useState<number | null>(null)
   const [mode, setMode] = useState<'edit' | 'ready' | 'loss' | 'plant'>('edit')
@@ -148,9 +138,7 @@ export function BatchSheet({ d, c, b: b0, api, flash, onClose, onSaved }: { d: N
       <StrainList id="n-strains" names={[...new Set([...d.mothers.filter(m => m.status === 'active').map(m => m.strain), ...d.strains])]} />
       <F label={t('METRC batch name')}><TextIn value={x.name} placeholder={autoName} onChange={v => set({ name: v })} /></F>
       <F label={t('Clone package tag (METRC)')} hint={t('one package for this cutting event')}>
-        <div className="row"><input className="mono" list="n-pkg-tags" value={x.package_tag ?? ''} onChange={e => set({ package_tag: e.target.value.toUpperCase().replace(/\s/g, '') })} placeholder="1A40603…" />
-          <ScanButton onScan={v => set({ package_tag: v })} disabled={busy} /></div>
-        <datalist id="n-pkg-tags">{pkgTags.map(p => <option key={p} value={p} />)}</datalist>
+        <TagInput value={x.package_tag ?? ''} onChange={v => set({ package_tag: v || null })} where={{ site: x.site ?? site, type: 'package' }} autofill={isNew} disabled={busy} />
       </F>
       <F label={t('METRC tags')} hint={t('({n} of {of}: one per 100 plants)', { n: tags.length, of: tagsNeeded(x.cuttings ?? 1) })}>
         <textarea rows={Math.max(2, Math.min(6, tags.length + 1))} value={tagText} onChange={e => setTagText(e.target.value.toUpperCase())} placeholder={t('One tag per line')} />
@@ -201,8 +189,8 @@ function PlantMoms({ d, c, b, api, flash, onBack, onDone }: { d: NData; c: NCtx;
         <F label={t('Plants')}><NumIn value={qty} onChange={setQty} /></F>
         <F label={t('Planted on')}><DateIn value={on} onChange={setOn} /></F>
       </div>
-      <F label={t('METRC plant tag for this lot')}><div className="row"><input value={tag} onChange={e => setTag(e.target.value.toUpperCase())} placeholder={t('Scan or type')} />
-        <button type="button" className="ghost small" onClick={async () => { const t = (await api.nextTags(b.site, 1))[0]; if (t) setTag(t) }}>{t('Next tag')}</button><ScanButton onScan={setTag} disabled={busy} /></div></F>
+      <F label={t('METRC plant tag for this lot')}><div className="row"><TagInput value={tag} onChange={setTag} where={{ site: b.site, type: 'plant' }} disabled={busy} />
+        <button type="button" className="ghost small" onClick={async () => { const t = (await api.nextTags(b.site, 1))[0]; if (t) setTag(t) }}>{t('Next tag')}</button></div></F>
       {cap != null && <p className={`small-note ${used + (qty ?? 0) > cap ? 'warn-t' : 'muted'}`}>{r!.name}{bed ? ` ${t('bed')} ${bed}` : ''}: {t('{n} planted of {cap} spots', { n: n0(used), cap: n0(cap) })}{used + (qty ?? 0) > cap ? ' ' + t('(this goes over)') : ''}.</p>}
       <SaveBar busy={busy} disabled={!qty || qty <= 0 || qty > left} saveLabel={t('Plant {n}', { n: n0(qty) })} onCancel={onBack} onSave={go} />
     </Sheet>

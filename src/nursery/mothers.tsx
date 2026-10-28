@@ -1,11 +1,11 @@
 import { Fragment, useState } from 'react'
+import { TagInput } from '../taginput'
 import type { NurseryApi } from './api'
 import type { NCtx } from './calc'
 import { GEN_LABEL, GEN_WHAT, fmtD, live, n0, strainKey, sum, today } from './calc'
 import type { Mother, NData } from './types'
 import { DateIn, F, NumIn, Pick, SaveBar, SelAll, SelBar, SelBox, SelButton, Sheet, StrainList, TextIn, useSel } from '../cult/ui'
 import type { Flash } from '../cult/ui'
-import { ScanButton } from '../scan'
 import { t, tn } from '../i18n'
 
 const where = (c: NCtx, m: Mother) => [c.room(m.room_id), m.bed].filter(Boolean).join(' · ')
@@ -93,8 +93,8 @@ export function MotherSheet({ d, c, m: m0, api, flash, onClose, onSaved }: { d: 
           onChange={v => set({ status: v ?? 'active', ended_on: v && v !== 'active' ? x.ended_on ?? today() : null })} /></F>
         {x.status !== 'active' && <F label={t('Since')}><DateIn value={x.ended_on} onChange={v => set({ ended_on: v })} /></F>}
       </div>
-      <F label={t('METRC plant tag')}><div className="row"><input value={x.plant_tag ?? ''} onChange={e => set({ plant_tag: e.target.value.toUpperCase() || null })} placeholder={t('Scan or type')} />
-        <button type="button" className="ghost small" onClick={fillTag} disabled={busy}>{t('Next tag')}</button><ScanButton onScan={tag => set({ plant_tag: tag })} disabled={busy} /></div></F>
+      <F label={t('METRC plant tag')}><div className="row"><TagInput value={x.plant_tag ?? ''} onChange={v => set({ plant_tag: v || null })} where={{ site: x.site ?? site, type: 'plant' }} keep={m0.plant_tag ?? null} disabled={busy} />
+        <button type="button" className="ghost small" onClick={fillTag} disabled={busy}>{t('Next tag')}</button></div></F>
       <F label={t('Notes')}><TextIn value={x.notes} onChange={v => set({ notes: v })} /></F>
       {!isNew && m0.status === 'active' && <div className="row lossrow">
         <span className="muted">{m0.lost ? t('{n} lost so far.', { n: n0(m0.lost) }) : t('Plants died or culled?')}</span>

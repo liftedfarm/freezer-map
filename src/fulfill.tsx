@@ -1,6 +1,6 @@
 import { Select } from './combo'
+import { TagInput } from './taginput'
 import { useBack, scrollTop } from './nav'
-import { ScanButton } from './scan'
 import { sameTag, useScanHandler } from './scanroute'
 import { useMemo, useState } from 'react'
 import type { Backend } from './api'
@@ -300,7 +300,7 @@ function Pick({ line, need, cands, where, rank, busy, close, onWhole, onPart }: 
             <div className="sheet-h"><h2>Take part of {part.p.code}</h2><button className="ghost" onClick={() => setPart(null)}>✕</button></div>
             <p className="muted">{part.p.code} has {n0(w(part.p))} lbs. The part you take becomes its own package for this order (the rest stays as {part.p.code}). Split it for real when you pull it.</p>
             <div className="field"><label>Lbs for this order</label><input type="number" inputMode="decimal" value={part.lbs} onChange={e => setPart({ ...part, lbs: e.target.value })} /></div>
-            <div className="field"><label>New METRC tag <span className="muted">(blank = tag pending)</span></label><div className="row tagrow"><input className="grow-in" value={part.tag} onChange={e => setPart({ ...part, tag: e.target.value.toUpperCase().replace(/\s/g, '') })} placeholder="Scan or type later" /><ScanButton onScan={tag => setPart({ ...part, tag })} /></div></div>
+            <div className="field"><label>New METRC tag <span className="muted">(blank = tag pending)</span></label><TagInput value={part.tag} onChange={tag => setPart({ ...part, tag })} where={{ pallet: part.p.id }} placeholder="Last digits, scan, or leave blank" /></div>
             <div className="row between"><span /><div className="row">
               <button className="ghost" onClick={() => setPart(null)}>Cancel</button>
               <button className="primary" disabled={busy || !(Number(part.lbs) > 0 && Number(part.lbs) < w(part.p))} onClick={() => { onPart(part.p, Number(part.lbs), part.tag.trim() || null); setPart(null) }}>Assign {n0(Number(part.lbs) || 0)} lbs</button>
@@ -382,7 +382,7 @@ function Combine({ o, line, pallets, heldBy, onLoad, inRun, where, rank, canon, 
             </div>
           ))}
         </div>
-        <div className="field"><label>New METRC tag <span className="muted">(blank = tag pending)</span></label><div className="row tagrow"><input className="grow-in" value={tag} onChange={e => setTag(e.target.value.toUpperCase().replace(/\s/g, ''))} placeholder="Scan or type later" /><ScanButton onScan={setTag} /></div></div>
+        <div className="field"><label>New METRC tag <span className="muted">(blank = tag pending)</span></label><TagInput value={tag} onChange={setTag} where={{ pallet: cands[0]?.id ?? null }} placeholder="Last digits, scan, or leave blank" /></div>
         <div className="metrcnote"><b>METRC</b> Goes on the METRC to-do as Combine packages: one new package from {sel.size || 'these'} source{sel.size === 1 ? '' : 's'}.</div>
         <div className="row end">
           <button className="ghost" onClick={close}>Cancel</button>

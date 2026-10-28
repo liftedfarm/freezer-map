@@ -1,5 +1,5 @@
+import { TagInput } from '../taginput'
 import { useBack } from '../nav'
-import { ScanButton } from '../scan'
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { NCtx } from './calc'
@@ -161,7 +161,7 @@ function RunSheet({ sb, d, c, b, r0, flash, onClose, onSaved }: { sb: SupabaseCl
         <tbody>{recs.map((z, i) => z._del ? null : <tr key={z.id ?? `n${i}`}><td>{z.strain}</td>
           <td className="small">{z.mother_id ? (() => { const m = d.mothers.find(q => q.id === z.mother_id); return m ? `${GEN_LABEL[m.gen]} ${c.room(m.room_id)}` : '' })() : ''}</td>
           <td className="num"><input className="qty" type="number" value={z.plants} onChange={e => setRecs(rs => rs.map((q, j) => j === i ? { ...q, plants: Number(e.target.value) || 0 } : q))} /></td>
-          <td><div className="row tagrow"><input className="tagin" value={z.plant_tag ?? ''} onChange={e => setRecs(rs => rs.map((q, j) => j === i ? { ...q, plant_tag: e.target.value.toUpperCase() } : q))} placeholder={t('METRC tag')} /><ScanButton compact onScan={tag => setRecs(rs => rs.map((q, j) => j === i ? { ...q, plant_tag: tag } : q))} /></div></td>
+          <td><TagInput compact value={z.plant_tag ?? ''} onChange={v => setRecs(rs => rs.map((q, j) => j === i ? { ...q, plant_tag: v } : q))} where={{ site: d.sites[0]?.code ?? '1PN', type: 'plant' }} keep={z.id ? z.plant_tag : null} placeholder={t('METRC tag')} /></td>
           <td className="num">{seedsFor(z.id) ? n0(seedsFor(z.id)!.seeds) : z.id && x.id ? <button className="ghost small" onClick={() => harvest(z)}>{t('Seeds…')}</button> : ''}</td>
           <td>{!seedsFor(z.id) && <button className="ghost small" onClick={() => setRecs(rs => rs.map((q, j) => j === i ? { ...q, _del: true } : q))}>✕</button>}</td></tr>)}</tbody>
       </table></div>}
@@ -344,7 +344,7 @@ function PhenoSheet({ sb, d, b, p, me, flash, onClose, onSaved }: { sb: Supabase
       <h3>{t('Plant')}</h3>
       <div className="grid2">
         <F label={t('Label')}><TextIn value={x.label} onChange={v => setX({ ...x, label: v })} /></F>
-        <F label={t('METRC tag')}><div className="row"><TextIn value={x.plant_tag} onChange={v => setX({ ...x, plant_tag: v ? v.toUpperCase() : null })} /><ScanButton onScan={tag => setX({ ...x, plant_tag: tag })} /></div></F>
+        <F label={t('METRC tag')}><TagInput value={x.plant_tag ?? ''} onChange={v => setX({ ...x, plant_tag: v || null })} where={{ site: d.sites[0]?.code ?? '1PN', type: 'plant' }} keep={p.plant_tag ?? null} /></F>
         <F label={t('Where')}><Pick value={x.room_id} blank="—" options={d.rooms.filter(r => r.active || r.id === x.room_id).map(r => ({ v: r.id, l: r.name }))} onChange={v => setX({ ...x, room_id: v })} /></F>
         <F label={t('Bed / row')}><TextIn value={x.bed} onChange={v => setX({ ...x, bed: v })} /></F>
       </div>

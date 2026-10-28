@@ -1,4 +1,5 @@
 import { Select } from '../combo'
+import { TagInput } from '../taginput'
 import { CompFleet } from '../fleet/Fleet'
 import { StrainLink } from '../strainCard'
 import { useBack } from '../nav'
@@ -15,7 +16,6 @@ import type { PTab } from './tabs'
 import { Card, Cards, DashHead, Empty, Tile, Tiles } from '../dash'
 import { DateIn, F, NumIn, Pick, SaveBar, Sheet, TextIn, errText, useSel, SelAll, SelBox, SelBar, SelButton } from '../cult/ui'
 import type { Flash } from '../cult/ui'
-import { ScanButton } from '../scan'
 import { sameTag, useScanHandler } from '../scanroute'
 import { ModulePeople } from '../users'
 import { Fold } from '../fold'
@@ -322,8 +322,8 @@ function PkgTable({ c, rows, sel, extra, showProduct, extraOnPhone = true }: { c
   </table></div>
 }
 
-function TagIn({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
-  return <span className="row tagin"><input className="mono" value={value} placeholder={placeholder ?? 'METRC tag (blank = pending)'} onChange={e => onChange(e.target.value.toUpperCase())} /><ScanButton compact onScan={t => onChange(t.toUpperCase())} /></span>
+function TagIn({ value, onChange, placeholder, pallet }: { value: string; onChange: (v: string) => void; placeholder?: string; pallet?: number }) {
+  return <TagInput compact value={value} onChange={onChange} where={{ pallet: pallet ?? null }} placeholder={placeholder ?? 'Last digits or scan (blank = pending)'} />
 }
 
 function WetSheet({ c, h, onClose }: { c: Ctx; h: DryHarvest; onClose: () => void }) {
@@ -394,7 +394,7 @@ function BackSheet({ c, ids, onClose }: { c: Ctx; ids: number[]; onClose: () => 
     <F label="Arrived at"><Pick value={site} options={[{ v: 'GVR', l: 'GVR (processor license)' }, { v: 'OHR', l: 'OHR' }]} onChange={setSite} /></F>
     <p className="muted small-note">Not weighed: each keeps its wet weight until it's bucked. If the processor sent it back on a new METRC tag, enter it.</p>
     {ps.map(p => <div key={p.id} className="row noline"><b className="grow">{p.code} <span className="muted">{p.strain} · {n0(w(p))} lbs · …{(p.package_tag ?? '').slice(-6)}</span></b>
-      <TagIn value={tags[p.id] ?? ''} placeholder="New tag (if it changed)" onChange={v => setTags(t => ({ ...t, [p.id]: v }))} /></div>)}
+      <TagIn pallet={p.id} value={tags[p.id] ?? ''} placeholder="New tag (if it changed)" onChange={v => setTags(t => ({ ...t, [p.id]: v }))} /></div>)}
     <SaveBar busy={busy} onCancel={onClose} onSave={save} saveLabel="Back" />
   </Sheet>
 }
