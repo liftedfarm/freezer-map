@@ -28,6 +28,7 @@ import type { Layout, Plan, PlanMove, PlaceMode } from './plan'
 import { DragGhost, draggable, onDrop } from './drag'
 import { ChooseDialog, PlanBar, RemoveForm, SelectBar, UndoPill } from './planui'
 import { isDry, WEIGHT_REASONS } from './metrc'
+import { ArchivedView, restoreOne } from './archived'
 import type { InvAction } from './metrc'
 import { ReservesView, SALES_TITLES } from './reserves'
 import type { SalesMode } from './reserves'
@@ -67,7 +68,7 @@ const AccountingView = lazy(() => import('./acct/AccountingView'))
 const ProcessingView = lazy(() => import('./proc/ProcessingView'))
 const ComplianceView = lazy(() => import('./comp/ComplianceView'))
 
-type View = 'dash' | 'inventory' | 'fulfill' | 'map' | 'freezer' | 'transit' | 'load' | 'review' | 'activity' | 'settings' | 'sales' | 'cult' | 'nursery' | 'proc' | 'acct' | 'comp' | 'admin' | 'mine' | 'fleet' | 'inbound'
+type View = 'dash' | 'inventory' | 'fulfill' | 'map' | 'freezer' | 'transit' | 'load' | 'review' | 'activity' | 'settings' | 'sales' | 'cult' | 'nursery' | 'proc' | 'acct' | 'comp' | 'admin' | 'mine' | 'fleet' | 'inbound' | 'archived'
 // modules: each person has a level (User / Admin) per module; Owners have all of them (Admin > Settings > Users)
 type Mod = 'dist' | 'sales' | 'cult' | 'nurs' | 'proc' | 'acct' | 'comp' | 'admin'
 const MOD_KEY: Record<Mod, ModKey> = { dist: 'distribution', sales: 'sales', cult: 'cultivation', nurs: 'nursery', proc: 'processing', acct: 'accounting', comp: 'compliance', admin: 'admin' }
@@ -194,6 +195,9 @@ function describe(ix: Index, e: InvEvent, names?: Map<number, string>) {
     case 'removed': { const r = (e.details as { reason?: string } | null)?.reason
       return `${code} removed: ${r === 'used' ? 'used up' : r === 'shipped' ? 'shipped outside the app' : 'entered by mistake'} (${lbs(e.lbs)})` }
     case 'unslot': return `${code} taken out of ${whereIs(ix, e.from_slot_id)}`
+    case 'restored': { const d = e.details as { site?: string; staging?: boolean } | null
+      return `${code} brought back from Archived to ${e.to_slot_id != null ? whereIs(ix, e.to_slot_id) : `Needs a spot at ${d?.site ?? ''}`} (${lbs(e.lbs)})` }
+    case 'pallet_deleted': return `${code} deleted for good (was archived, ${lbs(e.lbs)})`
     case 'created': return `${code} entered by hand at ${whereIs(ix, e.to_slot_id)} (${lbs(e.lbs)})`
     case 'mixed_created': { const d = e.details as { packages?: string[] } | null
       return `${code} mixed pallet started at ${whereIs(ix, e.to_slot_id)} with ${(d?.packages ?? []).join(', ')}` }
@@ -404,6 +408,7 @@ export default function App() {
   const [sel, setSel] = useState<number[]>([])
   const [choose, setChoose] = useState<{ id: number; slot: Slot } | null>(null)
   const [removeP, setRemoveP] = useState<Pallet | null>(null)
+  const [archQ, setArchQ] = useState<string | null>(null)
   const [lastBatch, setLastBatch] = useState<{ id: string; n: number; at: number } | null>(null)
   const [pickLoadMany, setPickLoadMany] = useState<Pallet[] | null>(null)
   const [tagPool, setTagPool] = useState<string[]>([])
@@ -782,6 +787,7 @@ export default function App() {
     { k: 'fulfill', l: <>Fulfillment{badge(toFulfill)}</>, s: t('Fulfill'), n: toFulfill, on: view === 'fulfill', go: () => go('fulfill') },
     { k: 'transit', l: <>Transit{badge(openLoads.length)}</>, s: 'Transit', n: openLoads.length, on: view === 'transit' || view === 'load', go: () => go('transit') },
     ...(staff ? [{ k: 'inbound', l: 'Inbound', on: view === 'inbound', go: () => go('inbound') }] : []),
+    ...(staff ? [{ k: 'archived', l: 'Archived', on: view === 'archived', go: () => { setArchQ(null); go('archived') } }] : []),
   ]
   const distTail: NavItem[] = [
     { k: 'review', l: <>Review{badge(reviewCount, true)}</>, s: 'Review', n: reviewCount, warn: true, on: view === 'review', go: () => go('review') },
@@ -997,6 +1003,10 @@ export default function App() {
           canon={canonOf} loads={snap.loads ?? []} vehicles={snap.vehicles ?? []} isSales={isSales} stops={snap.stops ?? []} customers={snap.customers ?? []} openId={fOpen} setOpenId={setFOpen}
           openLoad={id => { setLoadId(id); setView('load'); scrollTop() }} openPallet={setPalletId} />}
         {view === 'inbound' && <InboundView sb={backend.client()} flash={flash} onChanged={() => { reload() }} />}
+        {view === 'archived' && <ArchivedView key={archQ ?? ''} initialQ={archQ} sb={backend.client()} flash={flash} onChanged={() => { reload() }}
+          openPallet={async id => { const { data } = await backend.client()!.from('pallets').select('*').eq('id', id).single(); if (data) { setScanned(data as Pallet); setPalletId(id) } }}
+          pickSpot={(r, w, note, done) => { setView('map'); startPlacing({ title: `Putting ${r.code} back`, sub: 'Open a freezer and tap the spot it\'s in.',
+            run: slot => act(() => restoreOne(backend.client()!, r.id, note, { slot: slot.id }, w), `${r.code} is back in ${slotLabel(slot)}`).then(done) }) }} />}
         {view === 'transit' && <TransitView ctx={ctx} onOpen={id => { setLoadId(id); setView('load'); scrollTop() }} onNew={() => setLoadForm({})} />}
         {view === 'load' && loadId != null && <LoadView ctx={ctx} loadId={loadId} onBack={() => setView('transit')} onEdit={() => setLoadForm({ load: (snap.loads ?? []).find(l => l.id === loadId) })} />}
         {view === 'cult' && inCult && cultTab === 'receiving' && <ReceivingView sb={backend.client()} module="cultivation" flash={flash} nurseryLicenses={['CCL24-0000156']} />}
@@ -1113,6 +1123,7 @@ export default function App() {
             if (selected.status === 'in_transit' && lo) { setPalletId(null); ctx.putBack(lo.item, selected); return }
             setPlan(pl => addToTray(pl, [selected.id])); setPalletId(null); if (selected.slot_id != null) goTo(selected.slot_id); flash(`${selected.code} is in the tray. Tap the slot it goes to.`) }}
           onRemove={() => { setRemoveP(selected); setPalletId(null) }}
+          onArchived={staff && selected.status === 'archived' ? () => { setArchQ(selected.code); setPalletId(null); go('archived') } : undefined}
           onClear={() => act(() => backend.clearReview(selected.id), 'Flag cleared')}
           onFlag={(why: string) => act(() => backend.flagReview(selected.id, why), 'Flagged for review')}
           onForm={(kind) => {
@@ -1693,7 +1704,8 @@ function ActivityView({ ix, module }: { ix: Index; module: 'distribution' | 'sal
 
 type SheetAction = 'split' | 'merge' | 'tag' | 'weight' | 'addto' | 'addmixed'
 
-function PalletSheet({ ix, p, others, busy, where, flash, onClose, onGo, onMove, onRemove, onClear, onFlag, onPick, onForm, onTakeOff, onBreak, onLineage, loadInfo, customerName, onOpenLoad, onPutOnLoad, onPulled, held, onHeld, originAdmin, onOrigin, inRun, canGrade, onLotGrade, onPalletGrade }: { flash: (t: string, bad?: boolean) => void;
+function PalletSheet({ ix, p, others, busy, where, flash, onArchived, onClose, onGo, onMove, onRemove, onClear, onFlag, onPick, onForm, onTakeOff, onBreak, onLineage, loadInfo, customerName, onOpenLoad, onPutOnLoad, onPulled, held, onHeld, originAdmin, onOrigin, inRun, canGrade, onLotGrade, onPalletGrade }: { flash: (t: string, bad?: boolean) => void;
+  onArchived?: () => void
   held?: string; onHeld?: () => void; originAdmin?: boolean; onOrigin?: (site: string) => void; inRun?: string
   canGrade?: boolean; onLotGrade?: (lot: HarvestLot, grade: Grade | null) => void; onPalletGrade?: (grade: Grade | null) => void
   ix: Index; p: Pallet; others: Pallet[]; busy: boolean; where: (p: Pallet) => string
@@ -1846,6 +1858,7 @@ function PalletSheet({ ix, p, others, busy, where, flash, onClose, onGo, onMove,
               <button className="primary small" disabled={busy || !flagWhy.trim()} onClick={() => { onFlag(flagWhy.trim()); setFlagWhy(null) }}>Flag it</button></div>
           </div>}
         </>)}
+        {onArchived && <div className="row actions"><button className="primary big" onClick={onArchived}>Bring back or delete…</button></div>}
         <h3>History</h3>
         {!hist && <p className="muted">Loading…</p>}
         {hist?.length === 0 && <p className="muted">No history.</p>}

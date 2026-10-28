@@ -11,7 +11,7 @@ const PL = (p: Pallet) => ({ wet: 'Wet', unbucked: 'Unbucked', bucked: 'Bucked',
 
 export const lbs = (n: number | null | undefined) => n == null ? '' : `${(Math.round(n * 100) / 100).toLocaleString()} lbs`
 
-function Dialog({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
+export function Dialog({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
   return (
     <div className="scrim" onClick={onClose}>
       <div className="sheet form" onClick={e => e.stopPropagation()}>
