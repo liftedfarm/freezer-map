@@ -80,6 +80,7 @@ export interface Backend {
   movePallet(palletId: number, toSlot: number | null, combine: boolean, note?: string): Promise<void>
   setFreezerStatus(freezerId: number, status: FreezerStatus, note?: string): Promise<void>
   clearReview(palletId: number, note?: string): Promise<void>
+  flagReview(palletId: number, reason: string): Promise<void>
   splitPallet(palletId: number, lbs: number, tag: string | null, tagPending: boolean, destSlot: number | null, note?: string, keepOnLoad?: boolean): Promise<Pallet>
   createMixed(slotId: number, lines: MixLine[], note?: string): Promise<Pallet>
   addToMixed(mixedId: number, lines: MixLine[], note?: string): Promise<void>
@@ -628,6 +629,10 @@ class SupaBackend implements Backend {
     })
     fail(error)
   }
+  async flagReview(palletId: number, reason: string) {
+    const { error } = await this.sb.rpc('flag_review', { p_pallet_id: palletId, p_reason: reason })
+    if (error) throw new Error(/Could not find the function/.test(error.message) ? 'Run 091_flag_review.sql in Supabase first' : error.message)
+  }
   async clearReview(palletId: number, note?: string) {
     const { error } = await this.sb.rpc('clear_review', { p_pallet_id: palletId, p_note: note || null })
     fail(error)
@@ -875,6 +880,11 @@ class DemoBackend implements Backend {
     const f = this.snap!.freezers.find(x => x.id === freezerId)!
     this.log({ type: 'freezer_status', freezer_id: f.id, note: note || null, details: { from: f.status, to: status } })
     f.status = status
+  }
+  async flagReview(palletId: number, reason: string) {
+    const p = this.snap!.pallets.find(x => x.id === palletId)!
+    this.log({ type: 'review_flagged', pallet_id: p.id, note: reason, details: { was: p.needs_review } })
+    p.needs_review = reason
   }
   async clearReview(palletId: number, note?: string) {
     const p = this.snap!.pallets.find(x => x.id === palletId)!

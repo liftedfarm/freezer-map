@@ -1128,3 +1128,6 @@ html:has(.app.shell), html:has(.app.shell) body { height: 100%; overflow: hidden
 .shipset .tbl { width: 100%; border-collapse: collapse; }
 .shipset .tbl td, .shipset .tbl th { padding: 4px 6px; text-align: left; }
 .shipset .warn-row { background: color-mix(in srgb, var(--warn, #d97706) 6%, transparent); }
+.flagform { display: grid; gap: 8px; margin-top: 10px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; }
+.flagform label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+.flagform input { padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); font-size: 15px; }

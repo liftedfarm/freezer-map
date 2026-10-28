@@ -207,6 +207,7 @@ function describe(ix: Index, e: InvEvent, names?: Map<number, string>) {
       return `${code} broken apart: ${(d?.packages ?? []).join(', ')} now separate` }
     case 'import': return `${code} imported at ${whereIs(ix, e.to_slot_id)}`
     case 'review_cleared': return `${code} review flag cleared`
+    case 'review_flagged': return `${code} flagged for review: ${e.note ?? ''}`
     case 'split': { const d = e.details as { child?: string; remaining?: number; mixed?: string } | null
       return `${code} split: ${lbs(e.lbs)} off to ${d?.child}${d?.mixed ? ` (onto ${d.mixed})` : ''}, ${lbs(d?.remaining)} left` }
     case 'split_from': { const d = e.details as { parent?: string; tag?: string | null; mixed?: string } | null
@@ -1113,6 +1114,7 @@ export default function App() {
             setPlan(pl => addToTray(pl, [selected.id])); setPalletId(null); if (selected.slot_id != null) goTo(selected.slot_id); flash(`${selected.code} is in the tray. Tap the slot it goes to.`) }}
           onRemove={() => { setRemoveP(selected); setPalletId(null) }}
           onClear={() => act(() => backend.clearReview(selected.id), 'Flag cleared')}
+          onFlag={(why: string) => act(() => backend.flagReview(selected.id, why), 'Flagged for review')}
           onForm={(kind) => {
             if (kind === 'addto') setForm({ kind: 'pickmixed', p: selected })
             else if (kind === 'addmixed') setForm({ kind: 'addmixed', m: selected })
@@ -1691,11 +1693,11 @@ function ActivityView({ ix, module }: { ix: Index; module: 'distribution' | 'sal
 
 type SheetAction = 'split' | 'merge' | 'tag' | 'weight' | 'addto' | 'addmixed'
 
-function PalletSheet({ ix, p, others, busy, where, flash, onClose, onGo, onMove, onRemove, onClear, onPick, onForm, onTakeOff, onBreak, onLineage, loadInfo, customerName, onOpenLoad, onPutOnLoad, onPulled, held, onHeld, originAdmin, onOrigin, inRun, canGrade, onLotGrade, onPalletGrade }: { flash: (t: string, bad?: boolean) => void;
+function PalletSheet({ ix, p, others, busy, where, flash, onClose, onGo, onMove, onRemove, onClear, onFlag, onPick, onForm, onTakeOff, onBreak, onLineage, loadInfo, customerName, onOpenLoad, onPutOnLoad, onPulled, held, onHeld, originAdmin, onOrigin, inRun, canGrade, onLotGrade, onPalletGrade }: { flash: (t: string, bad?: boolean) => void;
   held?: string; onHeld?: () => void; originAdmin?: boolean; onOrigin?: (site: string) => void; inRun?: string
   canGrade?: boolean; onLotGrade?: (lot: HarvestLot, grade: Grade | null) => void; onPalletGrade?: (grade: Grade | null) => void
   ix: Index; p: Pallet; others: Pallet[]; busy: boolean; where: (p: Pallet) => string
-  onClose: () => void; onGo: () => void; onMove: () => void; onRemove: () => void; onClear: () => void; onPick: (id: number) => void
+  onClose: () => void; onGo: () => void; onMove: () => void; onRemove: () => void; onClear: () => void; onFlag: (why: string) => void; onPick: (id: number) => void
   onForm: (kind: SheetAction) => void; onTakeOff: () => void; onBreak: () => void; onLineage: (ps: Pallet[]) => void
   loadInfo?: { item: LoadItem; load: Load; stop: LoadStop }; customerName: (id: number) => string
   onOpenLoad: (id: number) => void; onPutOnLoad: () => void; onPulled: () => void
@@ -1703,6 +1705,7 @@ function PalletSheet({ ix, p, others, busy, where, flash, onClose, onGo, onMove,
   const [hist, setHist] = useState<InvEvent[] | null>(null)
   const [kin, setKin] = useState<Pallet[]>([])
   const contents = ix.contentsOf.get(p.id) ?? []
+  const [flagWhy, setFlagWhy] = useState<string | null>(null)
   useEffect(() => { setHist(null); backend.palletEvents(p.id).then(setHist) }, [p.id, p.slot_id, p.needs_review, p.current_weight, p.package_tag, p.status, p.container_id, contents.length])
   useEffect(() => {
     if (p.parent_id == null && p.merged_into == null && !/^C\d+$/.test(p.code) && !hist?.some(e => e.type === 'split')) { setKin([]); return }
@@ -1832,8 +1835,16 @@ function PalletSheet({ ix, p, others, busy, where, flash, onClose, onGo, onMove,
             <button className="ghost small" disabled={busy} onClick={() => onForm('weight')}>Adjust weight</button>
             <button className="ghost small" disabled={busy} onClick={() => onForm('tag')}>{p.package_tag ? 'Edit tag' : 'Enter tag'}</button>
             {p.needs_review && <button className="ghost small" disabled={busy} onClick={onClear}>Clear flag</button>}
+            <button className="ghost small" disabled={busy} onClick={() => setFlagWhy(p.needs_review ?? '')}>{p.needs_review ? 'Change flag' : 'Flag for review'}</button>
             {(!loadInfo || loadEditable) && <button className="ghost small danger" disabled={busy} onClick={onRemove}>Remove</button>}
           </div>
+          {flagWhy != null && <div className="flagform">
+            <label><span>Why does {p.code} need review?</span>
+              <input autoFocus value={flagWhy} placeholder="e.g. Not on the reefer sheet, can't find it" onChange={e => setFlagWhy(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && flagWhy.trim()) { onFlag(flagWhy.trim()); setFlagWhy(null) } if (e.key === 'Escape') setFlagWhy(null) }} /></label>
+            <div className="row"><button className="ghost small" onClick={() => setFlagWhy(null)}>Cancel</button>
+              <button className="primary small" disabled={busy || !flagWhy.trim()} onClick={() => { onFlag(flagWhy.trim()); setFlagWhy(null) }}>Flag it</button></div>
+          </div>}
         </>)}
         <h3>History</h3>
         {!hist && <p className="muted">Loading…</p>}
