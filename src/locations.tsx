@@ -21,7 +21,13 @@ export function DistLocations({ sb, flash, onChanged }: { sb: SupabaseClient | n
   useEffect(() => { if (ed) formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }) }, [ed?.at, ed?.id, ed == null])
   const load = async () => {
     if (!sb) return
-    const [f, s] = await Promise.all([sb.from('freezers').select('*').order('number'), sb.from('slots').select('freezer_id,row').range(0, 9999)])
+    const f = await sb.from('freezers').select('*').order('number')
+    const s: { data: unknown[] } = { data: [] }
+    for (let a = 0; ; a += 1000) {   // the API hands back 1,000 rows at a time
+      const r = await sb.from('slots').select('freezer_id,row').order('id').range(a, a + 999)
+      s.data.push(...(r.data ?? []))
+      if (!r.data || r.data.length < 1000) break
+    }
     if (f.error) { flash(f.error.message, true); return }
     const deep = new Map<number, number>()
     for (const x of (s.data ?? []) as { freezer_id: number; row: number }[]) deep.set(x.freezer_id, Math.max(deep.get(x.freezer_id) ?? 0, x.row))
