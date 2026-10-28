@@ -101,11 +101,6 @@ function Hero({ v }: { v: BonusView }) {
         </div>
         <StatusIcon level={v.level} won={v.won} />
       </div>
-      <div className="bz-pay">
-        <div><span className="bz-cap">Pago por hora ahora</span><b>{money(v.hourly + (v.won ? rate : 0))}</b></div>
-        {!v.won && !over && <div><span className="bz-cap">Con la meta</span><b>{money(v.hourly + rate)}</b></div>}
-        <div><span className="bz-cap">Base</span><b className="bz-dim">{money(v.hourly)}</b></div>
-      </div>
     </div>
   )
 }
