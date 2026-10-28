@@ -1,5 +1,6 @@
 import { Select } from './combo'
 import { TagInput } from './taginput'
+import { ScanButton } from './scan'
 import { useBack, scrollTop } from './nav'
 import { sameTag, useScanHandler } from './scanroute'
 import { useMemo, useState } from 'react'
@@ -284,19 +285,44 @@ function Pick({ line, need, cands, where, rank, busy, close, onWhole, onPart }: 
     return ca - cb || (ca === 0 ? w(a) - w(b) : w(b) - w(a)) || rank(a) - rank(b)
   })
   const total = cands.reduce((a, p) => a + w(p), 0)
+  // suggestions first; "Show all" lists every free pallet; search or scan to find a particular one
+  const [all, setAll] = useState(false)
+  const [q, setQ] = useState('')
+  const [picked, setPicked] = useState<number | null>(null)
+  useScanHandler(tag => {
+    const p = cands.find(x => sameTag(x.package_tag, tag))
+    if (!p) return false   // not free for this line: the order page explains why
+    setPicked(p.id); setQ(''); return true
+  })
+  const qq = q.trim().toLowerCase()
+  const hit = (p: Pallet) => !qq || [p.code, p.package_tag, where(p)].some(v => v?.toLowerCase().includes(qq))
+  const chosen = picked != null ? cands.find(p => p.id === picked) : undefined
+  const list = qq ? sorted.filter(hit) : all ? sorted : sorted.slice(0, 5)
+  const row = (p: Pallet, on = false) => (
+    <div key={p.id} className={`drow ${on ? 'picked' : ''}`}>
+      <span className="grow"><b>{p.code}</b> <span className="muted">{where(p)}{p.package_tag ? ` · ${p.package_tag.slice(-6)}` : ''}</span></span>
+      <b>{n0(w(p))} lbs</b>
+      {need > 0 && w(p) > need && <button className="primary small" disabled={busy} onClick={() => setPart({ p, lbs: String(Math.round(need * 100) / 100), tag: '' })}>Take {n0(need)}</button>}
+      {w(p) > 0 && <button className="ghost small" disabled={busy} onClick={() => setPart({ p, lbs: '', tag: '' })}>Part…</button>}
+      <button className={`${need > 0 && w(p) > need ? 'ghost' : 'primary'} small`} disabled={busy} onClick={() => onWhole(p)}>{need > 0 && w(p) > need ? 'Whole' : 'Assign'}</button>
+    </div>
+  )
   return (
     <div className="fpick">
-      <div className="row between"><b>Pick from {cands.length} {line.strain} pallet{cands.length === 1 ? '' : 's'} <span className="muted">({n0(total)} lbs free)</span></b><button className="ghost small" onClick={close}>Close</button></div>
+      <div className="row between"><b>{cands.length} free {line.strain} pallet{cands.length === 1 ? '' : 's'} <span className="muted">({n0(total)} lbs)</span></b><button className="ghost small" onClick={close}>Close</button></div>
+      {cands.length > 0 && <div className="row tagrow">
+        <input className="grow-in" type="search" value={q} placeholder="Find: pallet #, tag digits or freezer" onChange={e => { setQ(e.target.value); setPicked(null) }} />
+        <ScanButton onScan={tag => { const p = cands.find(x => sameTag(x.package_tag, tag)); if (p) { setPicked(p.id); setQ('') } else setQ(tag.slice(-6)) }} />
+      </div>}
       {!cands.length && <p className="muted">Nothing free for this strain. Pallets already held for an order, on a load or in a processing run don't show.</p>}
-      {sorted.slice(0, 12).map(p => (
-        <div key={p.id} className="drow">
-          <span className="grow"><b>{p.code}</b> <span className="muted">{where(p)}{p.package_tag ? ` · ${p.package_tag.slice(-6)}` : ''}</span></span>
-          <b>{n0(w(p))} lbs</b>
-          {need > 0 && w(p) > need && <button className="primary small" disabled={busy} onClick={() => setPart({ p, lbs: String(Math.round(need * 100) / 100), tag: '' })}>Take {n0(need)}</button>}
-          <button className={`${need > 0 && w(p) > need ? 'ghost' : 'primary'} small`} disabled={busy} onClick={() => onWhole(p)}>{need > 0 && w(p) > need ? 'Whole' : 'Assign'}</button>
-        </div>
-      ))}
-      {sorted.length > 12 && <p className="muted">+{sorted.length - 12} more</p>}
+      {chosen && <>{row(chosen, true)}</>}
+      {!chosen && <>
+        {!qq && !all && cands.length > 0 && <div className="muted small">Suggested (covers what's left first, then the closest spots)</div>}
+        {list.map(p => row(p))}
+        {qq && !list.length && <p className="muted small">No free {line.strain} pallet matches "{q}". Held, on a load or a different crop year ones don't show.</p>}
+        {!qq && sorted.length > 5 && <button className="ghost small" onClick={() => setAll(v => !v)}>{all ? 'Suggestions only' : `Show all ${sorted.length}`}</button>}
+      </>}
+      {chosen && <button className="ghost small" onClick={() => setPicked(null)}>Back to the list</button>}
       {part && (
         <div className="scrim" onClick={() => setPart(null)}>
           <div className="sheet form" onClick={e => e.stopPropagation()}>

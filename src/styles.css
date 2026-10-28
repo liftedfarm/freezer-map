@@ -1145,3 +1145,4 @@ html:has(.app.shell), html:has(.app.shell) body { height: 100%; overflow: hidden
 .tagbox-list button { display: block; width: 100%; text-align: left; white-space: nowrap; padding: 8px 10px; border: 0; border-radius: 7px; background: transparent; font-size: 14px; color: inherit; cursor: pointer; }
 .tagbox-list button b { color: var(--brand); }
 .tagbox-list button.on, .tagbox-list button:hover { background: var(--empty); }
+.drow.picked { border-color: var(--brand); box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand) 30%, transparent); }
