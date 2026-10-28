@@ -35,8 +35,10 @@ export async function planTransfer(ctx, spec) {
   if (inp.error) { add('inputs', 'METRC transfer form', false, inp.error); return { checks, body: null } }
 
   // transfer type: set in Settings, and one that doesn't need prices
-  const typeName = await setting(TYPE_SETTING[spec.typeKey], '')
   const types = inp.transferTypes ?? []
+  // not set yet: between our own licenses defaults to METRC's plain "Transfer" type
+  const typeName = (await setting(TYPE_SETTING[spec.typeKey], '')) ||
+    (spec.typeKey === 'internal' ? types.find(t => lc(t.name) === 'transfer')?.name ?? '' : '')
   const type = typeName ? types.find(t => lc(t.name) === lc(typeName)) : null
   const wholesale = type && /wholesale/i.test(`${type.transactionType ?? ''} ${type.transactionTypeName ?? ''}`)
   add('type', 'Transfer type', type && !wholesale,
@@ -81,7 +83,7 @@ export async function planTransfer(ctx, spec) {
     missing.length ? `Not active on ${lic}: ${missing.join(', ')}` : held.length ? held.join(', ') : `${found.length} packages`)
   add('weights', 'Weights match METRC', !off.length, off.length ? `${off.join('; ')} (more than ${t} lb apart: adjust first)` : 'All within tolerance')
   const tags = pk.map(p => up(p.tag)).filter(Boolean)
-  const open = tags.length ? await db(`comp_metrc_actions?select=id,action,tag&touch_tags=ov.{${tags.map(enc).join(',')}}&status=in.(todo,error)&kind=not.in.(transfer,manifest,ship_check,receive)` +
+  const open = tags.length ? await db(`comp_metrc_actions?select=id,action,tag&touch_tags=ov.{${tags.map(enc).join(',')}}&status=in.(todo,error)&kind=not.in.(transfer,manifest,ship_check,receive,tag,new_package)` +
     `${spec.beforeId ? `&id=lt.${spec.beforeId}` : ''}&order=id&limit=5`) : []
   add('open', 'METRC to-dos done first', !open.length, open.length ? `Still to do in METRC: ${open.map(o => `#${o.id} ${o.action}${o.tag ? ` ${o.tag}` : ''}`).join('; ')}` : 'Nothing waiting')
 
