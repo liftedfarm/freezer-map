@@ -1,7 +1,7 @@
 import type { NTab } from './types'
 // Nursery screens: shared by the app's navigation and the module itself
 export const NURSERY_TABS: { t: NTab; l: string }[] = [
-  { t: 'dashboard', l: 'Dashboard' }, { t: 'plan', l: 'Plan' }, { t: 'orders', l: 'Orders' }, { t: 'batches', l: 'Batches' }, { t: 'mothers', l: 'Mothers' }, { t: 'breeding', l: 'Breeding' },
+  { t: 'dashboard', l: 'Dashboard' }, { t: 'receiving', l: 'Receiving' }, { t: 'plan', l: 'Plan' }, { t: 'orders', l: 'Orders' }, { t: 'batches', l: 'Batches' }, { t: 'mothers', l: 'Mothers' }, { t: 'breeding', l: 'Breeding' },
   { t: 'logs', l: 'Logs' }, { t: 'invoices', l: 'Invoices' },
 ]
 /** bottom of the menu, same in every module ('settings' is Nursery Admins only) */

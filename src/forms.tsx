@@ -47,13 +47,14 @@ function TagField({ tag, setTag, pending, setPending, label = 'New METRC tag', p
   )
 }
 
-export type Dest = 'same' | 'other'
+export type Dest = 'same' | 'other' | 'load'
 
-function DestField({ dest, setDest, sameLabel }: { dest: Dest; setDest: (d: Dest) => void; sameLabel: string | null }) {
+function DestField({ dest, setDest, sameLabel, loadLabel }: { dest: Dest; setDest: (d: Dest) => void; sameLabel: string | null; loadLabel?: string | null }) {
   return (
     <div className="field">
       <label>Where does it go?</label>
       <div className="choices">
+        {loadLabel && <button className={dest === 'load' ? 'on' : ''} onClick={() => setDest('load')}>{loadLabel}</button>}
         {sameLabel && <button className={dest === 'same' ? 'on' : ''} onClick={() => setDest('same')}>{sameLabel}</button>}
         <button className={dest === 'other' ? 'on' : ''} onClick={() => setDest('other')}>Pick a slot</button>
       </div>
@@ -62,14 +63,14 @@ function DestField({ dest, setDest, sameLabel }: { dest: Dest; setDest: (d: Dest
   )
 }
 
-export function SplitForm({ p, where, busy, onClose, onSubmit }: {
-  p: Pallet; where: string | null; busy: boolean; onClose: () => void
+export function SplitForm({ p, where, busy, onClose, onSubmit, onLoad }: {
+  p: Pallet; where: string | null; busy: boolean; onClose: () => void; onLoad?: string | null
   onSubmit: (lbs: number, tag: string | null, pending: boolean, dest: Dest, note: string) => void
 }) {
   const [amt, setAmt] = useState('')
   const [tag, setTag] = useState('')
   const [pending, setPending] = useState(false)
-  const [dest, setDest] = useState<Dest>(where ? 'same' : 'other')
+  const [dest, setDest] = useState<Dest>(onLoad ? 'load' : where ? 'same' : 'other')
   const [note, setNote] = useState('')
   const n = parseFloat(amt)
   const w = p.current_weight ?? 0
@@ -85,7 +86,9 @@ export function SplitForm({ p, where, busy, onClose, onSubmit }: {
         </div>}
       </div>
       <TagField tag={tag} setTag={setTag} pending={pending} setPending={setPending} pallet={p.id} />
-      <DestField dest={dest} setDest={setDest} sameLabel={where ? `Same slot (${where})` : null} />
+      <DestField dest={dest} setDest={setDest} sameLabel={where && p.status !== 'in_transit' ? `Same slot (${where})${onLoad ? ', off the load' : ''}` : null}
+        loadLabel={onLoad ? `Stays on ${onLoad}` : null} />
+      {onLoad && dest !== 'load' && <div className="muted small">The piece comes off the load{p.status === 'in_transit' ? ' and the truck' : ''}. If {p.code} is held for an order, that line gets lighter.</div>}
       <div className="field"><label>Note (optional)</label><input value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. pulled for Acquamarcia order" /></div>
       <MetrcNote kind="split" p={p} />
       <div className="row end">
@@ -96,14 +99,14 @@ export function SplitForm({ p, where, busy, onClose, onSubmit }: {
   )
 }
 
-export function MergeForm({ p, candidates, whereOf, busy, onClose, onSubmit }: {
-  p: Pallet; candidates: Pallet[]; whereOf: (x: Pallet) => string; busy: boolean; onClose: () => void
+export function MergeForm({ p, candidates, whereOf, busy, onClose, onSubmit, onLoad }: {
+  p: Pallet; candidates: Pallet[]; whereOf: (x: Pallet) => string; busy: boolean; onClose: () => void; onLoad?: string | null
   onSubmit: (ids: number[], tag: string | null, pending: boolean, dest: Dest, note: string) => void
 }) {
   const [picked, setPicked] = useState<Set<number>>(new Set())
   const [tag, setTag] = useState('')
   const [pending, setPending] = useState(false)
-  const [dest, setDest] = useState<Dest>(p.slot_id != null ? 'same' : 'other')
+  const [dest, setDest] = useState<Dest>(onLoad ? 'load' : p.slot_id != null ? 'same' : 'other')
   const [note, setNote] = useState('')
   const total = useMemo(() => (p.current_weight ?? 0) + candidates.filter(c => picked.has(c.id)).reduce((a, c) => a + (c.current_weight ?? 0), 0), [picked, candidates, p])
   const toggle = (id: number) => setPicked(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
@@ -125,7 +128,8 @@ export function MergeForm({ p, candidates, whereOf, busy, onClose, onSubmit }: {
         {picked.size > 0 && <div className="muted">New pallet: {picked.size + 1} pallets · {lbs(total)}</div>}
       </div>
       <TagField tag={tag} setTag={setTag} pending={pending} setPending={setPending} pallet={p.id} />
-      <DestField dest={dest} setDest={setDest} sameLabel={p.slot_id != null ? `${p.code}'s slot (${whereOf(p)})` : null} />
+      {onLoad ? <div className="field"><label>Where does it go?</label><div className="muted">{onLoad} (on the truck if any of them is). Pallets from freezers get pulled onto it.</div></div>
+        : <DestField dest={dest} setDest={setDest} sameLabel={p.slot_id != null ? `${p.code}'s slot (${whereOf(p)})` : null} />}
       <div className="field"><label>Note (optional)</label><input value={note} onChange={e => setNote(e.target.value)} /></div>
       <MetrcNote kind="merge" p={p} n={picked.size + 1} />
       <div className="row end">

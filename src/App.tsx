@@ -49,6 +49,9 @@ import { LicensesPanel, PURPOSE_LABEL } from './licenses'
 import { TestRows } from './comp/trace'
 import { LoadForm, LoadView, PickLoad, TransitView, stopColor } from './loads'
 import { InboundView } from './inbound'
+import { ReceivingView } from './receiving'
+import { ShippingQuote, ShippingSettings, rpc } from './ship'
+import { metrcRun } from './metrcCall'
 import { TagSuggestProvider } from './tagSuggest'
 import type { LoadCtx } from './loads'
 import { lang, setLang, t } from './i18n'
@@ -74,7 +77,7 @@ const ALL_SETTINGS: [Mod, string][] = [['admin', 'Admin'], ['dist', 'Distributio
 const MOD_LABEL: Record<Mod, string> = { dist: 'Distribution', sales: 'Sales', cult: 'Production', nurs: 'Nursery', proc: 'Processing', acct: 'Accounting', comp: 'Compliance', admin: 'Admin' }
 const ML = (m: Mod) => t(MOD_LABEL[m])
 const MOD_WHAT: Record<Mod, string> = { dist: 'Freezer map · transit · review', sales: 'Reserves · menu · orders', cult: 'Harvests · fields · plan', nurs: 'Mothers · cuttings · deliveries', proc: 'Drying · bucking · trimming', acct: 'Invoices to QuickBooks · payments', comp: 'METRC · CCOF · documents · deadlines', admin: 'Company · users · app settings' }
-type SalesTab = 'dash' | 'inventory' | SalesMode | 'invoices' | 'review' | 'activity' | 'settings'
+type SalesTab = 'dash' | 'inventory' | SalesMode | 'invoices' | 'shipping' | 'review' | 'activity' | 'settings'
 type AdminTab = 'dash' | 'review' | 'activity' | 'settings'
 /** s: short plain label for the phone bar; n: count badge (warn = amber) */
 interface NavItem { k: string; l: ReactNode; s?: string; n?: number; warn?: boolean; on: boolean; go: () => void }
@@ -350,6 +353,7 @@ type FormState =
   | { kind: 'newchoice' | 'newmixed' | 'newsingle' | 'newmerged'; slot: Slot; tag?: string }
   | { kind: 'addmixed'; m: Pallet; initial?: Pallet[] }
   | { kind: 'pickmixed'; p: Pallet }
+  | { kind: 'stopmixed'; stop: number; onTruck: boolean }
 interface Placing { title: string; sub: string; run: (slot: Slot) => Promise<void> }
 
 // opened from a request email: go straight to Sales > Requests or Orders
@@ -410,6 +414,7 @@ export default function App() {
   const [busy, setBusy] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [form, setForm] = useState<FormState | null>(null)
+  const [crossSite, setCrossSite] = useState<{ moves: { pallet_id: number; from_slot: number | null; to_slot: number; kind: string }[]; cross: { id: number; from: string; to: string }[] } | null>(null)
   const [pool, setPool] = useState<Pallet[]>([])
   const [loadId, setLoadId] = useState<number | null>(null)
   const [counts, setCounts] = useState({ orders: 0, requests: 0 })
@@ -536,10 +541,17 @@ export default function App() {
       return next
     })
   })
-  async function applyPlan() {
+  async function applyPlan(skipCross = false) {
     if (!L) return
     const moves = toSave(L, plan)
     if (!moves.length) { setPlan(EMPTY); return }
+    // OHR <> GVR on the map: offer a real transfer (load + METRC manifest) instead of a to-do
+    if (!skipCross && ix) {
+      const siteOfSlot = (id: number | null) => id == null ? null : ix.freezer.get(ix.slot.get(id)?.freezer_id ?? -1)?.site ?? null
+      const cross = moves.map(m => { const p = ix.pallet.get(m.pallet_id); const from = siteOfSlot(m.from_slot) ?? (p ? siteOf(p) : null); const to = siteOfSlot(m.to_slot)
+        return from && to && from !== to ? { id: m.pallet_id, from: String(from), to: String(to) } : null }).filter((x): x is { id: number; from: string; to: string } => !!x)
+      if (cross.length) { setCrossSite({ moves, cross }); return }
+    }
     setBusy(true)
     try {
       const id = await backend.applyMoves(moves)
@@ -550,11 +562,11 @@ export default function App() {
 
   async function act(fn: () => Promise<unknown>, ok: string) {
     setBusy(true)
-    try { await fn(); await reload(); setInvTick(t => t + 1); flash(ok) } catch (e) { flash((e as Error).message, true) } finally { setBusy(false) }
+    try { await fn(); await reload(); setInvTick(t => t + 1); refreshF().catch(() => {}); flash(ok) } catch (e) { flash((e as Error).message, true) } finally { setBusy(false) }
   }
   async function submit<T>(fn: () => Promise<T>, ok: (r: T) => string, after?: (r: T) => void) {
     setBusy(true)
-    try { const r = await fn(); await reload(); setInvTick(t => t + 1); setForm(null); flash(ok(r)); after?.(r) }
+    try { const r = await fn(); await reload(); setInvTick(t => t + 1); refreshF().catch(() => {}); setForm(null); flash(ok(r)); after?.(r) }
     catch (e) { flash((e as Error).message, true) } finally { setBusy(false) }
   }
 
@@ -646,12 +658,14 @@ export default function App() {
     siteOf,
     held: id => { const o = heldBy.get(id); return o ? `${o.customer} · ${o.so ?? 'order'}` : undefined },
     busy,
-    run: async (fn, ok) => { setBusy(true); try { await fn(); await reload(); setInvTick(t => t + 1); flash(ok); return true } catch (e) { flash((e as Error).message, true); await reload().catch(() => {}); return false } finally { setBusy(false) } },
+    run: async (fn, ok) => { setBusy(true); try { await fn(); await reload(); setInvTick(t => t + 1); refreshF().catch(() => {}); flash(ok); return true } catch (e) { flash((e as Error).message, true); await reload().catch(() => {}); refreshF().catch(() => {}); return false } finally { setBusy(false) } },
     confirm: (text, ok, fn) => setConfirm({ text, ok, run: fn }),
     openPallet: id => setPalletId(id),
     orders: forders ?? [],
     openOrder: id => { setFOpen(id); go('fulfill') },
     refreshOrders: refreshF,
+    canShip: isSales,
+    newMixedOnStop: (stop, onTruck) => setForm({ kind: 'stopmixed', stop, onTruck }),
     putBack: (item, p) => { setView('map'); startPlacing({ title: `Putting ${p.code} back in a freezer`, sub: 'Open a freezer and tap the slot.', run: slot => act(() => backend.unloadPallet(item.id, slot.id), `${p.code} back in ${slot.code}`) }) },
     api: backend,
   }
@@ -667,12 +681,15 @@ export default function App() {
       || Number(fz(b) === fz(p)) - Number(fz(a) === fz(p))
       || where(a).localeCompare(where(b), undefined, { numeric: true })
   }
-  const mergeCandidates = (p: Pallet) => looseList
+  // pallets on the same stop of a load that hasn't left (planned or on the truck) can be merged / mixed with each other
+  const editLoadOf = (id: number) => { const lo = ix.loadOf.get(id); return lo && ['planning', 'loading'].includes(lo.load.status) ? lo : undefined }
+  const sameStop = (p: Pallet) => { const lo = editLoadOf(p.id); return lo ? snap.pallets.filter(x => x.id !== p.id && !x.container_id && isPackage(x) && editLoadOf(x.id)?.item.stop_id === lo.item.stop_id) : [] }
+  const mergeCandidates = (p: Pallet) => [...looseList, ...sameStop(p)]
     .filter(x => x.id !== p.id && x.kind !== 'mixed' && x.pushed !== false && !!x.strain && !!p.strain && x.strain.toLowerCase() === p.strain.toLowerCase()
       && (x.product ?? 'fresh_frozen') === (p.product ?? 'fresh_frozen')
       && (!isDry(p) || (x.crop_year ?? null) === (p.crop_year ?? null)))   // METRC merges one item: dry needs the same product and crop
     .sort(byNearness(p))
-  const mixedList = snap.pallets.filter(p => p.kind === 'mixed' && p.status === 'in_freezer')
+  const mixedList = snap.pallets.filter(p => p.kind === 'mixed' && (p.status === 'in_freezer' || (p.status === 'in_transit' && !!editLoadOf(p.id))))
     .map(p => ({ p, n: ix.contentsOf.get(p.id)?.length ?? 0, w: weightOf(ix, p) }))
   const strainNames = (snap.strains ?? []).filter(s => s.active).map(s => s.name)
   const canDist = lv.distribution === 'user' || lv.distribution === 'admin'
@@ -747,6 +764,7 @@ export default function App() {
   const salesSettings = <SettingsView key="sales-set" backend={backend} flash={flash} onChanged={() => { reload() }} inventoryStrains={invStrains} title="Sales settings" focus="sales"
     lists={['customers', 'strains']} canTerms={salesAdmin} extra={[{ k: 'terms', l: 'Payment terms', node: <TermsPanel backend={backend} flash={flash} canEdit={salesAdmin} /> },
       { k: 'deadlines', l: 'Reserve deadlines', node: <DeadlinesPanel backend={backend} flash={flash} /> },
+      { k: 'shipping', l: 'Shipping', node: <ShippingSettings sb={backend.client()} flash={flash} canEdit={salesAdmin || isAdminOf('dist')} /> },
       { k: 'people', l: 'People', node: <ModulePeople sb={backend.client()} module="sales" flash={flash} /> }]} />
   const cultSettings = <Suspense fallback={<p className="muted">Loading…</p>}><CultView backend={backend} flash={flash} tab="setup" go={setCultTab} onPalletsChanged={() => { reload() }} /></Suspense>
   const strainSettings = <div className="modset"><SettingsView key="cult-strains" backend={backend} flash={flash} onChanged={() => { reload() }} inventoryStrains={invStrains} title="Strains" lists={['strains']} focus="cult" /></div>
@@ -770,7 +788,7 @@ export default function App() {
     ...(isAdminOf('dist') ? [{ k: 'settings', l: 'Settings', on: view === 'settings', go: () => go('settings') }] : []),
   ]
   const sItem = (t: SalesTab, l: ReactNode, x?: Partial<NavItem>): NavItem => ({ k: t, l, ...x, on: view === 'sales' && salesTab === t, go: () => setSalesTab(t) })
-  const salesMain: NavItem[] = [sItem('dash', 'Dashboard'), sItem('inventory', 'Inventory'), sItem('menu', SALES_TITLES.menu), sItem('orders', <>Orders{badge(counts.orders, true)}</>, { s: 'Orders', n: counts.orders, warn: true }), sItem('invoices', 'Invoices'),
+  const salesMain: NavItem[] = [sItem('dash', 'Dashboard'), sItem('inventory', 'Inventory'), sItem('menu', SALES_TITLES.menu), sItem('orders', <>Orders{badge(counts.orders, true)}</>, { s: 'Orders', n: counts.orders, warn: true }), sItem('invoices', 'Invoices'), sItem('shipping', 'Shipping'),
     sItem('requests', <>Requests{badge(counts.requests, salesAdmin)}</>, { s: 'Requests', n: counts.requests, warn: salesAdmin }), sItem('customer', 'Reserves'), sItem('strain', 'By strain')]
   const fillsToOk = (forders ?? []).filter(o => o.state === 'needs_ok').length
   const salesTail: NavItem[] = [sItem('review', <>Review{badge(salesBadge + fillsToOk, true)}</>, { s: 'Review', n: salesBadge + fillsToOk, warn: true }), sItem('activity', 'Activity'), ...(isAdminOf('sales') ? [sItem('settings', 'Settings')] : [])]
@@ -964,6 +982,7 @@ export default function App() {
           if (salesTab === 'review') return <SalesReview backend={backend} customers={snap.customers ?? []} isAdmin={salesAdmin} go={goS} fulfil={forders} onFulfil={refreshF} flash={flash} />
           if (salesTab === 'activity') return <ActivityView ix={ix} module="sales" />
           if (salesTab === 'inventory') return <SalesInventory c={invCtx} strains={snap.strains ?? []} sb={backend.client()} onNewOrder={isSales ? () => setNewOrder(true) : undefined} />
+          if (salesTab === 'shipping') return <ShippingQuote sb={backend.client()} customers={snap.customers ?? []} flash={flash} />
           if (salesTab === 'invoices') return <InvoicesView backend={backend} customers={snap.customers ?? []} flash={flash} isAdmin={salesAdmin} sender={me?.display_name} />
           if (salesTab === 'settings') return salesSettings
           return <ReservesView key={`sales-${ordersKey}`} backend={backend} flash={flash} isAdmin={salesAdmin} mode={salesTab} onCounts={refreshCounts} fulfil={new Map((forders ?? []).map(f => [f.id, f]))} onFulfil={refreshF} customers={snap.customers ?? []}
@@ -979,9 +998,11 @@ export default function App() {
         {view === 'inbound' && <InboundView sb={backend.client()} flash={flash} onChanged={() => { reload() }} />}
         {view === 'transit' && <TransitView ctx={ctx} onOpen={id => { setLoadId(id); setView('load'); scrollTop() }} onNew={() => setLoadForm({})} />}
         {view === 'load' && loadId != null && <LoadView ctx={ctx} loadId={loadId} onBack={() => setView('transit')} onEdit={() => setLoadForm({ load: (snap.loads ?? []).find(l => l.id === loadId) })} />}
-        {view === 'cult' && inCult && <Suspense fallback={<p className="muted">Loading…</p>}><CultView backend={backend} flash={flash} tab={cultTab} go={setCultTab} onPalletsChanged={() => { reload() }} /></Suspense>}
+        {view === 'cult' && inCult && cultTab === 'receiving' && <ReceivingView sb={backend.client()} module="cultivation" flash={flash} nurseryLicenses={['CCL24-0000156']} />}
+        {view === 'cult' && inCult && cultTab !== 'receiving' && <Suspense fallback={<p className="muted">Loading…</p>}><CultView backend={backend} flash={flash} tab={cultTab} go={setCultTab} onPalletsChanged={() => { reload() }} /></Suspense>}
         {view === 'cult' && inCult && cultTab === 'setup' && strainSettings}
-        {view === 'nursery' && cur === 'nurs' && <Suspense fallback={<p className="muted">Loading…</p>}><NurseryView backend={backend} flash={flash} tab={nurTab} go={setNurTab} customers={snap.customers ?? []} isAdmin={isAdminOf('nurs')} sender={me?.display_name} me={me?.email} /></Suspense>}
+        {view === 'nursery' && cur === 'nurs' && nurTab === 'receiving' && <ReceivingView sb={backend.client()} module="nursery" flash={flash} />}
+        {view === 'nursery' && cur === 'nurs' && nurTab !== 'receiving' && <Suspense fallback={<p className="muted">Loading…</p>}><NurseryView backend={backend} flash={flash} tab={nurTab} go={setNurTab} customers={snap.customers ?? []} isAdmin={isAdminOf('nurs')} sender={me?.display_name} me={me?.email} /></Suspense>}
         {view === 'nursery' && cur === 'nurs' && nurTab === 'settings' && isAdminOf('nurs') && nurStrainSettings}
         {view === 'proc' && cur === 'proc' && procTab === 'activity' && <ActivityView ix={ix} module="processing" />}
         {view === 'proc' && cur === 'proc' && procTab !== 'activity' && <Suspense fallback={<p className="muted">Loading…</p>}><ProcessingView backend={backend} flash={flash} tab={procTab} go={setProcTab}
@@ -1022,7 +1043,7 @@ export default function App() {
           stagingOpen={curFreezer?.kind === 'staging'}
           onPick={id => setPlan(pl => ({ ...pl, current: id }))}
           onDrop={id => setPlan(pl => dropFromPlan(pl, id))}
-          onApply={applyPlan} onCancel={() => setPlan(EMPTY)}
+          onApply={() => applyPlan()} onCancel={() => setPlan(EMPTY)}
           onShuffle={l => setPlan(pl => addMoves(pl, l.moves))}
           onShuffleAll={() => setPlan(pl => lanes.reduce((acc, l) => addMoves(acc, l.moves), pl))}
           onFillStaging={() => curFreezer && setPlan(pl => fillStaging(L, pl, curFreezer.id))} />
@@ -1086,7 +1107,10 @@ export default function App() {
           onPick={setPalletId}
           onClose={() => setPalletId(null)}
           onGo={() => { goTo(selected.container_id ? ix.pallet.get(selected.container_id)?.slot_id ?? null : selected.slot_id); setPalletId(null) }}
-          onMove={() => { setPlan(pl => addToTray(pl, [selected.id])); setPalletId(null); if (selected.slot_id != null) goTo(selected.slot_id); flash(`${selected.code} is in the tray. Tap the slot it goes to.`) }}
+          onMove={() => {
+            const lo = editLoadOf(selected.id)
+            if (selected.status === 'in_transit' && lo) { setPalletId(null); ctx.putBack(lo.item, selected); return }
+            setPlan(pl => addToTray(pl, [selected.id])); setPalletId(null); if (selected.slot_id != null) goTo(selected.slot_id); flash(`${selected.code} is in the tray. Tap the slot it goes to.`) }}
           onRemove={() => { setRemoveP(selected); setPalletId(null) }}
           onClear={() => act(() => backend.clearReview(selected.id), 'Flag cleared')}
           onForm={(kind) => {
@@ -1096,11 +1120,16 @@ export default function App() {
           }}
           onTakeOff={() => {
             const m = ix.pallet.get(selected.container_id!)!
+            if (editLoadOf(m.id)) {
+              setConfirm({ text: `Take ${selected.code} off ${m.code}? It stays on ${editLoadOf(m.id)!.load.code} as its own pallet (or move it to a freezer after).`, ok: 'Take off',
+                run: () => act(() => backend.takeOffMixed(selected.id, null), `${selected.code} off ${m.code}, still on the load`) })
+              return
+            }
             startPlacing({ title: `Taking ${selected.code} off ${m.code}`, sub: 'Tap the slot it goes to.',
               run: slot => act(() => backend.takeOffMixed(selected.id, slot.id), `${selected.code} moved to ${slot.code}`) }, selected)
           }}
           onBreak={() => setConfirm({
-            text: `Break ${selected.code} apart? Each package stays in ${whereIs(ix, selected.slot_id)} as its own pallet, stacked in that slot.`, ok: 'Break apart',
+            text: `Break ${selected.code} apart? Each package stays ${editLoadOf(selected.id) ? `on ${editLoadOf(selected.id)!.load.code}, stacked in its spot` : `in ${whereIs(ix, selected.slot_id)} as its own pallet, stacked in that slot`}.`, ok: 'Break apart',
             run: async () => { await act(() => backend.breakMixed(selected.id), `${selected.code} broken apart`); setPalletId(null) },
           })}
           onLineage={(ps) => setPool(ps)}
@@ -1148,19 +1177,22 @@ export default function App() {
 
       {form?.kind === 'split' && (
         <SplitForm p={form.p} where={form.p.slot_id != null ? where(form.p) : null} busy={busy} onClose={() => setForm(null)}
+          onLoad={editLoadOf(form.p.id) ? `${editLoadOf(form.p.id)!.load.code} with it (stop ${editLoadOf(form.p.id)!.stop.seq}${editLoadOf(form.p.id)!.item.loaded ? ', on the truck' : ''})` : null}
           onSubmit={(n, tag, pending, dest, note) => {
             const p = form.p
-            const run = (slot: number | null) => submit(() => backend.splitPallet(p.id, n, tag, pending, slot, note), c => `${c.code} created (${lbs(n)})`, () => setPalletId(null))
-            if (dest === 'same') run(null)
+            const run = (slot: number | null, keep = false) => submit(() => backend.splitPallet(p.id, n, tag, pending, slot, note, keep), c => `${c.code} created (${lbs(n)})${keep ? ' on the load' : ''}`, () => setPalletId(null))
+            if (dest === 'load') run(null, true)
+            else if (dest === 'same') run(null)
             else startPlacing({ title: `Splitting ${lbs(n)} off ${p.code}`, sub: 'Tap the slot the new piece goes to.', run: slot => run(slot.id) }, p)
           }} />
       )}
       {form?.kind === 'merge' && (
         <MergeForm p={form.p} candidates={mergeCandidates(form.p)} whereOf={where} busy={busy} onClose={() => setForm(null)}
+          onLoad={editLoadOf(form.p.id) ? `Takes ${form.p.code}'s place on ${editLoadOf(form.p.id)!.load.code}` : null}
           onSubmit={(ids, tag, pending, dest, note) => {
             const p = form.p
             const run = (slot: number | null) => submit(() => backend.mergePallets(ids, tag, pending, slot ?? p.slot_id, note), m => `${m.code} created from ${ids.length} pallets`, m => { if (view !== 'proc') setPalletId(m.id) })
-            if (dest === 'same') run(null)
+            if (dest === 'same' || dest === 'load') run(null)
             else startPlacing({ title: `Merging ${ids.length} pallets`, sub: 'Tap the slot for the merged pallet.', run: slot => run(slot.id) }, p)
           }} />
       )}
@@ -1193,11 +1225,50 @@ export default function App() {
           onPick={m => setForm({ kind: 'addmixed', m, initial: [form.p] })} />
       )}
       {form?.kind === 'addmixed' && (
-        <MixedBuilder title={`Pull for ${form.m.code}`} autoTags={tagPool} target={`${form.m.code} · ${whereIs(ix, form.m.slot_id)}`} candidates={looseList} initial={form.initial}
+        <MixedBuilder title={`Pull for ${form.m.code}`} autoTags={tagPool} target={`${form.m.code} · ${where(form.m)}`} candidates={[...looseList, ...sameStop(form.m)]} initial={form.initial}
           whereOf={where} busy={busy} onClose={() => setForm(null)}
           onSubmit={(lines, note) => { const m = form.m; submit(() => backend.addToMixed(m.id, lines, note), () => `Pulled ${lines.length} for ${m.code}`, () => setPalletId(m.id)) }} />
       )}
 
+      {form?.kind === 'stopmixed' && (() => {
+        const st = (snap.stops ?? []).find(x => x.id === form.stop)
+        const onStop = snap.pallets.filter(x => !x.container_id && isPackage(x) && editLoadOf(x.id)?.item.stop_id === form.stop)
+        return <MixedBuilder title="New mixed pallet on the load" autoTags={tagPool} target={`stop ${st?.seq ?? ''}${form.onTruck ? ', on the truck' : ' (planned)'}`}
+          candidates={[...onStop, ...looseList]} initial={onStop.slice(0, 0)} whereOf={where} busy={busy} onClose={() => setForm(null)}
+          onSubmit={(lines, note) => submit(() => rpc<Pallet>(backend.client(), 'create_mixed_on_stop', { p_stop: form.stop, p_lines: lines, p_on_truck: form.onTruck, p_note: note || null }),
+            m => `${m.code} made on the load with ${lines.length} package${lines.length === 1 ? '' : 's'}`)} />
+      })()}
+      {crossSite && <CrossSiteDialog cs={crossSite} vehicles={(snap.vehicles ?? []).filter(v => v.active && v.kind !== 'Customer pickup')} drivers={(snap.drivers ?? []).filter(d => d.active).map(d => d.name)}
+        code={id => ix.pallet.get(id)?.code ?? ''} busy={busy} onClose={() => setCrossSite(null)}
+        onNo={async () => { setCrossSite(null); await applyPlan(true) }}
+        onYes={async (vehicle, driver) => {
+          const cs = crossSite; setCrossSite(null)
+          const sb = backend.client()
+          setBusy(true)
+          try {
+            const crossIds = new Set(cs.cross.map(c => c.id))
+            const rest = cs.moves.filter(m => !crossIds.has(m.pallet_id))
+            if (rest.length) await backend.applyMoves(rest)
+            const made: string[] = []
+            for (const to of [...new Set(cs.cross.map(c => c.to))]) {
+              const ids = cs.cross.filter(c => c.to === to).map(c => c.id)
+              const loadId = await rpc<number>(sb, 'quick_transfer', { p_pallets: ids, p_to_site: to, p_vehicle: vehicle, p_driver: driver }, '090_receiving')
+              const { data: kinds } = await sb!.from('metrc_push_kinds').select('mode').eq('kind', 'transfer')
+              if ((kinds?.[0]?.mode ?? 'off') !== 'off') {
+                await metrcRun(sb!, { action: 'checklist', load_id: loadId })
+                const r = await metrcRun<{ departed: boolean; error?: string }>(sb!, { action: 'depart', load_id: loadId })
+                made.push(r.departed ? `transfer to ${to} made (METRC manifest)` : `load to ${to} made, but the manifest didn't go: ${r.error ?? ''} (open it in Transit)`)
+              } else {
+                await rpc(sb, 'depart_prepare', { p_load: loadId })
+                const fin = await rpc<{ departed?: boolean; error?: string }>(sb, 'depart_finish', { p_load: loadId })
+                if (fin.departed === false) throw new Error(fin.error)
+                made.push(`load to ${to} left (METRC transfers are Off: make the manifest by hand)`)
+              }
+            }
+            await reload(); setPlan(EMPTY); setSel([]); setSelecting(false)
+            flash(`${made.join(' · ')}. Mark it delivered in Transit when it gets there, then put the pallets in their spots.`)
+          } catch (e) { flash((e as Error).message, true); reload().catch(() => {}) } finally { setBusy(false) }
+        }} />}
       {confirm && (
         <div className="scrim" onClick={() => setConfirm(null)}>
           <div className="dialog" onClick={e => e.stopPropagation()}>
@@ -1637,10 +1708,12 @@ function PalletSheet({ ix, p, others, busy, where, flash, onClose, onGo, onMove,
     if (p.parent_id == null && p.merged_into == null && !/^C\d+$/.test(p.code) && !hist?.some(e => e.type === 'split')) { setKin([]); return }
     backend.lineage(p).then(ps => { setKin(ps); onLineage(ps) }).catch(() => setKin([]))
   }, [p.id, p.parent_id, p.merged_into, hist])
-  const live = p.status === 'in_freezer' || p.status === 'unslotted'
-  const inFreezer = p.status === 'in_freezer'
   const isMixed = p.kind === 'mixed'
-  const loadEditable = loadInfo && ['planning', 'loading'].includes(loadInfo.load.status)
+  const loadEditable = !!loadInfo && ['planning', 'loading'].includes(loadInfo.load.status)
+  // on a load that hasn't left (planned, or already on the truck): everything you can do in a freezer
+  const live = p.status === 'in_freezer' || p.status === 'unslotted' || (p.status === 'in_transit' && loadEditable)
+  const inFreezer = p.status === 'in_freezer'
+  const onTruck = p.status === 'in_transit' && loadEditable
   const container = p.container_id ? ix.pallet.get(p.container_id) : undefined
   const parent = kin.find(k => k.id === p.parent_id)
   const children = kin.filter(k => k.parent_id === p.id)
@@ -1729,13 +1802,13 @@ function PalletSheet({ ix, p, others, busy, where, flash, onClose, onGo, onMove,
 
         {live && isMixed && (<>
           <div className="row actions">
-            <button className="primary big" disabled={busy} onClick={onMove}>Move</button>
-            <button className="ghost big" disabled={busy || !!loadInfo} onClick={() => onForm('addmixed')}>Pull packages</button>
-            <button className="ghost big" disabled={busy || !!loadInfo} onClick={onBreak}>Break apart</button>
+            <button className="primary big" disabled={busy} onClick={onMove}>{onTruck ? 'Back to a freezer' : 'Move'}</button>
+            <button className="ghost big" disabled={busy || (!!loadInfo && !loadEditable)} onClick={() => onForm('addmixed')}>Pull packages</button>
+            <button className="ghost big" disabled={busy || (!!loadInfo && !loadEditable)} onClick={onBreak}>Break apart</button>
           </div>
           <div className="row">
             {inFreezer && !loadInfo && <button className="ghost small" disabled={busy} onClick={onPutOnLoad}>Put on a load</button>}
-            {contents.length === 0 && !loadInfo && <button className="ghost small danger" disabled={busy} onClick={onRemove}>Remove</button>}
+            {contents.length === 0 && (!loadInfo || loadEditable) && <button className="ghost small danger" disabled={busy} onClick={onRemove}>Remove</button>}
           </div>
         </>)}
         {live && container && (<>
@@ -1749,17 +1822,17 @@ function PalletSheet({ ix, p, others, busy, where, flash, onClose, onGo, onMove,
         </>)}
         {live && !isMixed && !container && (<>
           <div className="row actions">
-            <button className="primary big" disabled={busy} onClick={onMove}>Move</button>
+            <button className="primary big" disabled={busy} onClick={onMove}>{onTruck ? 'Back to a freezer' : 'Move'}</button>
             <button className="ghost big" disabled={busy || !p.current_weight} onClick={() => onForm('split')}>Split</button>
             <button className="ghost big" disabled={busy || !p.strain} onClick={() => onForm('merge')}>Merge</button>
           </div>
           <div className="row">
-            <button className="ghost small" disabled={busy || !!loadInfo} onClick={() => onForm('addto')}>Pull for mixed pallet</button>
+            <button className="ghost small" disabled={busy || (!!loadInfo && !loadEditable)} onClick={() => onForm('addto')}>Pull for mixed pallet</button>
             {inFreezer && !loadInfo && <button className="ghost small" disabled={busy} onClick={onPutOnLoad}>Put on a load</button>}
             <button className="ghost small" disabled={busy} onClick={() => onForm('weight')}>Adjust weight</button>
             <button className="ghost small" disabled={busy} onClick={() => onForm('tag')}>{p.package_tag ? 'Edit tag' : 'Enter tag'}</button>
             {p.needs_review && <button className="ghost small" disabled={busy} onClick={onClear}>Clear flag</button>}
-            {!loadInfo && <button className="ghost small danger" disabled={busy} onClick={onRemove}>Remove</button>}
+            {(!loadInfo || loadEditable) && <button className="ghost small danger" disabled={busy} onClick={onRemove}>Remove</button>}
           </div>
         </>)}
         <h3>History</h3>
@@ -1776,4 +1849,37 @@ function PalletSheet({ ix, p, others, busy, where, flash, onClose, onGo, onMove,
       </div>
     </div>
   )
+}
+
+/** Freezer map: pallets moved between OHR and GVR. Make a real transfer (a load and its METRC manifest) or just a to-do. */
+function CrossSiteDialog({ cs, vehicles, drivers, code, busy, onClose, onNo, onYes }: {
+  cs: { cross: { id: number; from: string; to: string }[] }; vehicles: { id: number; name: string }[]; drivers: string[]; code: (id: number) => string; busy: boolean
+  onClose: () => void; onNo: () => void; onYes: (vehicle: number, driver: string) => void
+}) {
+  const [yes, setYes] = useState(false)
+  const [vehicle, setVehicle] = useState<number | null>(vehicles[0]?.id ?? null)
+  const [driver, setDriver] = useState('')
+  const routes = [...new Set(cs.cross.map(c => `${c.from} to ${c.to}`))].join(', ')
+  return <div className="scrim" onClick={onClose}>
+    <div className="sheet form" onClick={e => e.stopPropagation()}>
+      <div className="sheet-h"><h2>Moving between farms</h2><button className="ghost" onClick={onClose}>✕</button></div>
+      <p>{cs.cross.map(c => code(c.id)).join(', ')} {cs.cross.length === 1 ? 'goes' : 'go'} {routes}. That's a transfer between licenses: METRC needs a manifest.</p>
+      {!yes ? <>
+        <p className="muted">Make the transfer manifest now? The app puts {cs.cross.length === 1 ? 'it' : 'them'} on a transfer load and makes the METRC manifest. They show in transit until the load is delivered there.</p>
+        <div className="row end wrap">
+          <button className="ghost" disabled={busy} onClick={onNo}>No, just move {cs.cross.length === 1 ? 'it' : 'them'} (to-do)</button>
+          <button className="primary" disabled={busy} onClick={() => setYes(true)}>Yes, make the manifest</button>
+        </div>
+      </> : <>
+        <div className="field"><label>Truck</label>
+          <Select value={vehicle ?? ''} onChange={e => setVehicle(Number(e.target.value))}>{vehicles.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</Select></div>
+        <div className="field"><label>Driver</label>
+          <input list="xs-drivers" value={driver} onChange={e => setDriver(e.target.value)} placeholder="Pick or type a name" />
+          <datalist id="xs-drivers">{drivers.map(d => <option key={d} value={d} />)}</datalist></div>
+        <p className="muted small">Other moves in this batch are saved as usual.</p>
+        <div className="row end"><button className="ghost" onClick={() => setYes(false)}>Back</button>
+          <button className="primary" disabled={busy || vehicle == null || !driver.trim()} onClick={() => onYes(vehicle!, driver.trim())}>Make the transfer</button></div>
+      </>}
+    </div>
+  </div>
 }

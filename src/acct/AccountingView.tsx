@@ -138,7 +138,7 @@ function SendList({ api, rows, env, canEdit, flash, open, reload, banner }: { ap
         <div className="seg">{([['send', `Outside sales (${rows.filter(toSend).length})`], ['internal', 'Our own farms'], ['void', 'Void']] as const).map(([k, l]) => <button key={k} className={f === k ? 'on' : ''} onClick={() => { setF(k); setSel([]) }}>{l}</button>)}</div>
         <input className="search" type="search" placeholder="Invoice #, customer or SO" value={q} onChange={e => setQ(e.target.value)} />
       </div>
-      {f === 'send' && <p className="muted small">Invoices to outside customers that aren't in {env === 'sandbox' ? 'the sandbox' : 'QuickBooks'} yet. Open one to check its products and classes, then send. Or tick several and send them together.</p>}
+      {f === 'send' && <p className="muted small">Invoices to outside customers that aren't in {env === 'sandbox' ? 'the sandbox' : 'QuickBooks'} yet. New ones go on their own 30 minutes after they're made (editing restarts the clock); price fixes made in QuickBooks come back here. You can still open one and send it now, or tick several.</p>}
       {f === 'internal' && <p className="muted small">Transfers to our own farms (clones to OHR / GVR and so on). These never go to QuickBooks.</p>}
       {f === 'send' && canEdit && shown.length > 0 && (
         <div className="row wrap">
@@ -155,6 +155,7 @@ function SendList({ api, rows, env, canEdit, flash, open, reload, banner }: { ap
             <div><b>{i.inv}</b> {i.nursery && <span className="pill">1PN</span>} {i.push?.status === 'error' && <span className="pill acct-error">Couldn't send</span>} <span className={`pill inv-${i.status}`}>{i.status === 'paid' ? 'Paid (app)' : i.status === 'void' ? 'Void' : 'Open'}</span></div>
             <div className="muted">{i.customer} · {dfmt(i.date)}{i.so ? ` · ${i.so}` : ''}{i.terms ? ` · ${i.terms}` : ''}</div>
             {i.push?.status === 'error' && <div className="bad-t small">{i.push.error}</div>}
+            {i.push_after && i.push?.status !== 'error' && <div className="small muted">Goes automatically at {new Date(i.push_after).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</div>}
           </button>
           <b className="num">{money(i.total)}</b>
         </div>
@@ -217,7 +218,8 @@ function ReviewTab({ api, rows, open }: { api: AcctApi; rows: AInvoice[]; open: 
   const sec = (title: string, note: string, xs: AInvoice[], extra?: (i: AInvoice) => React.ReactNode) => xs.length > 0 && (
     <><h3>{title} ({xs.length})</h3><p className="muted small">{note}</p>
       {xs.map(i => <button key={i.id} className="li setrow" onClick={() => open(i.id)}><div className="grow"><b>{i.inv}</b> <span className="muted">{i.customer} · {dfmt(i.date)}</span>{extra && <div className="small">{extra(i)}</div>}</div><b className="num">{money(i.total)}</b></button>)}</>)
-  const none = !errs.length && !gone.length && !missing.length && !changed.length && !paidHere.length
+  const flagged = rows.filter(i => (i.flags?.length ?? 0) > 0)
+  const none = !errs.length && !gone.length && !missing.length && !changed.length && !paidHere.length && !flagged.length
   return (
     <div className="list">
       <h2>Review</h2>
@@ -226,6 +228,7 @@ function ReviewTab({ api, rows, open }: { api: AcctApi; rows: AInvoice[]; open: 
       {sec('Lines with no QuickBooks product', 'Pick a product for each line before sending.', missing)}
       {sec('Not found in QuickBooks anymore', 'Sent, but the last check couldn\'t find it (deleted or voided in QuickBooks?).', gone, i => <span className="bad-t">{i.push?.error}</span>)}
       {sec('Different total in QuickBooks', 'Someone changed it in QuickBooks after it was sent, or it was changed here before the lock.', changed, i => <span>QuickBooks {money(Number(i.push?.total))} · app {money(i.total)}</span>)}
+      {sec('Changed in QuickBooks: check these', 'Prices changed in QuickBooks come back to the app on their own. These are changes the app didn\'t copy (quantities match METRC and never change here; lines it doesn\'t know).', flagged, i => <span className="warn-t">{i.flags!.join(' · ')}</span>)}
       {sec('Marked paid in the app but not in QuickBooks', 'Payments belong in QuickBooks. Send the invoice, then record the payment there.', paidHere)}
     </div>
   )

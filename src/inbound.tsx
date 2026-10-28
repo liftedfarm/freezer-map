@@ -15,6 +15,7 @@ const when = (iso?: string | null) => (iso ? new Date(iso).toLocaleString([], { 
 const STATUS: Record<string, string> = { in_transit: 'on a load', at_processor: 'at processor', shipped: 'shipped', unslotted: 'needs a spot', in_freezer: 'in a freezer', depleted: 'used up', merged: 'merged', archived: 'archived' }
 
 export function InboundView({ sb, flash, onChanged }: { sb: SupabaseClient | null; flash: (m: string, bad?: boolean) => void; onChanged: () => void }) {
+  const module = 'distribution'
   const [rows, setRows] = useState<Delivery[] | null>(null)
   const [live, setLive] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
@@ -22,7 +23,7 @@ export function InboundView({ sb, flash, onChanged }: { sb: SupabaseClient | nul
   const load = async () => {
     if (!sb) return
     setBusy('Asking METRC…')
-    try { const r = await metrcRun<{ live: boolean; deliveries: Delivery[] }>(sb, { action: 'incoming' }); setRows(r.deliveries); setLive(r.live) }
+    try { const r = await metrcRun<{ live: boolean; deliveries: Delivery[] }>(sb, { action: 'incoming', module }); setRows(r.deliveries); setLive(r.live) }
     catch (e) { flash(e instanceof Error ? e.message : String(e), true); setRows([]) } finally { setBusy(null) }
   }
   useEffect(() => { load() }, [])
@@ -32,7 +33,7 @@ export function InboundView({ sb, flash, onChanged }: { sb: SupabaseClient | nul
       : `Dry run: check that METRC would take manifest ${d.manifest}? (Nothing changes until Compliance goes Live.)`)) return
     setBusy(`Receiving ${d.manifest}…`)
     try {
-      const r = await metrcRun<{ ok: boolean; info: string }>(sb, { action: 'inbound_receive', license: d.license, delivery_id: d.delivery_id })
+      const r = await metrcRun<{ ok: boolean; info: string }>(sb, { action: 'inbound_receive', license: d.license, delivery_id: d.delivery_id, module })
       flash(r.info, !r.ok)
       if (live && r.ok) { onChanged(); await load() }
     } catch (e) { flash(e instanceof Error ? e.message : String(e), true) } finally { setBusy(null) }
@@ -43,7 +44,7 @@ export function InboundView({ sb, flash, onChanged }: { sb: SupabaseClient | nul
     <div className="row between wrap toolbar"><h2>Inbound</h2>
       <div className="row"><span className={`pill ${live ? 'm-bad' : 'm-warn'}`}>{live ? 'METRC Live' : 'Dry run'}</span>
         <button className="ghost small" disabled={!!busy} onClick={load}>{busy ?? 'Refresh'}</button></div></div>
-    <p className="muted">METRC transfers on their way to OHR, GVR and the nursery. Receive takes the whole delivery in METRC{live ? '' : ' (a dry-run check until Compliance goes Live)'} and brings its packages into the app (Needs a spot).</p>
+    <p className="muted">Product packages on their way to OHR and GVR (plants go to Production › Receiving, anything for 1PN to Nursery › Receiving). Receive takes the whole delivery in METRC{live ? '' : ' (a dry-run check until Compliance goes Live)'} and brings its packages into the app (Needs a spot).</p>
     {errs.map(d => <p key={d.license} className="neg small">{d.site} {d.license}: {d.error}</p>)}
     {rows && !ok.length && !busy && <p className="muted">Nothing incoming.</p>}
     {ok.map(d => {

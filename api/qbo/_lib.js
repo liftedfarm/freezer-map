@@ -188,15 +188,25 @@ export async function customerId(c, cu) {
 
 // ---------- one invoice ----------
 const r2 = n => Math.round(Number(n) * 100) / 100
+export class Busy extends Error {}
+/** send one invoice; one at a time per invoice (a click and the auto-send can't make two QuickBooks invoices) */
 export async function pushInvoice(c, invoiceId, by) {
+  const got = await rpc('acct_claim_push', { p_inv: invoiceId, p_env: ENV }).catch(e => (/acct_claim_push|function|schema cache|404/i.test(String(e.message)) ? true : Promise.reject(e)))
+  if (got === false) throw new Busy('This invoice is being sent right now. Check again in a minute.')
+  try { return await pushInvoice_(c, invoiceId, by) }
+  finally { await rpc('acct_release_push', { p_inv: invoiceId, p_env: ENV }).catch(() => {}) }
+}
+async function pushInvoice_(c, invoiceId, by) {
   const p = await rpc('acct_invoice_payload', { p_inv: invoiceId })
   if (p.problems && p.problems.length) throw new Error(p.problems.join(' '))
   const custId = await customerId(c, p.customer)
-  const lines = []
+  const lines = [], map = []
   for (const l of p.lines) {
     const amount = r2(l.amount), qty = Number(l.qty), price = Number(l.price)
     const detail = { ItemRef: { value: await itemId(c, l.product, l.item) }, ClassRef: { value: await classId(c, l.class) } }
-    if (qty && Math.abs(r2(qty * price) - amount) < 0.005) { detail.Qty = qty; detail.UnitPrice = price } else { detail.Qty = 1; detail.UnitPrice = amount }
+    const asAmount = !(qty && Math.abs(r2(qty * price) - amount) < 0.005)
+    if (!asAmount) { detail.Qty = qty; detail.UnitPrice = price } else { detail.Qty = 1; detail.UnitPrice = amount }
+    map.push({ line_id: l.line_id, as_amount: asAmount || undefined, split: l.split || undefined })
     lines.push({ DetailType: 'SalesItemLineDetail', Amount: amount, Description: String(l.description || '').slice(0, 4000), SalesItemLineDetail: detail })
   }
   const body = {
@@ -223,27 +233,41 @@ export async function pushInvoice(c, invoiceId, by) {
   } else {
     inv = (await qbo(c, 'POST', 'invoice', body)).Invoice
   }
+  // which QuickBooks line is which app line (prices changed there come back); only when we wrote the lines ourselves
+  const ql = (inv.Line || []).filter(x => x.DetailType === 'SalesItemLineDetail')
+  const lineMap = mode !== 'linked' && ql.length === map.length ? map.map((m, i) => ({ ...m, qbo_line_id: String(ql[i].Id) })) : null
   await rpc('acct_record_push', { p_inv: invoiceId, p_env: ENV, p_qbo_id: String(inv.Id), p_doc: inv.DocNumber || body.DocNumber,
-    p_total: Number(inv.TotalAmt), p_balance: Number(inv.Balance), p_error: null, p_by: by })
+    p_total: Number(inv.TotalAmt), p_balance: Number(inv.Balance), p_error: null, p_by: by, p_line_map: lineMap })
   return { qbo_id: inv.Id, doc_number: inv.DocNumber, total: inv.TotalAmt, balance: inv.Balance, mode, note }
 }
 
 // ---------- payments: balances back from QuickBooks ----------
 export async function syncBalances(c) {
   const since = new Date(Date.now() - 120 * 86400000).toISOString()
-  const rows = await table(`acct_pushes?env=eq.${ENV}&status=eq.sent&qbo_id=not.is.null&or=(balance.is.null,balance.gt.0,sent_at.gt.${since})&select=invoice_id,qbo_id&limit=2000`)
+  let rows
+  try { rows = await table(`acct_pushes?env=eq.${ENV}&status=eq.sent&qbo_id=not.is.null&or=(balance.is.null,balance.gt.0,sent_at.gt.${since})&select=invoice_id,qbo_id,line_map,pulled_at&limit=2000`) }
+  catch { rows = await table(`acct_pushes?env=eq.${ENV}&status=eq.sent&qbo_id=not.is.null&or=(balance.is.null,balance.gt.0,sent_at.gt.${since})&select=invoice_id,qbo_id&limit=2000`) }
   const out = []
+  let pulled = 0, pullErr = null
   for (let i = 0; i < rows.length; i += 50) {
     const chunk = rows.slice(i, i + 50)
-    const r = await query(c, `select Id, Balance, TotalAmt from Invoice where Id in (${chunk.map(x => `'${esc(x.qbo_id)}'`).join(',')}) maxresults 100`)
+    const r = await query(c, `select * from Invoice where Id in (${chunk.map(x => `'${esc(x.qbo_id)}'`).join(',')}) maxresults 100`)
     const got = new Map((r.Invoice || []).map(x => [String(x.Id), x]))
     for (const x of chunk) {
       const q = got.get(String(x.qbo_id))
       out.push(q ? { invoice_id: x.invoice_id, balance: Number(q.Balance), total: Number(q.TotalAmt) } : { invoice_id: x.invoice_id, balance: null, deleted: true })
+      // prices changed in QuickBooks come back to the app (only when QuickBooks changed it since we last looked)
+      if (q && x.line_map && (!x.pulled_at || new Date(q.MetaData?.LastUpdatedTime ?? 0) > new Date(x.pulled_at))) {
+        const lines = (q.Line || []).filter(l => l.DetailType === 'SalesItemLineDetail').map(l => ({
+          qbo_line_id: String(l.Id), item: l.SalesItemLineDetail?.ItemRef?.value ?? null, qty: l.SalesItemLineDetail?.Qty ?? null,
+          price: l.SalesItemLineDetail?.UnitPrice ?? null, amount: l.Amount, description: l.Description ?? '' }))
+        try { const pr = await rpc('acct_pull_lines', { p_inv: x.invoice_id, p_env: ENV, p_lines: lines, p_updated: q.MetaData?.LastUpdatedTime ?? null }); if (pr?.changes?.length) pulled++ }
+        catch (e) { pullErr = String(e.message || e).slice(0, 200) }
+      }
     }
   }
   const res = await rpc('acct_record_sync', { p_env: ENV, p_rows: out, p_error: null })
-  return { checked: out.length, ...res }
+  return { checked: out.length, prices_pulled: pulled, ...(pullErr ? { pull_error: pullErr } : {}), ...res }
 }
 
 // ---------- customer balances and open items, for the customer dashboard and statement (060) ----------
@@ -283,3 +307,23 @@ export async function syncCustomers(c) {
 }
 
 export function send(res, status, body) { res.status(status).setHeader('Cache-Control', 'no-store'); return res.json(body) }
+
+/** auto-send: invoices whose 30 minutes are up (one QuickBooks at a time, never twice) */
+export async function autoPush(c, budgetMs = 50000) {
+  const t0 = Date.now()
+  const on = (await table('app_settings?key=eq.acct.auto_push&select=value'))?.[0]?.value ?? 'true'
+  if (on !== 'true') return { auto_push: 'off', sent: 0 }
+  const due = await rpc('acct_autopush_due', { p_env: ENV })
+  let sent = 0, failed = 0, busy = 0
+  for (const id of due ?? []) {
+    if (Date.now() - t0 > budgetMs) break
+    try { await pushInvoice(c, Number(id), 'auto (30 min after it was made)'); sent++ }
+    catch (e) {
+      if (e instanceof Busy) { busy++; continue }
+      failed++
+      const msg = String(e.message || e) + (e.tid ? ` (QuickBooks ref ${e.tid})` : '')
+      await rpc('acct_record_push', { p_inv: Number(id), p_env: ENV, p_qbo_id: null, p_doc: null, p_total: null, p_balance: null, p_error: msg, p_by: 'auto' }).catch(() => {})
+    }
+  }
+  return { due: (due ?? []).length, sent, failed, busy }
+}

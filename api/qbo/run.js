@@ -1,5 +1,5 @@
 // Accounting actions: { action: 'status' | 'push' | 'sync' | 'check' | 'setup' | 'disconnect', invoice_id? }
-import { ENV, caller, classId, companyName, connection, itemId, missingSetup, pushInvoice, qbo, query, revoke, rpc, send, syncBalances, syncCustomers, table } from './_lib.js'
+import { Busy, ENV, caller, classId, companyName, connection, itemId, missingSetup, pushInvoice, qbo, query, revoke, rpc, send, syncBalances, syncCustomers, table } from './_lib.js'
 
 export const config = { maxDuration: 60 }
 
@@ -31,6 +31,7 @@ export default async function handler(req, res) {
       try {
         return send(res, 200, { env: ENV, ...(await pushInvoice(c, id, me.email)) })
       } catch (e) {
+        if (e instanceof Busy) return send(res, 409, { error: e.message })
         const msg = String(e.message || e) + (e.tid ? ` (QuickBooks ref ${e.tid})` : '')
         await rpc('acct_record_push', { p_inv: id, p_env: ENV, p_qbo_id: null, p_doc: null, p_total: null, p_balance: null, p_error: msg, p_by: me.email }).catch(() => {})
         return send(res, 400, { error: msg })

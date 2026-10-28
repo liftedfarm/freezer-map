@@ -48,4 +48,4 @@ export interface NData {
   sites: NSite[]; rooms: NRoom[]; mothers: Mother[]; batches: Batch[]; orders: NOrder[]; deliveries: Delivery[]
   licenses: License[]; ranges: TagRange[]; strains: string[]; settings: NSettings; strainPlan: StrainPlan[]; tests: LabTest[]
 }
-export type NTab = 'dashboard' | 'plan' | 'orders' | 'batches' | 'mothers' | 'breeding' | 'logs' | 'invoices' | 'review' | 'activity' | 'settings'
+export type NTab = 'dashboard' | 'receiving' | 'plan' | 'orders' | 'batches' | 'mothers' | 'breeding' | 'logs' | 'invoices' | 'review' | 'activity' | 'settings'

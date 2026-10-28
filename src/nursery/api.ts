@@ -66,6 +66,11 @@ export class NurseryApi {
   }
   saveOrder(o: OrderInput) { return this.rpc<NOrder>('nursery_save_order', { p: o }) }
   setStatus(id: number, status: OStatus, note?: string) { return this.rpc<NOrder>('nursery_order_status', { p_order: id, p_status: status, p_note: note ?? null }) }
+  /** Ship: make the METRC transfer from 1PN right away; if METRC refuses it, the server takes the delivery back */
+  async ship(ref: string) {
+    const { metrcRun } = await import('../metrcCall')
+    return metrcRun<{ sent: boolean; undone?: boolean; error?: string; info?: string; live?: boolean }>(this.sb, { action: 'nursery_ship', ref })
+  }
   deliver(orderId: number, lines: { batch: number | null; plants: number }[], date: string | null, manifest: string | null, notes: string | null) {
     return this.rpc<{ ref: string; plants: number; invoice_id: number | null; invoice: string | null; so: string }>('nursery_deliver',
       { p_order: orderId, p_lines: lines, p_date: date, p_manifest: manifest, p_notes: notes })

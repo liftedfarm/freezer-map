@@ -46,7 +46,10 @@ export function DocSheet({ backend, kind, id, flash, onClose, onChanged, canEdit
             {d.kind === 'invoice' && <span className={`pill inv-${d.status}`}>{STATUS[d.status]}</span>}
             {d.kind === 'invoice' && d.acct_status && <span className={`pill acct-${d.acct_status}`}>{ACCT[d.acct_status]}</span>}
             {d.kind === 'invoice' && d.sent_at && <span className="muted">emailed {dfmt(d.sent_at.slice(0, 10))}</span>}
+            {d.kind === 'invoice' && d.manifest && <span className="muted">METRC manifest {d.manifest}</span>}
           </div>
+          {d.kind === 'invoice' && d.acct_status !== 'sent' && d.status !== 'void' && d.push_after && <p className="small-note muted">Goes to QuickBooks at {new Date(d.push_after).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}{new Date(d.push_after).toDateString() !== new Date().toDateString() ? ` ${dfmt(d.push_after.slice(0, 10))}` : ''}. Editing it restarts the 30 minutes.</p>}
+          {d.kind === 'invoice' && (d.acct_flags?.length ?? 0) > 0 && <div className="warnbox small">{d.acct_flags!.map((f, k) => <div key={k}>{f}</div>)}</div>}
           <div className="row wrap docact">
             <button className="primary" disabled={busy} onClick={() => downloadPdf(d)}>Download PDF</button>
             <a className="btn ghost" href={emailHref(d, sender)} onClick={() => { if (d.kind === 'invoice') backend.markInvoiceSent(d.id, d.customer.billing_email ?? '').then(load).catch(() => {}) }}>Email</a>
@@ -187,12 +190,21 @@ export function NewOrderSheet({ backend, customers, strains, flash, onClose, onD
   const [notes, setNotes] = useState('')
   const [termsCode, setTermsCode] = useState<string>('')
   const [shipping, setShipping] = useState('')
+  const [quoted, setQuoted] = useState(false)
+  const [est, setEst] = useState<{ charge: number | null; descr: string | null; rule: string; problem: string | null } | null>(null)
   const [terms, setTerms] = useState<PaymentTerm[]>([])
   const [lines, setLines] = useState<{ strain: string; lbs: string; price: string; product: Product; sample?: boolean; hold?: string }[]>([{ strain: '', lbs: '', price: '', product: 'fresh_frozen' }])
   const [busy, setBusy] = useState(false)
   useEffect(() => { backend.paymentTerms().then(setTerms).catch(() => {}) }, [])
   const c = customers.find(x => x.id === cust)
   useEffect(() => { setTermsCode(c?.payment_terms ?? '') }, [cust])
+  // what the load would charge them on a single-stop box truck run (the load works it out for real at Depart)
+  useEffect(() => {
+    setEst(null)
+    const sb = backend.client()
+    if (!sb || cust == null) return
+    sb.rpc('ship_quote', { p_customers: [cust], p_class: 'box', p_carrier_cost: null }).then(({ data }) => { const r = (data ?? [])[0]; if (r) setEst(r) })
+  }, [cust])
   const ok = cust != null && lines.some(l => l.strain.trim() && Number(l.lbs) > 0)
   async function save() {
     setBusy(true)
@@ -209,7 +221,7 @@ export function NewOrderSheet({ backend, customers, strains, flash, onClose, onD
         } catch (e) { flash(`Order made, but the sample lines weren't saved: ${(e as Error).message}`, true) }
       }
       if (shipping !== '') {
-        const { error } = await backend.client()?.rpc('set_order_shipping', { p_order: o.id, p_amount: Number(shipping) }) ?? { error: null }
+        const { error } = await backend.client()?.rpc('set_order_shipping', { p_order: o.id, p_amount: Number(shipping), p_quoted: quoted }) ?? { error: null }
         if (error) flash(`Order made, but shipping wasn't saved: ${error.message}`, true)
       }
       flash(`${o.so_number} created`); onDone(o.id)
@@ -255,8 +267,12 @@ export function NewOrderSheet({ backend, customers, strains, flash, onClose, onD
             <option value="">{c ? `Customer default (${terms.find(t => t.code === c.payment_terms)?.label ?? 'Due on receipt'})` : 'Customer default'}</option>
             {terms.filter(t => t.active).map(t => <option key={t.code} value={t.code}>{t.label}</option>)}
           </Select></div>
-        <div className="field"><label>Shipping <span className="muted">($, blank = none{c && ((c.contract_lbs ?? 0) > 0) ? '; contract customers get a $0 "Free shipping - contract" line' : ''})</span></label>
-          <input type="number" step="0.01" min="0" value={shipping} onChange={e => setShipping(e.target.value)} placeholder="0.00" /></div>
+        <div className="field"><label>Shipping <span className="muted">(blank = the load works it out when it leaves)</span></label>
+          <input type="number" step="0.01" min="0" value={shipping} onChange={e => setShipping(e.target.value)} placeholder={est?.charge != null ? String(est.charge) : '0.00'} />
+          {est && <span className="muted small">{est.rule === 'free' ? `Contract customer: FREE shipping${est.descr ? ` ${est.descr.replace('FREE contract shipping', '').trim()}` : ''}`
+            : est.rule === 'pickup' ? 'They pick up: no shipping'
+            : est.problem ? est.problem : `Estimate, one stop on a box truck: $${Number(est.charge).toFixed(2)} (${est.descr})`}</span>}
+          {shipping !== '' && <label className="check"><input type="checkbox" checked={quoted} onChange={e => setQuoted(e.target.checked)} /> I quoted this to the customer (it wins over the load's calculation)</label>}</div>
         <div className="field"><label>Notes</label><input value={notes} onChange={e => setNotes(e.target.value)} /></div>
         <p className="muted">The order is confirmed and gets its SO number right away, then shows in Distribution → Fulfillment.</p>
         <div className="row between"><span /><div className="row"><button className="ghost" onClick={onClose}>Cancel</button><button className="primary" disabled={busy || !ok} onClick={save}>Create order</button></div></div>

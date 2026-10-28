@@ -8,6 +8,7 @@ export interface SalesDoc {
   kind: 'invoice' | 'so'; id: number; number: string; so: string | null; po: string | null; date: string | null; due?: string | null; wanted?: string | null
   terms: string | null; terms_code: string | null; schedule?: { pct: number; amount: number; due: string }[]; total: number; status: string; notes: string | null
   ship_date?: string | null; token: string; acct_status?: string; sent_at?: string | null; nursery?: boolean
+  manifest?: string | null; push_after?: string | null; acct_flags?: string[]
   company: { legal: string; address: string; email: string; phone: string; web: string; license: string | null; remit: string; crypto: string; late: string }
   customer: { id: number; name: string; legal_name: string | null; license: string | null; billing_address: string | null; billing_contact: string | null; billing_email: string | null
     billing_phone: string | null; ship_to_name: string | null; ship_to_address: string | null; receiving_contact: string | null; terms: string | null; kind?: string | null }
@@ -113,6 +114,7 @@ export async function makePdf(d: SalesDoc): Promise<Blob> {
   if (inv && pk.length) {
     need(60)
     section('METRC INFORMATION')
+    if (d.manifest) { pdf.setFont('helvetica', 'bold').setFontSize(8.5).setTextColor(...ink); pdf.text(`METRC manifest ${d.manifest}`, M, y + 2); y += 14 }
     autoTable(pdf, {
       startY: y, margin: { left: M, right: M },
       head: [['PRODUCT', 'QTY', 'UOM', 'BATCH', 'PACKAGE TAG']], body: pk,

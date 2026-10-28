@@ -6,7 +6,8 @@ import { metrcRun, openMetrcManifest } from './metrcCall'
 import type { AppTransfer, StopCheckRow } from './metrcCall'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { lbs } from './forms'
-import type { Customer, FOrder, Load, LoadDriver, LoadItem, LoadStop, Pallet, StopInput, StopManifest, Vehicle } from './types'
+import type { Customer, FOrder, Load, LoadBlocker, LoadDriver, LoadItem, LoadStop, Pallet, StopInput, StopManifest, StopShipping, Vehicle } from './types'
+import { PickupForm, PickupPanel, ShipLine, money, rpc } from './ship'
 import { STATE_LABEL, orderGot, orderLbs } from './fulfill'
 
 // Everything the transit screens need from the app, passed in to avoid circular imports.
@@ -29,6 +30,8 @@ export interface LoadCtx {
   orders?: FOrder[]                            // Fulfillment orders (confirmed): which stop each one is on
   openOrder?: (id: number) => void             // open the order in Distribution > Fulfillment
   refreshOrders?: () => Promise<void>
+  canShip?: boolean                            // Sales: can change a stop's shipping
+  newMixedOnStop?: (stopId: number, onTruck: boolean) => void   // build a mixed pallet right on a stop
   api: {
     createLoad(v: number, d: string, s: StopInput[], driver: string, notes: string): Promise<Load>
     updateLoad(id: number, v: number, d: string, driver: string, notes: string): Promise<void>
@@ -59,7 +62,9 @@ export function siteLicense(lics: Lic[], site: string) {
 
 export const STOP_COLORS = ['#2563eb', '#d97706', '#16a34a', '#db2777', '#7c3aed', '#0891b2', '#dc2626', '#65a30d']
 export const stopColor = (seq: number) => STOP_COLORS[(seq - 1) % STOP_COLORS.length]
-const STATUS: Record<string, string> = { planning: 'Planning', loading: 'Loading', in_transit: 'In transit', delivered: 'Delivered', cancelled: 'Cancelled' }
+const STATUS: Record<string, string> = { planning: 'Planning', loading: 'Loading', departing: 'Departing', in_transit: 'In transit', delivered: 'Delivered', cancelled: 'Cancelled' }
+const isPickup = (l?: Load) => l?.kind === 'pickup'
+const PICKUP_KIND = 'Customer pickup'
 const today = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' })
 const fmtDate = (d: string) => new Date(d + 'T12:00:00').toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })
 const editable = (l: Load) => l.status === 'planning' || l.status === 'loading'
@@ -69,6 +74,9 @@ const soOf = (o: FOrder) => o.so ?? `Order #${o.id}`
 const palletIds = (o: FOrder) => o.lines.flatMap(l => l.picks.map(pk => pk.pallet_id))
 /** orders for a customer that aren't on a load yet (not shipped/cancelled) */
 const notLoaded = (ctx: LoadCtx, customerId: number) => (ctx.orders ?? []).filter(o => o.customer_id === customerId && !o.stop && ['open', 'needs_ok', 'ready'].includes(o.state))
+/** an order can go on a load once it has a pallet; it can only leave once it's complete and OK'd */
+const canGoOn = (o: FOrder) => orderGot(o) > 0
+const FILL_LABEL: Record<string, string> = { open: 'still needs pallets', needs_ok: 'waiting on Sales to OK amounts' }
 /** put orders on a load, then refresh Fulfillment so both sides match */
 async function attachOrders(ctx: LoadCtx, loadId: number, ids: number[]) {
   for (const id of ids) await ctx.api.orderToLoad(id, loadId)
@@ -83,6 +91,7 @@ function label(ctx: LoadCtx, p: Pallet) {
 // ---------- list ----------
 
 export function TransitView({ ctx, onOpen, onNew }: { ctx: LoadCtx; onOpen: (id: number) => void; onNew: () => void }) {
+  const [pickup, setPickup] = useState(false)
   const open = ctx.loads.filter(l => l.status !== 'delivered' && l.status !== 'cancelled')
   const done = ctx.loads.filter(l => l.status === 'delivered' || l.status === 'cancelled')
   const card = (l: Load) => {
@@ -93,7 +102,7 @@ export function TransitView({ ctx, onOpen, onNew }: { ctx: LoadCtx; onOpen: (id:
     return (
       <button key={l.id} className="li loadcard" onClick={() => onOpen(l.id)}>
         <div className="row between"><b>{l.code}</b><span className={`pill s-${l.status}`}>{STATUS[l.status]}</span></div>
-        <div>{v?.name ?? 'Vehicle?'} · {fmtDate(l.load_date)}{l.driver ? ` · ${l.driver}` : ''}</div>
+        <div>{isPickup(l) ? 'Customer pickup' : v?.name ?? 'Vehicle?'} · {fmtDate(l.load_date)}{l.driver ? ` · ${l.driver}` : ''}</div>
         <div className="stopline">
           {st.map(s => <span key={s.id} className={`stopchip ${s.status}`} style={{ ['--sc' as string]: stopColor(s.seq) }}>{s.seq}. {ctx.customers.find(c => c.id === s.customer_id)?.name}</span>)}
         </div>
@@ -101,13 +110,17 @@ export function TransitView({ ctx, onOpen, onNew }: { ctx: LoadCtx; onOpen: (id:
           const os = (ctx.orders ?? []).filter(o => o.stop && st.some(s => s.id === o.stop!.id))
           return os.length > 0 && <div className="muted small">Orders: {os.map(o => `${soOf(o)} ${o.customer}`).join(' · ')}</div>
         })()}
-        <div className="muted">{it.length}/{v?.spaces ?? '?'} positions used · {it.filter(i => i.loaded).length} loaded · {lbs(w)}</div>
+        <div className="muted">{isPickup(l) ? `${it.length} pallet${it.length === 1 ? '' : 's'}` : `${it.length}/${v?.spaces ?? '?'} positions used`} · {it.filter(i => i.loaded).length} loaded · {lbs(w)}</div>
       </button>
     )
   }
   return (
     <div className="list">
-      <div className="row between"><h2>Transit</h2><button className="primary" onClick={onNew}>+ New load</button></div>
+      <div className="row between"><h2>Transit</h2><div className="row"><button className="ghost" onClick={() => setPickup(true)}>+ Pickup</button><button className="primary" onClick={onNew}>+ New load</button></div></div>
+      {pickup && <PickupForm customers={ctx.customers} onClose={() => setPickup(false)} onCreate={async (cust, date, notes) => {
+        let id = 0
+        if (await ctx.run(async () => { id = (await rpc<Load>(ctx.api.client(), 'create_pickup', { p_customer: cust, p_date: date, p_notes: notes || null })).id }, 'Pickup made')) { setPickup(false); onOpen(id) }
+      }} />}
       {open.length === 0 && <p className="muted">No active loads. Tap New load to plan one.</p>}
       {open.map(card)}
       {done.length > 0 && <><h3>Last 14 days</h3>{done.map(card)}</>}
@@ -118,7 +131,7 @@ export function TransitView({ ctx, onOpen, onNew }: { ctx: LoadCtx; onOpen: (id:
 // ---------- create / edit ----------
 
 export function LoadForm({ ctx, load, onClose, onSaved }: { ctx: LoadCtx; load?: Load; onClose: () => void; onSaved: (id: number) => void }) {
-  const vehicles = ctx.vehicles.filter(v => v.active || v.id === load?.vehicle_id)
+  const vehicles = ctx.vehicles.filter(v => (v.active || v.id === load?.vehicle_id) && v.kind !== PICKUP_KIND)
   const customers = ctx.customers.filter(c => c.active)
   const existing = load ? ctx.stops.filter(s => s.load_id === load.id).sort((a, b) => a.seq - b.seq) : []
   const [vehicle, setVehicle] = useState<number | null>(load?.vehicle_id ?? vehicles[0]?.id ?? null)
@@ -143,7 +156,7 @@ export function LoadForm({ ctx, load, onClose, onSaved }: { ctx: LoadCtx; load?:
   const ok = vehicle != null && stops.length > 0
   async function save() {
     const clean = stops.map(({ delivered: _d, ...s }) => s)
-    const ids = [...attach].filter(id => { const o = (ctx.orders ?? []).find(x => x.id === id); return o && o.state === 'ready' && !o.stop && clean.some(s => s.customer_id === o.customer_id) })
+    const ids = [...attach].filter(id => { const o = (ctx.orders ?? []).find(x => x.id === id); return o && canGoOn(o) && !o.stop && clean.some(s => s.customer_id === o.customer_id) })
     const withOrders = ids.length ? ` with ${ids.length} order${ids.length === 1 ? '' : 's'}` : ''
     if (load) {
       const a = await ctx.run(() => ctx.api.updateLoad(load.id, vehicle!, date, driver, notes), 'Load updated')
@@ -174,17 +187,17 @@ export function LoadForm({ ctx, load, onClose, onSaved }: { ctx: LoadCtx; load?:
               <span className="stopnum">{i + 1}</span>
               <div className="grow">
                 <b>{customers.find(c => c.id === s.customer_id)?.name ?? ctx.customers.find(c => c.id === s.customer_id)?.name}</b>{s.delivered && <span className="muted"> · delivered</span>}
-                <input placeholder="Manifest # (optional)" value={s.manifest} onChange={e => setStops(st => st.map((x, j) => j === i ? { ...x, manifest: e.target.value } : x))} />
+
                 {stops.findIndex(x => x.customer_id === s.customer_id) === i && (() => {
                   const on = s.id != null ? (ctx.orders ?? []).filter(o => o.stop?.id === s.id) : []
                   const waiting = notLoaded(ctx, s.customer_id)
                   if (!on.length && !waiting.length) return null
                   return <div className="stoporders">
                     {on.map(o => <div key={o.id} className="small ok-t">✓ {soOf(o)} on this stop · {n0(orderGot(o))} lbs</div>)}
-                    {waiting.map(o => o.state === 'ready'
+                    {waiting.map(o => canGoOn(o)
                       ? <label key={o.id} className="sattach"><input type="checkbox" checked={attach.has(o.id)} onChange={() => toggleAttach(o.id)} />
-                          <span>Load <b>{soOf(o)}</b> <span className="muted">· {n0(orderGot(o))} lbs · {o.lines.length} strain{o.lines.length === 1 ? '' : 's'}</span></span></label>
-                      : <div key={o.id} className="small muted">{soOf(o)} · {STATE_LABEL[o.state]} ({n0(orderGot(o))} of {n0(orderLbs(o))} lbs) · finish it in Fulfillment</div>)}
+                          <span>Load <b>{soOf(o)}</b> <span className="muted">· {n0(orderGot(o))}{o.state !== 'ready' ? ` of ${n0(orderLbs(o))}` : ''} lbs · {o.lines.length} strain{o.lines.length === 1 ? '' : 's'}{o.state !== 'ready' ? ` · ${STATE_LABEL[o.state]}` : ''}</span></span></label>
+                      : <div key={o.id} className="small muted">{soOf(o)} · no pallets yet · assign some in Fulfillment first</div>)}
                   </div>
                 })()}
               </div>
@@ -223,12 +236,16 @@ export function LoadView({ ctx, loadId, onBack, onEdit }: { ctx: LoadCtx; loadId
   const [picker, setPicker] = useState<{ stop: number | null; position: number | null; pre?: number; stack?: boolean } | null>(null)
   const [posOpen, setPosOpen] = useState<number | null>(null)
   const [lics, setLics] = useState<Lic[]>([])
-  const [making, setMaking] = useState<number | null>(null)
   const [checks, setChecks] = useState<StopCheckRow[]>([])
   const [xfers, setXfers] = useState<AppTransfer[]>([])
   const [modes, setModes] = useState<Record<string, string>>({})
   const [checking, setChecking] = useState(false)
   const [openCheck, setOpenCheck] = useState<number | null>(null)
+  const [blockers, setBlockers] = useState<LoadBlocker[] | null>(null)
+  const [ship, setShip] = useState<Map<number, StopShipping>>(new Map())
+  const [left, setLeft] = useState<{ invoices?: { id: number; inv: string; total: number; customer: string }[] } | null>(null)
+  const [manifestFor, setManifestFor] = useState<{ stop: number; value: string } | null>(null)
+  const [carrier, setCarrier] = useState<string | null>(null)
   useEffect(() => {
     const sb = ctx.api.client(); if (!sb) return
     sb.from('licenses').select('license_no, kind, site, hub, sort, active').then(({ data }) => setLics((data ?? []) as Lic[]))
@@ -241,6 +258,20 @@ export function LoadView({ ctx, loadId, onBack, onEdit }: { ctx: LoadCtx; loadId
     setChecks((a.data ?? []) as StopCheckRow[]); setXfers((b.data ?? []) as AppTransfer[])
   }
   useEffect(() => { loadMetrc() }, [loadId, stopIds.join(',')])
+  const lNow = ctx.loads.find(x => x.id === loadId)
+  const sig = JSON.stringify([lNow?.status, lNow?.carrier_cost, lNow?.pickup_driver, lNow?.pickup_dl, lNow?.pickup_make, lNow?.pickup_model, lNow?.pickup_plate,
+    ctx.items.filter(i => i.load_id === loadId).map(i => [i.id, i.loaded, i.stop_id]),
+    ctx.stops.filter(s => s.load_id === loadId).map(s => [s.id, s.status, s.ship_override, s.manifest]),
+    (ctx.orders ?? []).filter(o => o.stop?.load_id === loadId).map(o => [o.id, o.fill, o.shipping, o.lines.map(l => l.picks.map(p => [p.pallet_id, p.lbs]))])])
+  useEffect(() => {
+    const sb = ctx.api.client()
+    if (!sb || !lNow || !['planning', 'loading', 'departing'].includes(lNow.status)) { setBlockers(null); setShip(new Map()); return }
+    let gone = false
+    rpc<LoadBlocker[]>(sb, 'load_blockers', { p_load: loadId }).then(b => { if (!gone) setBlockers(b) }).catch(() => { if (!gone) setBlockers(null) })
+    Promise.all(stopIds.map(id => rpc<StopShipping>(sb, 'stop_shipping', { p_stop: id }).then(x => [id, x] as const).catch(() => null)))
+      .then(rs => { if (!gone) setShip(new Map(rs.filter((x): x is readonly [number, StopShipping] => !!x))) })
+    return () => { gone = true }
+  }, [sig])
   async function runChecks() {
     const sb = ctx.api.client(); if (!sb || !l) return
     setChecking(true)
@@ -249,17 +280,29 @@ export function LoadView({ ctx, loadId, onBack, onEdit }: { ctx: LoadCtx; loadId
   }
   async function depart() {
     if (!l) return
-    if (await ctx.run(() => ctx.api.departLoad(l.id), `${l.code} in transit`)) {
-      const sb = ctx.api.client()
-      if (sb && (modes.transfer === 'auto' || modes.manifest === 'auto')) {
-        await ctx.run(async () => {
-          const r = await metrcRun<{ live: boolean; results: { state: string; info?: string; error?: string }[] }>(sb, { action: 'depart', load_id: l.id })
-          await loadMetrc()
-          const bad = r.results.find(x => x.state === 'failed')
-          if (bad) throw new Error(`METRC manifest not made: ${bad.error}`)
-        }, 'METRC manifests made')
-      }
+    const sb = ctx.api.client()
+    if (!sb) { await ctx.run(() => ctx.api.departLoad(l.id), `${l.code} in transit`); return }
+    type Done = { departed?: boolean; error?: string; invoices?: { id: number; inv: string; total: number; customer: string }[] }
+    if (!metrcOn) {
+      // no manifest to make first: check, leave, invoice
+      await ctx.run(async () => {
+        await rpc(sb, 'depart_prepare', { p_load: l.id })
+        const r = await rpc<Done>(sb, 'depart_finish', { p_load: l.id })
+        if (r.departed === false) throw new Error(r.error ?? 'Nothing left yet.')
+        setLeft(r)
+      }, isPickup(l) ? `${l.code} picked up` : `${l.code} left`)
+      return
     }
+    await ctx.run(async () => {
+      const r = await metrcRun<Done & { results: { state: string; error?: string; info?: string }[] }>(sb, { action: 'depart', load_id: l.id })
+      await loadMetrc()
+      if (!r.departed) throw new Error(`Nothing left yet. ${r.error ?? ''}`)
+      setLeft(r)
+    }, `${l.code} ${isPickup(l) ? 'picked up' : 'left'}: METRC manifests made`)
+  }
+  async function departBack() {
+    if (!l) return
+    await ctx.run(() => rpc(ctx.api.client(), 'depart_back', { p_load: l.id }), `${l.code} back to loading`)
   }
   // Scan while loading: a planned pallet is marked on the truck; one that isn't on this load can be added
   useScanHandler(l && editable(l) ? tag => {
@@ -314,11 +357,33 @@ export function LoadView({ ctx, loadId, onBack, onEdit }: { ctx: LoadCtx; loadId
         <button className="ghost" onClick={onBack}>‹ Transit</button>
         <div className="fz-title">
           <h2>{l.code} <span className={`pill s-${l.status}`}>{STATUS[l.status]}</span></h2>
-          <div className="muted">{v?.name} · {fmtDate(l.load_date)}{l.driver ? ` · ${l.driver}` : ''} · {items.length}/{spaces} positions · {lbs(totalW)}</div>
+          <div className="muted">{isPickup(l) ? 'Customer pickup' : v?.name} · {fmtDate(l.load_date)}{l.driver ? ` · ${l.driver}` : ''} · {isPickup(l) ? `${items.length} pallet${items.length === 1 ? '' : 's'}` : `${items.length}/${spaces} positions`} · {lbs(totalW)}</div>
           {l.notes && <div className="muted">{l.notes}</div>}
         </div>
-        {canEdit && <button className="ghost small" onClick={onEdit}>Edit</button>}
+        {canEdit && !isPickup(l) && <button className="ghost small" onClick={onEdit}>Edit</button>}
       </div>
+
+      {l.status === 'departing' && <div className="warnbox">
+        <b>Departing.</b> {l.depart_error ?? 'Making the METRC manifests. Nothing has left yet.'}
+        <div className="row" style={{ marginTop: 8 }}>
+          <button className="primary small" disabled={ctx.busy} onClick={depart}>Depart again</button>
+          <button className="ghost small" disabled={ctx.busy} onClick={() => ctx.confirm(`Send ${l.code} back to loading? Its manifest to-dos are cancelled. (Only works if METRC hasn't made a manifest yet.)`, 'Back to loading', departBack)}>Back to loading</button>
+        </div></div>}
+      {left && (l.status === 'in_transit' || l.status === 'delivered') && <div className="okbox">
+        <b>{isPickup(l) ? 'Picked up.' : 'Left.'}</b> {left.invoices?.length ? <>Invoices made: {left.invoices.map(i => `${i.inv} ${i.customer} ${money(i.total)}`).join(' · ')}. They go to QuickBooks in 30 minutes unless someone changes them.</> : 'No invoices (transfer only).'}
+        {' '}Print the METRC manifest from each stop below.
+        <div className="row end"><button className="ghost small" onClick={() => setLeft(null)}>OK</button></div></div>}
+
+      {isPickup(l) && <PickupPanel load={l} canEdit={canEdit} onSave={v => ctx.run(() => rpc(ctx.api.client(), 'set_pickup_driver',
+        { p_load: l.id, p_driver: v.driver, p_dl: v.dl, p_make: v.make, p_model: v.model, p_plate: v.plate, p_license: v.license }), 'Driver saved')} />}
+      {!isPickup(l) && v?.carrier_id != null && <div className="dcard row wrap between">
+        <span><b>Carrier's cost for this run:</b> {l.carrier_cost != null ? money(l.carrier_cost) : <span className="warn-t">not entered</span>} <span className="muted small">(split across the customer stops)</span></span>
+        {(canEdit || l.status === 'departing') && (carrier == null
+          ? <button className="ghost small" onClick={() => setCarrier(l.carrier_cost != null ? String(l.carrier_cost) : '')}>{l.carrier_cost != null ? 'Change' : 'Enter cost'}</button>
+          : <span className="row"><input type="number" step="0.01" min="0" value={carrier} onChange={e => setCarrier(e.target.value)} style={{ width: 110 }} />
+              <button className="primary small" onClick={async () => { if (await ctx.run(() => rpc(ctx.api.client(), 'set_load_carrier_cost', { p_load: l.id, p_cost: carrier === '' ? null : Number(carrier) }), 'Carrier cost saved')) setCarrier(null) }}>Save</button>
+              <button className="ghost small" onClick={() => setCarrier(null)}>Cancel</button></span>)}
+      </div>}
 
       <div className="stops">
         {stops.map(s => {
@@ -353,7 +418,8 @@ export function LoadView({ ctx, loadId, onBack, onEdit }: { ctx: LoadCtx; loadId
                   const ids = palletIds(o), tops = new Set(ids.map(top)), on = its.filter(i => tops.has(i.pallet_id)), onTruck = ids.filter(id => on.some(i => i.loaded && i.pallet_id === top(id))).length
                   return <div key={o.id} className="row sorderrow">
                     <button className="sorder" onClick={() => ctx.openOrder?.(o.id)}>
-                      <span><b>{soOf(o)}</b> <span className="muted">· {n0(orderGot(o))} lbs · {o.lines.length} strain{o.lines.length === 1 ? '' : 's'}</span></span>
+                      <span><b>{soOf(o)}</b> <span className="muted">· {n0(orderGot(o))} lbs · {o.lines.length} strain{o.lines.length === 1 ? '' : 's'}</span>
+                        {s.status === 'pending' && o.fill && o.fill !== 'ready' && <span className="warn-t"> · {FILL_LABEL[o.fill]}</span>}</span>
                       <span className="muted">{s.status === 'delivered' ? 'shipped' : `${onTruck}/${ids.length} on truck`} ›</span>
                     </button>
                     {canEdit && s.status === 'pending' && <button className="ghost small" disabled={ctx.busy || onTruck > 0} title={onTruck ? 'Put its pallets back in a freezer first' : 'Take this order off the load'}
@@ -361,35 +427,34 @@ export function LoadView({ ctx, loadId, onBack, onEdit }: { ctx: LoadCtx; loadId
                         async () => { await ctx.run(async () => { await ctx.api.orderOffLoad(o.id); await ctx.refreshOrders?.() }, `${soOf(o)} taken off ${l.code}`) })}>Take off</button>}
                   </div>
                 })}
-                {waiting.map(o => o.state === 'ready'
-                  ? <div key={o.id} className="sorder ready"><span><b>{soOf(o)}</b> <span className="muted">· ready · {n0(orderGot(o))} lbs</span></span>
+                {waiting.map(o => canGoOn(o)
+                  ? <div key={o.id} className="sorder ready"><span><b>{soOf(o)}</b> <span className="muted">· {o.state === 'ready' ? 'ready' : STATE_LABEL[o.state].toLowerCase()} · {n0(orderGot(o))}{o.state !== 'ready' ? ` of ${n0(orderLbs(o))}` : ''} lbs</span></span>
                       <button className="primary small" disabled={ctx.busy} onClick={() => ctx.run(() => attachOrders(ctx, l.id, [o.id]), `${soOf(o)} on ${l.code}`)}>+ Add to stop</button></div>
                   : <button key={o.id} className="sorder" onClick={() => ctx.openOrder?.(o.id)}><span><b>{soOf(o)}</b> <span className="muted">· {STATE_LABEL[o.state]} · {n0(orderGot(o))} of {n0(orderLbs(o))} lbs</span></span><span className="muted">Fulfillment ›</span></button>)}
-                {loose > 0 && <div className="small-note warn-t">{loose} pallet{loose === 1 ? " isn't" : "s aren't"} on any order for {c?.name}, so {loose === 1 ? "it won't" : "they won't"} be invoiced. Put {loose === 1 ? 'it' : 'them'} on an order in Fulfillment.</div>}
+                {loose > 0 && <div className="small-note warn-t">{loose} pallet{loose === 1 ? " isn't" : "s aren't"} on any order for {c?.name}. It can't leave until {loose === 1 ? "it's" : "they're"} on an order (assign in Fulfillment) or off the truck.</div>}
                 {carrying.length > 0 && <div className="small-note muted">Carrying pallets held for {carrying.join(', ')}</div>}
               </div>}
               {its.length > 0 && <div className={`small-note lic ${froms.length > 1 || already ? 'warn-t' : 'muted'}`}>
                 {dest ? <>Transfer: {froms.map(L).join(' + ') || '?'} → <b>{L(dest)}</b>{already ? ` · some of these are already at ${dest}` : ''}</>
                   : <>Ships from {froms.map(L).join(' and ') || '?'}{froms.length > 1 ? ' · two licenses means two METRC manifests' : ''}</>}
               </div>}
+              {c?.kind === 'external' && <ShipLine sh={s.ship_saved_at ? { billed: true, saved: true, rule: s.ship_rule ?? undefined, charge: s.ship_charge, value: s.ship_value, descr: s.ship_desc,
+                  override: s.ship_override, reason: s.ship_override_reason } : ship.get(s.id)} canEdit={!!ctx.canShip && (canEdit || l.status === 'departing') && s.status === 'pending'}
+                onSet={(amount, reason) => ctx.run(() => rpc(ctx.api.client(), 'set_stop_shipping', { p_stop: s.id, p_amount: amount, p_reason: reason || null }), amount == null ? 'Shipping back to calculated' : 'Shipping saved')} />}
               {its.length > 0 && <StopMetrc checks={checks.filter(x => x.stop_id === s.id)} xfers={xfers.filter(x => x.stop_id === s.id)}
                 on={modes[site ? 'transfer' : 'manifest'] ?? 'off'} open={openCheck === s.id} onToggle={() => setOpenCheck(o => o === s.id ? null : s.id)} pending={s.status === 'pending'} />}
               <div className="row">
                 {canEdit && <button className="ghost small" onClick={() => setPicker({ stop: s.id, position: null })}>+ Add pallets</button>}
-                {its.length > 0 && <button className="ghost small" disabled={making === s.id} onClick={async () => {
-                  setMaking(s.id)
-                  try {
-                    const m = await ctx.api.stopManifest(s.id)
-                    const { manifestPdf, manifestFile } = await import('./manifest')
-                    const url = URL.createObjectURL(await manifestPdf(m))
-                    const a = document.createElement('a'); a.href = url; a.download = manifestFile(m); a.click()
-                    setTimeout(() => URL.revokeObjectURL(url), 30000)
-                  } catch (e) { await ctx.run(() => Promise.reject(e), '') } finally { setMaking(null) }
-                }}>{making === s.id ? 'Making…' : 'Manifest sheet'}</button>}
+                {canEdit && ctx.newMixedOnStop && its.length > 0 && <button className="ghost small" onClick={() => ctx.newMixedOnStop!(s.id, its.some(i => i.loaded))}>+ Mixed pallet</button>}
+                {!s.manifest && ['in_transit', 'delivered'].includes(l.status) && its.length > 0 && (manifestFor?.stop === s.id
+                  ? <span className="row"><input placeholder="METRC manifest #" value={manifestFor.value} onChange={e => setManifestFor({ stop: s.id, value: e.target.value })} style={{ width: 150 }} />
+                      <button className="primary small" disabled={!manifestFor.value.trim()} onClick={async () => { if (await ctx.run(() => rpc(ctx.api.client(), 'set_stop_manifest', { p_stop: s.id, p_manifest: manifestFor.value }), 'Manifest # saved (and on the invoice)')) setManifestFor(null) }}>Save</button>
+                      <button className="ghost small" onClick={() => setManifestFor(null)}>Cancel</button></span>
+                  : <button className="ghost small" onClick={() => setManifestFor({ stop: s.id, value: '' })}>Enter manifest #</button>)}
                 {s.manifest && /^\d{6,}$/.test(s.manifest.trim()) && froms.length > 0 && <button className="ghost small" onClick={() => {
                   const sb = ctx.api.client(); const lic = siteLicense(lics, froms[0])
                   if (sb && lic) openMetrcManifest(sb, lic, s.manifest!.trim()).catch(e => ctx.run(() => Promise.reject(e), ''))
-                }}>METRC manifest</button>}
+                }}>{['in_transit', 'delivered'].includes(l.status) ? 'Print METRC manifest' : 'METRC manifest'}</button>}
               </div>
             </div>
           )
@@ -398,7 +463,12 @@ export function LoadView({ ctx, loadId, onBack, onEdit }: { ctx: LoadCtx; loadId
 
       {placeItem && <div className="movebar"><div><b>Moving {ctx.pallet(placeItem.pallet_id)?.code} on the truck</b><div className="muted">Tap a position.</div></div><button className="ghost" onClick={() => setPlaceItem(null)}>Cancel</button></div>}
 
-      <div className="truck-wrap">
+      {isPickup(l) ? <div className="list pickuplist">
+        {items.length === 0 && <p className="muted">No pallets yet. Add the customer's orders above (or + Add pallets).</p>}
+        {items.map(i => { const p = ctx.pallet(i.pallet_id); return <button key={i.id} className="li setrow" onClick={() => setPosOpen(i.position)}>
+          <div className="grow"><b>{p?.code}</b> <span className="muted">{p ? label(ctx, p) : ''} · {p ? lbs(ctx.weight(p)) : ''}</span></div>
+          <span className={`pill ${i.loaded ? 's-in_transit' : 's-planning'}`}>{i.loaded ? 'Pulled' : p ? `Pull from ${ctx.freezerSpot(p.slot_id)}` : 'Planned'}</span></button> })}
+      </div> : <div className="truck-wrap">
         <div className="truck-label">NOSE</div>
         <div className="truck" style={{ gridTemplateColumns: `repeat(${across}, 1fr)` }}>
           {Array.from({ length: rows * across }, (_, k) => {
@@ -429,18 +499,25 @@ export function LoadView({ ctx, loadId, onBack, onEdit }: { ctx: LoadCtx; loadId
           })}
         </div>
         <div className="truck-label door">DOOR</div>
-      </div>
+      </div>}
 
+      {canEdit && blockers && blockers.length > 0 && <div className="warnbox blockers">
+        <b>Before it can leave:</b>
+        <ul>{blockers.map((b, k) => <li key={k}>{b.seq ? `Stop ${b.seq}: ` : ''}{b.order_id ? <a onClick={() => ctx.openOrder?.(b.order_id!)}>{b.text}</a> : b.text}</li>)}</ul></div>}
       <div className="row actions">
-        {canEdit && <button className="ghost" disabled={ctx.busy || !items.length} onClick={() => ctx.run(() => ctx.api.arrangeLoad(l.id), 'Arranged: last stop at the nose')}>Auto-arrange</button>}
+        {canEdit && !isPickup(l) && <button className="ghost" disabled={ctx.busy || !items.length} onClick={() => ctx.run(() => ctx.api.arrangeLoad(l.id), 'Arranged: last stop at the nose')}>Auto-arrange</button>}
         {canEdit && items.length > 0 && <button className="ghost" disabled={ctx.busy || checking} onClick={runChecks}>{checking ? 'Checking METRC…' : 'Check METRC'}</button>}
-        {canEdit && <button className="primary" disabled={ctx.busy || !items.length || unloaded > 0 || metrcBlock.length > 0}
-          title={unloaded ? `${unloaded} not loaded yet` : metrcBlock.length ? `METRC checklist not green: stop ${metrcBlock.join(', ')}` : ''}
-          onClick={() => ctx.confirm(`Truck is leaving with ${items.length} pallet${items.length === 1 ? '' : 's'}?${metrcOn ? ' The app makes the METRC manifests now.' : ''}`, 'Depart', depart)}>
-          {unloaded ? `Depart (${unloaded} not loaded)` : metrcBlock.length ? 'Depart (METRC check)' : 'Depart'}</button>}
+        {canEdit && (() => {
+          const go = isPickup(l) ? 'Picked up' : 'Depart'
+          const blocked = (blockers?.length ?? 0) > 0
+          return <button className="primary" disabled={ctx.busy || !items.length || unloaded > 0 || metrcBlock.length > 0 || blocked}
+            title={unloaded ? `${unloaded} not loaded yet` : metrcBlock.length ? `METRC checklist not green: stop ${metrcBlock.join(', ')}` : blocked ? 'See the list above' : ''}
+            onClick={() => ctx.confirm(`${isPickup(l) ? 'They are leaving' : 'Truck is leaving'} with ${items.length} pallet${items.length === 1 ? '' : 's'}?${metrcOn ? ' The app makes the METRC manifests first, then' : ' The app'} marks the orders shipped and makes the invoices${isPickup(l) ? ' (no shipping)' : ''}.`, go, depart)}>
+            {unloaded ? `${go} (${unloaded} not loaded)` : metrcBlock.length ? `${go} (METRC check)` : blocked ? `${go} (not ready)` : go}</button>
+        })()}
         {canEdit && <button className="ghost" disabled={ctx.busy} onClick={() => ctx.confirm(`Cancel ${l.code}? Planned pallets stay where they are${(ctx.orders ?? []).some(o => o.stop?.load_id === l.id) ? ', and its orders go back to Ready in Fulfillment' : ''}.`, 'Cancel load', async () => { if (await ctx.run(async () => { await ctx.api.cancelLoad(l.id); await ctx.refreshOrders?.() }, `${l.code} cancelled`)) onBack() })}>Cancel load</button>}
       </div>
-      {canEdit && <p className="muted">Planned pallets stay in their freezer until someone taps "Pulled onto truck" (or scans the pallet's tag with Scan). Depart unlocks when everything is loaded.</p>}
+      {canEdit && <p className="muted">Planned pallets stay in their freezer until someone taps "Pulled onto truck" (or scans the pallet's tag with Scan). Tap a pallet to split, merge, weigh or retag it right on the load. Depart unlocks when everything is loaded and every order is complete and OK'd; it makes the METRC manifests first, then the invoices.</p>}
 
       {posOpen != null && (
         <PositionSheet ctx={ctx} load={l} pos={posOpen} items={items.filter(i => i.position === posOpen)} stops={stops}
@@ -549,6 +626,7 @@ function PositionSheet({ ctx, load, pos, items: raw, stops, onClose, onMove, onS
               {canEdit && (
                 <div className="row">
                   {!i.loaded && <button className="primary" disabled={ctx.busy} onClick={async () => { if (await ctx.run(() => ctx.api.loadPallet(i.id), `${p.code} on the truck`)) onClose() }}>Pulled onto truck</button>}
+                  <button className="ghost" disabled={ctx.busy} onClick={() => { onClose(); ctx.openPallet(p.id) }}>Split, merge, weigh…</button>
                   <button className="ghost" disabled={ctx.busy} onClick={() => onMove(i)}>Move on truck</button>
                   {items.length > 1 && k > 0 && <button className="ghost" disabled={ctx.busy} onClick={() => ctx.run(() => ctx.api.stackTop(i.id), `${p.code} on top`)}>Put on top</button>}
                   {!i.loaded

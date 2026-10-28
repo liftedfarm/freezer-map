@@ -64,7 +64,9 @@ export function FulfillView(props: FulfillProps) {
                       {o.stop ? ` · ${o.stop.load} ${fmt(o.stop.load_date)}` : ''}</div>
                     {(g === 'open' || g === 'needs_ok') && <Meter value={have} max={want} tone={have > 0 ? 'ok' : undefined} />}
                   </div>
-                  <span className={`pill fs-${g}`}>{g === 'open' && have > 0 ? `${Math.round(have / want * 100)}%` : STATE_LABEL[g]}</span>
+                  <span className={`pill fs-${g === 'loaded' && o.fill && o.fill !== 'ready' ? o.fill : g}`}>{g === 'open' && have > 0 ? `${Math.round(have / want * 100)}%`
+                    : g === 'loaded' && o.fill && o.fill !== 'ready' ? `On a load · ${o.fill === 'open' ? 'needs pallets' : 'needs OK'}`
+                    : g === 'shipped' && o.stop?.stop_status === 'delivered' ? 'Delivered' : STATE_LABEL[g]}</span>
                 </button>
               )
             })}
@@ -83,7 +85,10 @@ function OrderPage({ o, back, backend, reload, flash, pallets, heldBy, onLoad, i
   const [combine, setCombine] = useState<FLine | null>(null)
   const [packSel, setPackSel] = useState<number[]>([])
   const [scanRes, setScanRes] = useState<{ p: Pallet; msg: string; line?: FLine } | null>(null)
-  const editable = o.state === 'open' || o.state === 'needs_ok' || o.state === 'ready'
+  // on a load that hasn't left: still editable (it can only leave once it's complete and OK'd)
+  const onOpenLoad = o.state === 'loaded' && !!o.stop && ['planning', 'loading'].includes(o.stop.load_status)
+  const fill = o.state === 'loaded' ? (o.fill ?? 'ready') : o.state
+  const editable = o.state === 'open' || o.state === 'needs_ok' || o.state === 'ready' || onOpenLoad
   const run = async (f: () => Promise<unknown>, ok: string) => {
     setBusy(true)
     try { await f(); await reload(); flash(ok) } catch (e) { flash(String((e as Error).message ?? e), true) } finally { setBusy(false) }
@@ -151,7 +156,7 @@ function OrderPage({ o, back, backend, reload, flash, pallets, heldBy, onLoad, i
         </div>
       )}
 
-      {o.state === 'needs_ok' && <div className="warnbox">Some lines don't match what was ordered. {isSales ? 'OK the new amounts below, or change the pallets.' : 'Sales has to OK the new amounts before this can go on a load.'}
+      {fill === 'needs_ok' && <div className="warnbox">Some lines don't match what was ordered. {isSales ? 'OK the new amounts below, or change the pallets.' : `Sales has to OK the new amounts before this can ${onOpenLoad ? 'leave' : 'go on a load'}.`}
         {isSales && <div className="row" style={{ marginTop: 8 }}><button className="primary small" disabled={busy} onClick={() => run(() => backend.approveFill(o.id), 'Amounts OK\'d')}>OK these amounts</button></div>}</div>}
 
       {o.lines.map(l => {
@@ -245,18 +250,20 @@ function OrderPage({ o, back, backend, reload, flash, pallets, heldBy, onLoad, i
       <section className="dcard">
         {o.state === 'ready' && !loadPick && <div className="row between"><span><b>Ready.</b> <span className="muted">Every line has its pallets.</span></span>
           <button className="primary" disabled={busy} onClick={() => setLoadPick(true)}>Put on a load</button></div>}
-        {o.state === 'ready' && loadPick && <LoadChooser o={o} loads={loads} vehicles={vehicles} stops={stops} customers={customers} busy={busy} close={() => setLoadPick(false)}
+        {(o.state === 'open' || o.state === 'needs_ok') && orderGot(o) > 0 && !loadPick && <div className="row between wrap"><span className="muted">It can go on a load now and keep filling there. It can't leave until every line is filled and OK'd.</span>
+          <button className="ghost" disabled={busy} onClick={() => setLoadPick(true)}>Put on a load</button></div>}
+        {['ready', 'open', 'needs_ok'].includes(o.state) && loadPick && <LoadChooser o={o} loads={loads} vehicles={vehicles} stops={stops} customers={customers} busy={busy} close={() => setLoadPick(false)}
           onPick={id => run(() => backend.orderToLoad(o.id, id), 'On the load').then(() => setLoadPick(false))}
           onNew={(v, d) => run(async () => { const l = await backend.createLoad(v, d, [{ customer_id: o.customer_id, manifest: '' }], '', ''); await backend.orderToLoad(o.id, l.id) }, 'New load made with this order').then(() => setLoadPick(false))} />}
+        {o.state === 'loaded' && onOpenLoad && fill !== 'ready' && <div className="warnbox">On the load, but it can't leave yet: {fill === 'open' ? 'some lines still need pallets' : 'Sales has to OK the amounts that differ'}.</div>}
         {o.state === 'loaded' && o.stop && <div className="row between wrap"><span>On <b>{o.stop.load}</b> <span className="muted">· {fmt(o.stop.load_date)} · {o.stop.load_status.replace('_', ' ')}</span></span>
           <div className="row"><button className="ghost small" onClick={() => openLoad(o.stop!.load_id)}>Open load</button>
             {(o.stop.load_status === 'planning' || o.stop.load_status === 'loading' || o.stop.load_status === 'cancelled') && <button className="ghost small" disabled={busy} onClick={() => run(() => backend.orderOffLoad(o.id), 'Taken off the load')}>Take off load</button>}</div></div>}
-        {o.state === 'shipped' && <span>Shipped {fmt(o.shipped_date)}{o.stop ? ` on ${o.stop.load}` : ''}.</span>}
+        {o.state === 'shipped' && <span>Shipped {fmt(o.shipped_date)}{o.stop ? ` on ${o.stop.load}` : ''}{o.stop?.stop_status === 'delivered' ? ' · Delivered' : ''}{o.stop?.manifest ? ` · manifest ${o.stop.manifest}` : ''}.</span>}
         {combine && <Combine o={o} line={combine} pallets={pallets} heldBy={heldBy} onLoad={onLoad} inRun={inRun} where={where} rank={rank} canon={canon} busy={busy}
           close={() => setCombine(null)}
           submit={(src, tag) => run(() => backend.combineForLine(combine.id, src, tag), `Combined into one ${combine.strain} package${tag ? '' : ' (tag pending)'}`).then(() => setCombine(null))} />}
-        {o.state === 'open' && <span className="muted">Assign pallets to every line. If a line ends up over or short, Sales OKs the amount before it can go on a load.</span>}
-        {o.state === 'needs_ok' && <span className="muted">Waiting on Sales to OK the amounts that differ.</span>}
+        {o.state === 'open' && orderGot(o) === 0 && <span className="muted">Assign pallets to every line. If a line ends up over or short, Sales OKs the amount before it can leave.</span>}
       </section>
     </div>
   )
@@ -311,10 +318,10 @@ function LoadChooser({ o, loads, vehicles, stops = [], customers = [], busy, clo
   // loads that already stop at this customer come first (the order joins that stop)
   const stopsAt = (l: Load) => stops.filter(s => s.load_id === l.id).sort((a, b) => a.seq - b.seq)
   const hasMe = (l: Load) => stopsAt(l).some(s => s.customer_id === o.customer_id && s.status === 'pending')
-  const open = loads.filter(l => l.status === 'planning' || l.status === 'loading')
+  const open = loads.filter(l => (l.status === 'planning' || l.status === 'loading') && (l.kind !== 'pickup' || stops.some(s => s.load_id === l.id && s.customer_id === o.customer_id)))
     .sort((a, b) => (title ? 0 : Number(hasMe(b)) - Number(hasMe(a))) || a.load_date.localeCompare(b.load_date))
   const names = (l: Load) => stopsAt(l).map(s => customers.find(c => c.id === s.customer_id)?.name ?? '?').join(', ')
-  const vs = vehicles.filter(v => v.active)
+  const vs = vehicles.filter(v => v.active && v.kind !== 'Customer pickup')
   const [v, setV] = useState<number | null>(vs[0]?.id ?? null)
   const [d, setD] = useState(o.wanted_date && o.wanted_date >= today() ? o.wanted_date : today())
   return (

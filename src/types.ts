@@ -101,9 +101,13 @@ export type ListName = 'vehicles' | 'customers' | 'strains'
 export type ListRow = Vehicle | Customer | Strain
 export interface Settings { vehicles: Vehicle[]; customers: Customer[]; strains: Strain[] }
 
-export type LoadStatus = 'planning' | 'loading' | 'in_transit' | 'delivered' | 'cancelled'
-export interface Load { id: number; code: string; load_date: string; vehicle_id: number; status: LoadStatus; driver: string | null; notes: string | null; created_by: string | null; created_at: string; departed_at: string | null; closed_at: string | null }
-export interface LoadStop { id: number; load_id: number; seq: number; customer_id: number; manifest: string | null; status: 'pending' | 'delivered'; delivered_at: string | null; delivered_by: string | null }
+export type LoadStatus = 'planning' | 'loading' | 'departing' | 'in_transit' | 'delivered' | 'cancelled'
+export interface Load { id: number; code: string; load_date: string; vehicle_id: number; status: LoadStatus; driver: string | null; notes: string | null; created_by: string | null; created_at: string; departed_at: string | null; closed_at: string | null
+  /** 089: customer pickups, Depart in two steps, carrier cost */
+  kind?: 'delivery' | 'pickup'; departing_at?: string | null; depart_error?: string | null; carrier_cost?: number | null
+  pickup_driver?: string | null; pickup_dl?: string | null; pickup_make?: string | null; pickup_model?: string | null; pickup_plate?: string | null; pickup_license?: string | null }
+export interface LoadStop { id: number; load_id: number; seq: number; customer_id: number; manifest: string | null; status: 'pending' | 'delivered'; delivered_at: string | null; delivered_by: string | null
+  ship_override?: number | null; ship_override_reason?: string | null; ship_charge?: number | null; ship_value?: number | null; ship_rule?: string | null; ship_desc?: string | null; ship_saved_at?: string | null }
 export interface LoadItem { id: number; load_id: number; stop_id: number; pallet_id: number; position: number; loaded: boolean; from_slot: number | null; from_site?: string | null; layer?: number }
 export interface StopInput { id?: number; customer_id: number; manifest: string }
 
@@ -182,8 +186,10 @@ export interface FLine { id: number; strain: string; product?: Product; lbs: num
 export interface FOrder {
   id: number; so: string | null; po: string | null; customer_id: number; customer: string; status: string; state: FState; source: string
   order_date: string | null; wanted_date: string | null; shipped_date: string | null; notes: string | null
-  stop: { id: number; load_id: number; load: string; load_status: string; load_date: string; stop_status: string } | null
+  stop: { id: number; load_id: number; load: string; load_status: string; load_date: string; stop_status: string; load_kind?: string; manifest?: string | null } | null
   lines: FLine[]
+  /** 089: how complete it is even while on a load (open / needs_ok / ready); shipping on the order */
+  fill?: 'open' | 'needs_ok' | 'ready'; shipping?: number | null; shipping_quoted?: boolean
 }
 
 /** Sales documents (027) */
@@ -193,6 +199,7 @@ export interface Invoice {
   schedule: { pct: number; amount: number; due: string }[]; due_date: string | null; total: number; status: 'open' | 'paid' | 'void'; po_number: string | null
   notes: string | null; share_token: string; sent_at: string | null; acct_status: 'pending' | 'sent' | 'error' | 'skip'; acct_ref: string | null; acct_error: string | null
   paid_at: string | null; created_at: string; seller_license?: string | null; nursery_order_id?: number | null
+  manifest?: string | null; acct_push_after?: string | null; acct_flags?: string[]
 }
 export interface NewOrderLine { strain: string; lbs: number; price?: number | null; crop_year?: number; product?: Product }
 
@@ -219,3 +226,15 @@ export interface SampleHold { line_id: number; order_id: number; so_number: stri
   hold_lbs: number; used_lbs: number; remaining: number; placed_on: string | null; shipped_on: string | null; until: string | null
   state: 'submitted' | 'waiting' | 'active' | 'expired' | 'used' | 'released' | 'cancelled' }
 export interface LoadDriver { id: number; name: string; carrier_id: number | null; active: boolean; asset_ids: number[] }
+
+/** 089 shipping */
+export interface StopShipping { billed: boolean; saved?: boolean; class?: string; zone?: string | null; share?: number | null; rule?: string; pct?: number | null; stops?: number
+  calc_charge?: number | null; charge?: number | null; value?: number | null; descr?: string | null; problem?: string | null; quoted?: number | null; override?: number | null; reason?: string | null }
+export interface LoadBlocker { stop_id?: number; seq?: number; order_id?: number; text: string }
+export interface ShipZone { id: number; name: string; miles_rt: number | null; rate_van: number | null; rate_box: number | null; price_van: number | null; price_box: number | null; active: boolean; sort: number }
+export interface ShipSettings { fee: number; zones: ShipZone[]
+  customers: { id: number; name: string; zone_id: number | null; rule: string | null; pct: number | null; auto_rule: string; contract: boolean }[]
+  vehicles: { id: number; name: string; class: string | null; auto_class: string; carrier: boolean }[] }
+export interface ShipQuoteRow { customer_id: number; customer: string; zone: string | null; share: number | null; rule: string; pct: number | null; charge: number | null; value: number | null; descr: string | null; problem: string | null; address: string | null }
+/** 090 alerts */
+export interface AppAlert { id: number; module: string; admins: boolean; kind: string; title: string; body: string | null; ref: Record<string, unknown>; created_by: string | null; created_at: string }

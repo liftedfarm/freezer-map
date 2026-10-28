@@ -80,10 +80,10 @@ export interface Backend {
   movePallet(palletId: number, toSlot: number | null, combine: boolean, note?: string): Promise<void>
   setFreezerStatus(freezerId: number, status: FreezerStatus, note?: string): Promise<void>
   clearReview(palletId: number, note?: string): Promise<void>
-  splitPallet(palletId: number, lbs: number, tag: string | null, tagPending: boolean, destSlot: number | null, note?: string): Promise<Pallet>
+  splitPallet(palletId: number, lbs: number, tag: string | null, tagPending: boolean, destSlot: number | null, note?: string, keepOnLoad?: boolean): Promise<Pallet>
   createMixed(slotId: number, lines: MixLine[], note?: string): Promise<Pallet>
   addToMixed(mixedId: number, lines: MixLine[], note?: string): Promise<void>
-  takeOffMixed(palletId: number, slotId: number, note?: string): Promise<void>
+  takeOffMixed(palletId: number, slotId: number | null, note?: string): Promise<void>
   breakMixed(mixedId: number, note?: string): Promise<void>
   createSingle(slotId: number, input: SingleInput): Promise<Pallet>
   createLoad(vehicleId: number, date: string, stops: StopInput[], driver: string, notes: string): Promise<Load>
@@ -187,7 +187,7 @@ export function makeBackend(): Backend {
 // Any change saved to the database (push, finish, flip, split, depart...) may have made METRC to-dos. Shortly after one,
 // ask the server to send whatever is ready (Auto kinds, Live only). It sends in to-do order and holds back anything still
 // waiting on an earlier step, so the order stays right. The 1-minute timer on the server is the backup.
-const READS = /\/rpc\/(tag_search|tag_suggest|tag_range_|comp_reconcile|comp_farm_licenses|metrc_sync_status|metrc_tag_counts|metrc_me|pallet_manifests|app_used_tags|next_tags|nursery_next_tags|strain_profiles|reserve_strains|strain_menu_info)/
+const READS = /\/rpc\/(load_blockers|stop_shipping|ship_quote|ship_settings|receiving_list|my_alerts|tag_search|tag_suggest|tag_range_|comp_reconcile|comp_farm_licenses|metrc_sync_status|metrc_tag_counts|metrc_me|pallet_manifests|app_used_tags|next_tags|nursery_next_tags|strain_profiles|reserve_strains|strain_menu_info)/
 let kickTimer: ReturnType<typeof setTimeout> | null = null
 let kickBusy = false, kickAgain = false, kickAuth = ''
 function kickMetrc() {
@@ -560,7 +560,7 @@ class SupaBackend implements Backend {
   }
   async load(): Promise<Snapshot> {
     const since = new Date(Date.now() - 14 * 864e5).toISOString()
-    const loadsQ = this.sb.from('loads').select('*').or(`status.in.(planning,loading,in_transit),closed_at.gte.${since}`).order('load_date', { ascending: false }).limit(300)
+    const loadsQ = this.sb.from('loads').select('*').or(`status.in.(planning,loading,departing,in_transit),closed_at.gte.${since}`).order('load_date', { ascending: false }).limit(300)
     const [freezers, slots, pallets, strains, vehicles, customers, loadsRes] = await Promise.all([
       pageAll<Freezer>((a, b) => this.sb.from('freezers').select('*').order('id').range(a, b)),
       pageAll<Slot>((a, b) => this.sb.from('slots').select('*').order('id').range(a, b)),
@@ -632,9 +632,10 @@ class SupaBackend implements Backend {
     const { error } = await this.sb.rpc('clear_review', { p_pallet_id: palletId, p_note: note || null })
     fail(error)
   }
-  async splitPallet(palletId: number, lbs: number, tag: string | null, tagPending: boolean, destSlot: number | null, note?: string) {
+  async splitPallet(palletId: number, lbs: number, tag: string | null, tagPending: boolean, destSlot: number | null, note?: string, keepOnLoad?: boolean) {
     const { data, error } = await this.sb.rpc('split_pallet', {
       p_pallet_id: palletId, p_lbs: lbs, p_new_tag: tag, p_tag_pending: tagPending, p_dest_slot: destSlot, p_note: note || null,
+      ...(keepOnLoad ? { p_keep_on_load: true } : {}),
     })
     fail(error)
     return data as Pallet
@@ -673,7 +674,7 @@ class SupaBackend implements Backend {
     const { error } = await this.sb.rpc('add_to_mixed', { p_mixed_id: mixedId, p_lines: lines, p_note: note || null })
     fail(error)
   }
-  async takeOffMixed(palletId: number, slotId: number, note?: string) {
+  async takeOffMixed(palletId: number, slotId: number | null, note?: string) {
     const { error } = await this.sb.rpc('take_off_mixed', { p_pallet_id: palletId, p_slot: slotId, p_share: true, p_note: note || null })
     fail(error)
   }
@@ -972,8 +973,9 @@ class DemoBackend implements Backend {
     const codes = lines.map(l => this.mixLine(m, l, note))
     this.log({ type: 'mixed_added', pallet_id: m.id, note: note || null, details: { packages: codes } })
   }
-  async takeOffMixed(palletId: number, slotId: number, note?: string) {
+  async takeOffMixed(palletId: number, slotId: number | null, note?: string) {
     const s = this.snap!, p = s.pallets.find(x => x.id === palletId)!, m = s.pallets.find(x => x.id === p.container_id)!
+    if (slotId == null) throw new Error('Pick a slot')
     this.slotOk(slotId, true)
     this.log({ type: 'mixed_off', pallet_id: p.id, from_slot_id: m.slot_id, to_slot_id: slotId, lbs: p.current_weight, note: note || null, details: { mixed: m.code } })
     p.container_id = null; p.slot_id = slotId

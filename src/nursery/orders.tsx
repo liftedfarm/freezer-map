@@ -154,7 +154,14 @@ function DeliverSheet({ d, c, o, api, flash, onClose, onDone }: { d: NData; c: N
     try {
       const lines = [...batches.filter(b => (qty[b.id] ?? 0) > 0).map(b => ({ batch: b.id, plants: qty[b.id]! })), ...(loose ? [{ batch: null, plants: loose }] : [])]
       const r = await api.deliver(o.id, lines, date, manifest.trim() || null, notes.trim() || null)
-      await onDone(`${t('{n} plants delivered', { n: n0(r.plants) })}${r.invoice ? ` · ${r.invoice}` : ''}`, r.invoice_id)
+      // the METRC transfer from 1PN, right away (nothing ships if METRC refuses it)
+      let extra = ''
+      if (!manifest.trim()) {
+        const sh = await api.ship(r.ref).catch(e => ({ sent: false, undone: false, error: String((e as Error).message ?? e) } as { sent: boolean; undone?: boolean; error?: string; info?: string; live?: boolean }))
+        if (sh.undone) throw new Error(`METRC didn't take the transfer, so nothing shipped: ${sh.error}`)
+        extra = sh.sent ? (sh.live ? ' · METRC transfer made' : ' · METRC dry run OK') : sh.info ? ` · ${sh.info}` : sh.error ? ` · METRC transfer not made yet (${sh.error}); it's on the to-do list` : ''
+      }
+      await onDone(`${t('{n} plants delivered', { n: n0(r.plants) })}${r.invoice ? ` · ${r.invoice}` : ''}${extra}${o.site ? `. ${o.site} counts them in Production › Receiving.` : ''}`, r.invoice_id)
     } catch (e) { flash(String((e as Error).message ?? e), true) } finally { setBusy(false) }
   }
   return (

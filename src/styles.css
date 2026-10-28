@@ -1114,3 +1114,17 @@ html:has(.app.shell), html:has(.app.shell) body { height: 100%; overflow: hidden
 .locform input, .locform select { width: 100%; box-sizing: border-box; min-width: 0; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); font-size: 15px; }
 .drow.locoff { opacity: .6; }
 .dcard.locedit { margin: 4px 0 10px; border-color: var(--brand); }
+
+/* 089 / 090: Depart, shipping, pickups, receiving */
+.pre { white-space: pre-line; }
+.blockers ul { margin: 6px 0 0; padding-left: 20px; }
+.blockers li { margin: 2px 0; }
+.shipline { margin-top: 4px; }
+.pickuplist { margin: 8px 0; }
+.receiving .card { margin: 8px 0; }
+.receiving .countrow { padding: 6px 0; border-bottom: 1px solid var(--line, #e5e7eb); gap: 8px; }
+.receiving .alerts .alertrow { padding: 6px 0; border-bottom: 1px solid var(--line, #e5e7eb); }
+.receiving .alerts .alertrow:last-child { border-bottom: 0; }
+.shipset .tbl { width: 100%; border-collapse: collapse; }
+.shipset .tbl td, .shipset .tbl th { padding: 4px 6px; text-align: left; }
+.shipset .warn-row { background: color-mix(in srgb, var(--warn, #d97706) 6%, transparent); }

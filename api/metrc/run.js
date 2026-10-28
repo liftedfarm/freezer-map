@@ -3,9 +3,10 @@
 //   { action: 'probe', path, query }        Compliance Admin: read-only look at a T3 collection
 //   { action: 'send', ids: [...] }          send (Live) or dry-run check to-dos
 //   { action: 'checklist', load_id }        the METRC checklist for every pending stop of a load (Depart needs it green)
-//   { action: 'depart', load_id }           after Depart: send the load's manifests now if those kinds are on Auto
+//   { action: 'depart', load_id }           Depart: checks, the METRC manifests first, then the load leaves and invoices are made
+//   { action: 'nursery_ship', ref }         the nursery's Ship: the METRC transfer now (taken back if METRC refuses)
 //   { action: 'manifest_pdf', license, manifest } the METRC manifest PDF (base64)
-//   { action: 'incoming', license? }        incoming METRC deliveries for our licenses (Distribution > Inbound)
+//   { action: 'incoming', license?, module? } incoming METRC deliveries for our licenses (Inbound / Receiving per module)
 //   { action: 'inbound_receive', license, delivery_id }  receive a delivery in METRC (Live) and bring it into the app
 //   { action: 'kick' }                      right after a save in the app: send to-dos that are ready (Auto kinds, Live only)
 //   { action: 'tag_range', planting_id, purpose, count, first?, after?, save? }  plant tag runs for a planting:
@@ -65,17 +66,55 @@ export default async function handler(req, res) {
       return send(res, 200, { stops: await loadChecklist({ live: false, by: me.email }, loadId) })
     }
     if (body.action === 'depart') {
+      // Depart: the checks and the Departing state (as the user), the METRC manifests, then the load leaves and invoices are made.
+      // Any manifest that fails: nothing leaves; the load stays Departing until it's fixed (Depart again) or sent back to loading.
+      const loadId = Number(body.load_id)
+      if (!loadId) return send(res, 400, { error: 'Which load?' })
       const live = await isLive()
-      const load = (await db(`loads?id=eq.${Number(body.load_id)}&select=code`))?.[0]?.code
-      if (!live || !load) return send(res, 200, { live, results: [] })
-      const auto = (await db('metrc_push_kinds?kind=in.(transfer,manifest)&mode=eq.auto&select=kind')).map(k => k.kind)
-      if (!auto.length) return send(res, 200, { live, results: [] })
-      const todo = await db(`comp_metrc_actions?select=id&details->>type=eq.stop_departed&details->>load=eq.${enc(load)}&kind=in.(${auto.join(',')})&status=in.(todo,error)`)
-      const jobs = todo.length ? await rpc('metrc_claim', { p_ids: todo.map(x => x.id), p_limit: todo.length }) : []
-      const ctx = { live, by: me.email, deadline: t0 + 45000 }
+      const prep = await asUser(req, 'depart_prepare', { p_load: loadId })
+      const ids = (prep.todo ?? []).map(Number).filter(Boolean)
       const out = []
-      for (const j of jobs.sort((a, b) => a.id - b.id)) out.push(await runJob(j, ctx))
-      return send(res, 200, { live, results: out })
+      if (ids.length) {
+        const jobs = await rpc('metrc_claim', { p_ids: ids, p_limit: ids.length })
+        const ctx = { live, by: me.email, deadline: t0 + 200000 }
+        for (const j of jobs.sort((a, b) => a.id - b.id)) out.push(await runJob(j, ctx))
+        // any the background worker picked up first: wait for it (up to 90 s)
+        const mine = new Set(jobs.map(j => j.id))
+        const others = ids.filter(id => !mine.has(id))
+        for (let k = 0; others.length && k < 30; k++) {
+          const st = await db(`comp_metrc_actions?select=id,status,push_state&id=in.(${others.join(',')})`)
+          if (!st.some(x => x.push_state === 'sending' || (x.status === 'todo' && !x.push_state))) break
+          await new Promise(r => setTimeout(r, 3000))
+        }
+      }
+      const failed = out.filter(r => r.state !== 'sent' && r.state !== 'checked').map(r => `to-do #${r.id}: ${r.error ?? r.info ?? r.state}`)
+      try {
+        const fin = await asUser(req, 'depart_finish', { p_load: loadId })
+        if (fin?.departed === false) return send(res, 200, { live, results: out, ...fin, error: failed.length ? failed.join(' | ') : fin.error })
+        return send(res, 200, { live, departed: true, results: out, ...fin })
+      } catch (e) {
+        return send(res, 200, { live, departed: false, results: out, error: failed.length ? failed.join(' | ') : String(e.message || e) })
+      }
+    }
+    if (body.action === 'nursery_ship') {
+      // the nursery's Ship: make the METRC transfer right away; if METRC refuses it, the delivery is taken back (nothing left)
+      if (!me.can_ship_nursery) return send(res, 403, { error: 'Only the Nursery can ship' })
+      const ref = String(body.ref || '')
+      if (!/^[0-9a-f-]{36}$/i.test(ref)) return send(res, 400, { error: 'Which delivery?' })
+      const live = await isLive()
+      const mode = (await db('metrc_push_kinds?kind=eq.transfer&select=mode'))?.[0]?.mode ?? 'off'
+      const todo = await db(`comp_metrc_actions?select=id&details->>type=eq.nursery_shipped&details->>ref=eq.${enc(ref)}&status=in.(todo,error)`)
+      if (mode === 'off' || !todo.length) return send(res, 200, { live, sent: false, info: 'METRC transfers are Off: make the transfer in METRC by hand (it\'s on the to-do list).' })
+      const jobs = await rpc('metrc_claim', { p_ids: todo.map(x => x.id), p_limit: todo.length })
+      const ctx = { live, by: me.email, deadline: t0 + 200000 }
+      const out = []
+      for (const j of jobs) out.push(await runJob(j, ctx))
+      const bad = out.find(r => r.state !== 'sent' && r.state !== 'checked')
+      if (bad) {
+        await rpc('nursery_ship_undo', { p_ref: ref, p_by: me.email, p_reason: bad.error ?? bad.info ?? bad.state })
+        return send(res, 200, { live, sent: false, undone: true, error: bad.error ?? bad.info ?? bad.state })
+      }
+      return send(res, 200, { live, sent: true, results: out })
     }
     if (body.action === 'manifest_pdf') {
       // the manifest PDF straight from METRC, for any manifest one of our licenses shipped or received
@@ -87,7 +126,9 @@ export default async function handler(req, res) {
       return send(res, 200, { manifest: man, license: lic, ...f })
     }
     if (body.action === 'incoming') {
-      const lics = (await ours()).filter(l => !body.license || l.license === body.license)
+      // module: 'distribution' (product packages), 'cultivation' (plants to OHR / GVR farms), 'nursery' (anything to 1PN)
+      const mod = ['cultivation', 'nursery', 'distribution'].includes(body.module) ? body.module : null
+      const lics = (await ours()).filter(l => (!body.license || l.license === body.license) && (!mod || mod === 'distribution' || (mod === 'nursery' ? l.site === '1PN' : l.site !== '1PN')))
       const out = []
       for (const l of lics) {
         if (Date.now() - t0 > 45000) break
@@ -101,10 +142,17 @@ export default async function handler(req, res) {
         const m = pal.find(x => up(x.package_tag) === up(p.tag))
         if (m) p.app = { id: m.id, code: m.code, status: m.status, lbs: m.current_weight, site: m.received_site }
       }
-      return send(res, 200, { live: await isLive(), deliveries: out })
+      const isPlants = d => (d.items ?? []).length > 0 && (d.items ?? []).every(p => !/^(lb|lbs|pound|g|gram|kg|oz)/i.test(p.uom ?? '') || /clone|immature|seed|plant/i.test(p.item ?? ''))
+      const keep = out.filter(d => d.error || !mod || (mod === 'nursery' ? d.site === '1PN'
+        : mod === 'cultivation' ? d.site !== '1PN' && isPlants(d) : d.site !== '1PN' && !isPlants(d)))
+      for (const d of keep) d.plants = isPlants(d)
+      return send(res, 200, { live: await isLive(), deliveries: keep })
     }
     if (body.action === 'inbound_receive') {
-      if (!me.can_send) return send(res, 403, { error: 'Only Compliance (or a Distribution / Processing Admin) can receive in METRC' })
+      const lic0 = String(body.license || '')
+      const l0 = (await ours()).find(x => x.license === lic0)
+      const okRecv = me.can_send || (l0?.site === '1PN' ? me.can_receive_nursery : me.can_receive_plants && body.module === 'cultivation')
+      if (!okRecv) return send(res, 403, { error: 'Only Compliance, a Distribution / Processing Admin, or the module the delivery is for can receive in METRC' })
       const live = await isLive()
       const lic = String(body.license || '')
       const l = (await ours()).find(x => x.license === lic)

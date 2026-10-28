@@ -6,7 +6,7 @@ export type Env = 'sandbox' | 'production'
 export interface Push { status: 'sent' | 'error'; qbo_id: string | null; doc_number: string | null; balance: number | null; total: number | null; error: string | null; sent_by: string | null; sent_at: string; synced_at: string | null }
 export interface AInvoice {
   id: number; inv: string; date: string; due: string | null; total: number; status: 'open' | 'paid' | 'void'; terms: string | null
-  customer_id: number; customer: string; outside: boolean; nursery: boolean; acct_status: string; acct_ref: string | null; paid_at: string | null; so: string | null; push: Push | null
+  customer_id: number; customer: string; outside: boolean; nursery: boolean; acct_status: string; acct_ref: string | null; paid_at: string | null; so: string | null; push: Push | null; push_after?: string | null; flags?: string[]
 }
 export interface QLine { line_id: number; product: string | null; item: string | null; grp: string | null; site: string | null; year: number | null; class: string | null; description: string; qty: number; price: number; amount: number; uom?: string; split?: boolean; applies_to?: number | null; class_set?: string | null; kind?: 'product' | 'charge' }
 export interface Payload {
