@@ -939,7 +939,7 @@ export default function App() {
         )}
         {view === 'map' && (
           <MapView ix={ix} freezers={siteFreezers} trailers={siteTrailers} staging={stagingOf(site)} query={query} extra={extra} where={where}
-            onOpen={openFreezer} onPallet={setPalletId} />
+            needsSpot={unplaced.filter(p => (p.received_site ?? siteOf(p)) === site)} onOpen={openFreezer} onPallet={setPalletId} />
         )}
         {view === 'freezer' && freezerId != null && (
           <FreezerView ix={ix} L={L!} plan={plan} freezer={ix.freezer.get(freezerId)!} query={query} placing={!!placing}
@@ -1394,10 +1394,11 @@ function MiniGrid({ ix, slots, query }: { ix: Index; slots: Slot[]; query: strin
   )
 }
 
-function MapView({ ix, freezers, trailers = [], staging, query, extra, where, onOpen, onPallet }: {
+function MapView({ ix, freezers, trailers = [], staging, query, extra, where, onOpen, onPallet, needsSpot = [] }: {
   ix: Index; freezers: Freezer[]; trailers?: Freezer[]; staging?: Freezer; query: string; extra: Pallet[]; where: (p: Pallet) => string
-  onOpen: (id: number) => void; onPallet: (id: number) => void
+  onOpen: (id: number) => void; onPallet: (id: number) => void; needsSpot?: Pallet[]
 }) {
+  const [showSpot, setShowSpot] = useState(false)
   const ids = new Set(freezers.map(f => f.id))
   const inSite = (p: Pallet) => p.slot_id != null && ids.has(ix.slot.get(p.slot_id)?.freezer_id ?? -1)
   const tops = [...ix.pallet.values()].filter(p => !p.container_id && inSite(p))
@@ -1443,6 +1444,17 @@ function MapView({ ix, freezers, trailers = [], staging, query, extra, where, on
           </button>
         )
       })()}
+      {needsSpot.length > 0 && <>
+        <button className="stagecard needspot" onClick={() => setShowSpot(v => !v)}>
+          <b>Needs a spot</b><span className="muted">{needsSpot.length} pallet{needsSpot.length === 1 ? '' : 's'} · {lbs(needsSpot.reduce((a, p) => a + weightOf(ix, p), 0))} · received, not in a slot yet</span>
+          <span className="muted small">{showSpot ? 'Hide' : 'Show'}</span>
+        </button>
+        {showSpot && <div className="hitlist spotlist">
+          {needsSpot.map(p => <button key={p.id} className="hit" onClick={() => onPallet(p.id)}>
+            <b>{p.code}</b> <span>{p.kind === 'mixed' ? 'Mixed' : p.strain}</span> <span className="muted">{lbs(weightOf(ix, p))}</span></button>)}
+          <p className="muted small">Tap one, then Move to put it in a slot. They can also go straight onto a load from here.</p>
+        </div>}
+      </>}
       {[freezers, trailers].map((list, li) => list.length > 0 && (
         <div key={li}>
           {li === 1 && <h3 className="map-sec">Reefer trailers{list[0]?.site === 'GVR' && <> <span className="muted">dry flower · processor license</span></>}</h3>}
