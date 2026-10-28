@@ -572,8 +572,13 @@ export default function App() {
   }
   async function submit<T>(fn: () => Promise<T>, ok: (r: T) => string, after?: (r: T) => void) {
     setBusy(true)
-    try { const r = await fn(); await reload(); setInvTick(t => t + 1); refreshF().catch(() => {}); setForm(null); flash(ok(r)); after?.(r) }
-    catch (e) { flash((e as Error).message, true) } finally { setBusy(false) }
+    let r: T
+    try { r = await fn() } catch (e) { flash((e as Error).message, true); setBusy(false); return }
+    // saved: close the form now; a slow or failed refresh afterwards isn't a failed save
+    setForm(null); flash(ok(r)); after?.(r)
+    try { await reload(); setInvTick(t => t + 1); refreshF().catch(() => {}) }
+    catch (e) { flash(`Saved. Refreshing the map failed (${(e as Error).message}); it updates on its own shortly.`, true) }
+    finally { setBusy(false) }
   }
 
   function slotLabel(slot: Slot) {
