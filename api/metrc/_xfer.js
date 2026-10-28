@@ -287,7 +287,7 @@ export async function incoming(ctx, license, withPackages = true) {
       license, transfer_id: t.id, delivery_id: t.deliveryId, manifest: t.manifestNumber, from_license: t.shipperFacilityLicenseNumber, from: t.shipperFacilityName,
       type: t.shipmentTypeName, created: t.createdDateTime, departed: t.actualDepartureDateTime ?? t.estimatedDepartureDateTime, arrival: t.estimatedArrivalDateTime,
       driver: t.driverName, vehicle: [t.vehicleMake, t.vehicleModel, t.vehicleLicensePlateNumber].filter(Boolean).join(' '), packages: t.deliveryPackageCount ?? t.packageCount,
-      received: !!t.receivedDateTime,
+      received: !!t.receivedDateTime, last_modified: t.lastModified ?? null,
     }
     if (withPackages && t.deliveryId) {
       row.items = (await all('/v2/transfers/packages', { licenseNumber: license, deliveryId: t.deliveryId }, 5)).map(p => ({
@@ -311,7 +311,8 @@ export async function receiveDelivery(ctx, license, d) {
     if (!id) throw new Error(`METRC has no unit "${p.uom}" for receiving on ${license}`)
     return { id: p.id, receivedQuantity: p.qty, receivedUnitOfMeasureId: id }
   })
-  const body = [{ id: d.transfer_id, shipmentDeliveryId: d.delivery_id, packages: pk }]
+  // METRC refuses a receive without the transfer's current lastModified stamp ("it has changed since the editing began")
+  const body = [{ id: d.transfer_id, shipmentDeliveryId: d.delivery_id, ...(d.last_modified ? { lastModified: d.last_modified } : {}), packages: pk }]
   const resp = await write(ctx, '/v2/transfers/receive', license, body)
   return { body, resp }
 }
