@@ -30,6 +30,21 @@ export function ScheduleTab({ d, c, site, q, onOpen, api, flash, onSaved }: { d:
   const drag = useRef<number | null>(null)
   const [drop, setDrop] = useState<{ id: number; after: boolean } | null>(null)
   const canDrag = mode === 'upcoming' && !sel.on
+  // phones / tablets: drag by the ⠿ handle (pointer events), with the page scrolling near the top or bottom edge
+  const [dragging, setDragging] = useState<number | null>(null)
+  const scrollTimer = useRef<number | null>(null)
+  const stopScroll = () => { if (scrollTimer.current) { clearInterval(scrollTimer.current); scrollTimer.current = null } }
+  function touchOver(x: number, y: number) {
+    const tr = (document.elementFromPoint(x, y) as HTMLElement | null)?.closest('tr[data-hid]') as HTMLElement | null
+    const t = tr ? rows.find(r => r.id === Number(tr.dataset.hid)) : undefined
+    if (t && t.status === 'planned' && t.planned_on && t.id !== drag.current) {
+      const r = tr!.getBoundingClientRect(); const after = y > r.top + r.height / 2
+      if (drop?.id !== t.id || drop.after !== after) setDrop({ id: t.id, after })
+    }
+    stopScroll()
+    const edge = 70, v = y < edge ? -14 : y > window.innerHeight - edge ? 14 : 0
+    if (v) scrollTimer.current = window.setInterval(() => window.scrollBy(0, v), 30)
+  }
   async function move(id: number, target: Harvest, after: boolean) {
     const h = rows.find(x => x.id === id)
     if (!h || !target.planned_on || id === target.id) return
@@ -62,13 +77,13 @@ export function ScheduleTab({ d, c, site, q, onOpen, api, flash, onSaved }: { d:
       {rows.length > 0 && (
         <div className="cwrap fit">
           <table className="ctable">
-            <thead><tr><SelAll sel={sel} ids={rows.map(h => h.id)} /><th>Date</th><th>Strain</th><th className="hide-s">Field</th><th className="hide-s">Type</th><th className="num">Plants</th><th className="num">Lbs</th>
+            <thead><tr><SelAll sel={sel} ids={rows.map(h => h.id)} />{canDrag && <th className="hdl" aria-label="Drag" />}<th>Date</th><th>Strain</th><th className="hide-s">Field</th><th className="hide-s">Type</th><th className="num">Plants</th><th className="num">Lbs</th>
               <th className="num hide-s">Deleaf</th><th className="num hide-s">Buck</th><th className="num hide-s">Dry ice</th><th>Status</th></tr></thead>
             <tbody>
               {[...weeks.entries()].map(([w, hs]) => {
                 const ks = hs.map(h => calcHarvest(c, h))
                 return [
-                  <tr key={w} className="wk"><td colSpan={sel.on ? 3 : 2}>{w === 'none' ? 'No date yet' : `Week of ${fmtD(w)}`}</td><td className="hide-s" /><td className="hide-s" />
+                  <tr key={w} className="wk"><td colSpan={(sel.on ? 3 : 2) + (canDrag ? 1 : 0)}>{w === 'none' ? 'No date yet' : `Week of ${fmtD(w)}`}</td><td className="hide-s" /><td className="hide-s" />
                     <td className="num">{n0(sum(hs.filter(h => !isBiomass(h.kind)).map(h => h.plants)))}</td>
                     <td className="num">{n0(sum(ks.map((k, i) => hs[i].kind === 'ff' ? (k.actFF ?? k.estFF) : null)))}</td>
                     <td className="num hide-s" /><td className="num hide-s" /><td className="num hide-s">{n0(sum(ks.map(k => k.dryIce)))}</td><td /></tr>,
@@ -78,7 +93,7 @@ export function ScheduleTab({ d, c, site, q, onOpen, api, flash, onSaved }: { d:
                       : h.kind === 'dry' ? (k.actRaw != null ? <><b>{n0(k.actRaw)}</b> <span className="muted">raw ✓</span></> : k.estRaw != null ? <span title="raw lbs">{n0(k.estRaw)} raw</span> : '')
                       : k.estBiomass != null ? `${n0(k.estBiomass)} dry` : h.acres ? `${n1(h.acres)} ac` : ''
                     return (
-                      <tr key={h.id} className={`tap ${h.status}${drop?.id === h.id ? (drop.after ? ' dropa' : ' dropb') : ''}`} onClick={() => sel.on ? sel.toggle(h.id) : onOpen(h)}
+                      <tr key={h.id} data-hid={h.id} className={`tap ${h.status}${dragging === h.id ? ' dragging' : ''}${drop?.id === h.id ? (drop.after ? ' dropa' : ' dropb') : ''}`} onClick={() => sel.on ? sel.toggle(h.id) : onOpen(h)}
                         draggable={canDrag && h.status === 'planned'}
                         onDragStart={e => { drag.current = h.id; e.dataTransfer.effectAllowed = 'move' }}
                         onDragEnd={() => { drag.current = null; setDrop(null) }}
@@ -87,6 +102,11 @@ export function ScheduleTab({ d, c, site, q, onOpen, api, flash, onSaved }: { d:
                           if (drop?.id !== h.id || drop.after !== after) setDrop({ id: h.id, after }) }}
                         onDrop={e => { e.preventDefault(); const id = drag.current; const a = drop?.after ?? false; drag.current = null; setDrop(null); if (id != null) move(id, h, a) }}>
                         <SelBox sel={sel} id={h.id} />
+                        {canDrag && <td className="hdl" onClick={e => e.stopPropagation()}>{h.status === 'planned' && h.planned_on && <span className="hdl-grip" role="button" aria-label={`Drag ${h.strain}`}
+                          onPointerDown={e => { if (e.button > 0) return; e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); drag.current = h.id; setDragging(h.id) }}
+                          onPointerMove={e => { if (drag.current !== h.id) return; touchOver(e.clientX, e.clientY) }}
+                          onPointerUp={() => { const t = drop, id = drag.current; drag.current = null; setDragging(null); setDrop(null); stopScroll(); const tgt = t && rows.find(x => x.id === t.id); if (id != null && tgt) move(id, tgt, t!.after) }}
+                          onPointerCancel={() => { drag.current = null; setDragging(null); setDrop(null); stopScroll() }}>⠿</span>}</td>}
                         <td className="nowrap">{mode === 'upcoming' && h.status === 'planned'
                           ? <span onClick={e => e.stopPropagation()}><input type="date" className="cdate" value={h.planned_on ?? ''} aria-label={`${h.strain} harvest date`}
                               onChange={e => { const v = e.target.value || null; if (v !== h.planned_on) bulk(() => api.save<Harvest>('cult_harvests', { id: h.id, planned_on: v }), `${h.strain} moved to ${fmtD(v, true)}`)() }} /></span>
@@ -115,7 +135,7 @@ export function ScheduleTab({ d, c, site, q, onOpen, api, flash, onSaved }: { d:
         { label: 'Cancel harvests', run: async ids => bulk(() => api.updateMany('cult_harvests', ids, { status: 'cancelled' }), `${ids.length} cancelled`)() },
         { label: 'Back to planned', run: async ids => bulk(() => api.updateMany('cult_harvests', ids, { status: 'planned' }), `${ids.length} back to planned`)() },
         { label: 'Delete', danger: true, run: async ids => bulk(() => api.removeMany('cult_harvests', ids), `Deleted ${ids.length} harvests`)() }]} />
-      <p className="cnote">On a computer, drag a planned harvest up or down to reorder it; dropped next to another day's harvest, it takes that day. Lbs are fresh frozen estimates (plants × lbs/plant) until a harvest is logged, then what came in (✓). People = man-hours ÷ the site's work day. Dry ice is for fresh frozen, ordered the Wednesday the week before.</p>
+      <p className="cnote">Drag a planned harvest up or down to reorder it (on a phone, by its ⠿ handle); dropped next to another day's harvest, it takes that day. Lbs are fresh frozen estimates (plants × lbs/plant) until a harvest is logged, then what came in (✓). People = man-hours ÷ the site's work day. Dry ice is for fresh frozen, ordered the Wednesday the week before.</p>
     </>
   )
 }
