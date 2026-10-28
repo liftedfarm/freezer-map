@@ -80,14 +80,16 @@ export function BonusScreen({ backend, token }: { backend: Backend; token: strin
 }
 
 function Hero({ v }: { v: BonusView }) {
+  // the bonus rate they've built so far: only goes up as pallets come in (never a projection that can drop)
   const over = !!v.ended && !v.won
-  const label = v.won ? 'Bono ganado · por hora' : over ? 'Sin bono hoy' : 'Bono en juego · por hora'
-  const big = v.won ? money(v.bonusNow) : over ? money(0) : money(v.bonusAtStake)
+  const rate = v.packed > 0 ? v.bonusRate : 0
+  const label = v.won ? 'Bono ganado · por hora' : over ? 'Sin bono hoy' : 'Bono acumulado · por hora'
+  const big = over ? money(0) : money(rate)
   const sub = over ? (v.corr != null && v.hurdle != null ? `Faltaron ${n0(v.hurdle - v.corr)} libras por persona.` : '')
     : v.ended && v.won ? `Día terminado. ${n0(v.packed)} libras empacadas.`
     : v.level === 'wait' ? (v.pallets ? 'Completen la tarjeta del día en Producción › Cosecha.' : 'Los números empiezan con la primera tarima.')
-    : v.won ? `Sigue subiendo con cada libra. Proyectado: ${money(v.bonusProj || v.bonusNow)} por hora.`
-    : v.corr != null && v.hurdle != null ? `Faltan ${n0(v.hurdle - v.corr)} libras por persona para ganarlo.` : ''
+    : v.won ? 'Sube con cada libra que empaquen.'
+    : v.corr != null && v.hurdle != null ? `Se gana al llegar a la meta: faltan ${n0(v.hurdle - v.corr)} libras por persona.` : ''
   return (
     <div className="bz-card bz-hero">
       <div className="bz-pill"><i />{v.won ? '¡META ALCANZADA!' : over ? 'DÍA TERMINADO' : v.level === 'wait' && v.pallets ? 'FALTAN DATOS DEL DÍA' : STATUS[v.level]}</div>
@@ -100,8 +102,8 @@ function Hero({ v }: { v: BonusView }) {
         <StatusIcon level={v.level} won={v.won} />
       </div>
       <div className="bz-pay">
-        <div><span className="bz-cap">Pago por hora</span><b>{money(v.payNow)}</b></div>
-        <div><span className="bz-cap">Al final del día</span><b>{money(v.payProj)}</b></div>
+        <div><span className="bz-cap">Pago por hora ahora</span><b>{money(v.hourly + (v.won ? rate : 0))}</b></div>
+        {!v.won && !over && <div><span className="bz-cap">Con la meta</span><b>{money(v.hourly + rate)}</b></div>}
         <div><span className="bz-cap">Base</span><b className="bz-dim">{money(v.hourly)}</b></div>
       </div>
     </div>
@@ -135,23 +137,23 @@ function StatusIcon({ level, won }: { level: Level; won: boolean }) {
 }
 
 function Meta({ v }: { v: BonusView }) {
-  const meta = v.hurdle ?? 0, corr = v.corr ?? 0, proj = v.proj ?? 0
-  const scale = Math.max(meta * 1.3, proj * 1.05, corr * 1.05, 1)
+  const meta = v.hurdle ?? 0, corr = v.corr ?? 0
+  const scale = Math.max(meta * 1.25, corr * 1.05, 1)
+  const left = meta && v.corr != null ? Math.max(0, meta - corr) : null
   return (
     <div className="bz-card bz-sm">
       <div className="bz-head"><b>La meta</b><span className="bz-dim">libras por persona hoy</span></div>
       <div className="bz-nums">
         <div><span className="bz-cap">Ahora</span><b className={`bz-xl${v.won ? ' won' : ''}`}>{v.corr != null ? v.corr.toFixed(1) : '—'}</b></div>
         <div><span className="bz-cap">Meta</span><b className="bz-l">{v.hurdle != null ? n0(v.hurdle) : '—'}</b></div>
-        <div><span className="bz-cap">{v.ended ? 'Final' : 'Proyección'}</span><b className="bz-l lv">{v.proj != null && v.pallets ? n0(v.proj) : '—'}</b></div>
+        <div><span className="bz-cap">{v.won ? 'Arriba de la meta' : 'Faltan'}</span><b className="bz-l lv">{left == null ? '—' : v.won ? '+' + n0(corr - meta) : n0(left)}</b></div>
       </div>
       <div className="bz-bar">
         <div className="bz-track" />
         <div className={`bz-fill${v.won ? ' won' : ''}`} style={{ width: pct(corr, scale) }} />
-        {v.pallets > 0 && <div className="bz-proj" style={{ left: pct(proj, scale) }} />}
         {meta > 0 && <div className="bz-mark" style={{ left: pct(meta, scale) }} />}
       </div>
-      <div className="bz-legend"><span>Negra: meta</span><span>Punteada: proyección</span></div>
+      <div className="bz-legend"><span>Barra: libras por persona hasta ahora</span><span>Negra: meta</span></div>
     </div>
   )
 }

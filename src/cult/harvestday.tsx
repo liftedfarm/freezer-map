@@ -64,7 +64,7 @@ export function HarvestDayCard({ site, day, api, flash, startOpen }: { site: str
         <div><b>{live.corr != null ? live.corr.toFixed(1) : '—'}</b><span>lbs / person{live.hurdle ? ` (meta ${live.hurdle})` : ''}</span></div>
         <div><b>{live.speed != null ? Math.round(live.speed) : '—'}</b><span>lbs / bucker / hr</span></div>
         <div><b>{live.avgPalletMin != null ? live.avgPalletMin.toFixed(1) : '—'}</b><span>min / pallet</span></div>
-        <div><b>{money(live.won ? live.bonusNow : live.bonusAtStake)}</b><span>{live.won ? 'bonus / hr earned' : 'bonus / hr at stake'}</span></div>
+        <div><b>{money(live.bonusRate)}</b><span>{live.won ? 'bonus / hr earned' : 'bonus / hr so far (paid at the meta)'}</span></div>
       </div>}
       {!open && <p className="muted small">{summary}{going ? ` · ${KIND[going.kind].toLowerCase()} since ${fmtT(going.start_at)}` : ''}{d.end_at ? ` · ended ${fmtT(d.end_at)}` : ''}</p>}
       {open && <>

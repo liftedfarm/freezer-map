@@ -47,7 +47,7 @@ export interface BonusView {
   ready: boolean; missing: string[]
   packed: number; pallets: number; people: number | null; buckers: number | null
   corr: number | null; hurdle: number | null; proj: number | null; won: boolean; level: Level
-  bonusNow: number; bonusProj: number; bonusAtStake: number; hourly: number; payNow: number; payProj: number
+  bonusNow: number; bonusRate: number; bonusProj: number; bonusAtStake: number; hourly: number; payNow: number; payProj: number
   speed: number | null; need: number | null; avgPalletMin: number | null
   workedH: number; estHours: number; onBreak: BonusBreak | null; variety: string | null; ended: string | null
   series: { strain: string; v: number; min: number; code: string }[]
@@ -100,7 +100,7 @@ export function computeBonus(d: BonusData, nowMin: number): BonusView {
 
   return {
     ready: missing.length === 0, missing, packed, pallets: ps.length, people, buckers, corr, hurdle, proj, won, level,
-    bonusNow, bonusProj, bonusAtStake, hourly, payNow: hourly + bonusNow, payProj: hourly + bonusProj,
+    bonusNow, bonusRate: per(packed), bonusProj, bonusAtStake, hourly, payNow: hourly + bonusNow, payProj: hourly + bonusProj,
     speed, need, avgPalletMin, workedH, estHours: est, onBreak, variety: last?.strain ?? null, series, ended: endMin != null ? c!.end_at! : null,
   }
 }
