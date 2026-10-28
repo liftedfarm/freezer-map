@@ -57,7 +57,7 @@ export function BonusScreen({ backend, token }: { backend: Backend; token: strin
   const v = computeBonus(d, nowMin)
   return (
     <div className="bz-wrap">
-      <div className="bz" ref={stage} style={{ transform: `translate(${fit.x}px, ${fit.y}px) scale(${fit.s})` }} data-level={v.level}>
+      <div className={`bz${!v.ready || v.onBreak ? ' banner' : ''}`} ref={stage} style={{ transform: `translate(${fit.x}px, ${fit.y}px) scale(${fit.s})` }} data-level={v.level}>
         <div className="bz-top">
           <div className="bz-brand"><img className="bz-logo" src="/logo-dark.svg" alt="Lifted Farms" /><span className="bz-dim">Cosecha en vivo · {d.site}</span></div>
           <div className="bz-var"><span className="bz-cap">Variedad ahora</span><b>{v.variety ?? '—'}</b></div>
