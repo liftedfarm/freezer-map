@@ -189,7 +189,7 @@ begin
       from (select p.id, p.code, coalesce(h.strain, p.strain) as strain, coalesce(p.og_weight, p.current_weight, 0) as lbs,
                    extract(epoch from ((coalesce(p.built_at, p.created_at) at time zone tz) - (coalesce(p.built_at, p.created_at) at time zone tz)::date)) / 60 as m
             from pallets p join cult_harvests h on h.id = p.harvest_id
-            where h.site = v_site and h.kind = 'ff' and p.parent_id is null
+            where h.site = v_site and h.kind = 'ff' and p.parent_id is null and h.harvested_on = v_day
               and (coalesce(p.built_at, p.created_at) at time zone tz)::date = v_day
               and not (p.status = 'archived' and coalesce(p.notes, '') like '%(logged by mistake)%')) x), '[]'::jsonb));
 end $$;

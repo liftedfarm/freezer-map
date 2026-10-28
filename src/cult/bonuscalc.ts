@@ -78,7 +78,7 @@ export function computeBonus(d: BonusData, nowMin: number): BonusView {
 
   const gaps: number[] = []
   let prev = box
-  for (const p of ps) { if (prev != null && p.min > prev) gaps.push(worked(d.breaks, prev, p.min, now)); prev = p.min }
+  if (box != null) for (const p of ps) { if (prev != null && p.min > prev) gaps.push(worked(d.breaks, prev, p.min, now)); prev = p.min }
   const avgPalletMin = gaps.length ? gaps.reduce((s, g) => s + g, 0) / gaps.length : null
 
   const workedH = start != null ? worked(d.breaks, start, now, now) / 60 : 0
