@@ -1421,7 +1421,7 @@ function MapView({ ix, freezers, trailers = [], staging, query, extra, where, on
       })()}
       {[freezers, trailers].map((list, li) => list.length > 0 && (
         <div key={li}>
-          {li === 1 && <h3 className="map-sec">Reefer trailers <span className="muted">dry flower · processor license</span></h3>}
+          {li === 1 && <h3 className="map-sec">Reefer trailers{list[0]?.site === 'GVR' && <> <span className="muted">dry flower · processor license</span></>}</h3>}
           <div className={`cards ${li === 1 ? 'trailers' : ''}`}>
             {list.map(f => {
               const slots = ix.slotsOf.get(f.id) ?? []
