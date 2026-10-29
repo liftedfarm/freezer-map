@@ -118,7 +118,7 @@ function OrderPage({ o, back, backend, reload, flash, pallets, heldBy, onLoad, i
         ? `This package is on ${pallets.find(x => x.id === p.container_id)?.code ?? 'a mixed pallet'} with packages that aren't for ${o.customer}. Take it off on the freezer map first.`
       : onLoad(p.id) ? 'Already on a load.'
       : inRun?.(p.id) ? `In a processing run (${inRun(p.id)}).`
-      : p.status !== 'in_freezer' ? `Not in a freezer: ${where(p)}.`
+      : p.status !== 'in_freezer' && p.status !== 'unslotted' ? `Not in a freezer: ${where(p)}.`
       : p.pushed === false ? "Logged at harvest, not a METRC package yet."
       : !(Number(p.current_weight) > 0) ? 'No weight on it. Fix the weight first.'
       : null
@@ -190,7 +190,7 @@ function OrderPage({ o, back, backend, reload, flash, pallets, heldBy, onLoad, i
                 <button className="ghost small" disabled={busy} title="Pull from several pallets of this strain into one new METRC tag" onClick={() => setCombine(l)}>Combine into one tag</button>
                 {g === 0 && <button className="ghost small" disabled={busy} onClick={() => run(() => backend.cantFill(l.id, true), `${l.strain} marked can't fill`)}>Can't fill</button>}</div>}
               {editable && adding === l.id && <Pick line={l} need={Math.max(0, Number(l.lbs) - g)} busy={busy} close={() => setAdding(null)}
-                cands={pallets.filter(p => p.status === 'in_freezer' && p.pushed !== false && !p.container_id && p.kind !== 'mixed' && (p.current_weight ?? 0) > 0
+                cands={pallets.filter(p => (p.status === 'in_freezer' || p.status === 'unslotted') && p.pushed !== false && !p.container_id && p.kind !== 'mixed' && (p.current_weight ?? 0) > 0
                   && canon(p.strain) === canon(l.strain) && (p.product ?? 'fresh_frozen') === (l.product ?? 'fresh_frozen')
                   && (p.crop_year == null || l.crop_year == null || p.crop_year === l.crop_year) && !heldBy.has(p.id) && !onLoad(p.id) && !inRun?.(p.id))}
                 where={where} rank={rank}
@@ -376,7 +376,7 @@ function Combine({ o, line, pallets, heldBy, onLoad, inRun, where, rank, canon, 
 }) {
   const w = (p: Pallet) => Number(p.current_weight ?? 0)
   const prod = (x: { product?: string | null }) => x.product ?? 'fresh_frozen'
-  const cands = pallets.filter(p => p.status === 'in_freezer' && p.pushed !== false && !p.container_id && p.kind !== 'mixed' && w(p) > 0
+  const cands = pallets.filter(p => (p.status === 'in_freezer' || p.status === 'unslotted') && p.pushed !== false && !p.container_id && p.kind !== 'mixed' && w(p) > 0
     && canon(p.strain) === canon(line.strain) && prod(p) === prod(line) && (p.crop_year == null || p.crop_year === line.crop_year)
     && (!heldBy.has(p.id) || heldBy.get(p.id)!.id === o.id) && !onLoad(p.id) && !inRun?.(p.id))
   const onLine = new Set(line.picks.map(pk => pk.pallet_id))
