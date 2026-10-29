@@ -1,5 +1,8 @@
 import { TextIn } from './cult/ui'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import type { SupabaseClient } from '@supabase/supabase-js'
+import { metrcWeight } from './comp/metrcweight'
+import type { MetrcWeight } from './comp/metrcweight'
 import { TagInput } from './taginput'
 import { ScanButton } from './scan'
 import type { MixLine, Pallet, SingleInput } from './types'
@@ -142,32 +145,50 @@ export function TagForm({ p, busy, onClose, onSubmit }: { p: Pallet; busy: boole
   )
 }
 
-export function WeightForm({ p, busy, onClose, onSubmit, canAppOnly }: {
-  p: Pallet; busy: boolean; onClose: () => void; canAppOnly?: boolean
-  onSubmit: (w: number, note: string, reason: string, appOnly: boolean) => void
+export type WeightMode = 'both' | 'app' | 'metrc'
+
+export function WeightForm({ p, busy, onClose, onSubmit, canAppOnly, sb }: {
+  p: Pallet; busy: boolean; onClose: () => void; canAppOnly?: boolean; sb?: SupabaseClient | null
+  onSubmit: (w: number, note: string, reason: string, mode: WeightMode) => void
 }) {
   const [w, setW] = useState(p.current_weight != null ? String(p.current_weight) : '')
   const [note, setNote] = useState('')
   const [reason, setReason] = useState(defaultReason(p))
-  const [appOnly, setAppOnly] = useState(false)
+  const [mode, setMode] = useState<WeightMode>('both')
+  // TEMPORARY (114): METRC's weight from the last pull, for "METRC only"
+  const [mw, setMw] = useState<MetrcWeight | null>(null)
+  useEffect(() => { if (sb && canAppOnly && p.package_tag) metrcWeight(sb, p.id).then(setMw).catch(() => setMw(null)) }, [sb, canAppOnly, p.id, p.package_tag])
+  const metrcLbs = mw?.found ? (mw.lbs ?? mw.qty ?? null) : null
+  const pick = (m: WeightMode) => {
+    setMode(m)
+    if (m === 'metrc') setW(metrcLbs != null ? String(metrcLbs) : '')
+    else setW(p.current_weight != null ? String(p.current_weight) : '')
+  }
   const n = parseFloat(w)
-  const diff = n >= 0 && p.current_weight != null ? Math.round((n - p.current_weight) * 100) / 100 : null
+  const base = mode === 'metrc' ? metrcLbs : p.current_weight
+  const diff = n >= 0 && base != null ? Math.round((n - base) * 100) / 100 : null
+  const appOnly = mode === 'app'
   return (
     <Dialog title={`Adjust weight · ${p.code}`} onClose={onClose}>
-      <p className="muted">Currently {lbs(p.current_weight) || 'unknown'}. Use this for a reweigh or to fix a wrong number.</p>
-      <div className="field"><label>New weight (lbs)</label>
+      <p className="muted">App: {lbs(p.current_weight) || 'unknown'}{p.package_tag && mw ? <> · METRC: {mw.found ? lbs(metrcLbs) : 'not in the last pull'}</> : null}. Use this for a reweigh or to fix a wrong number.</p>
+      {canAppOnly && <div className="field"><label>Change</label>
+        <div className="choices col">
+          <button className={mode === 'both' ? 'on' : ''} onClick={() => pick('both')}><b>App and METRC</b> <span className="muted">the normal way: the app changes and METRC follows</span></button>
+          <button className={mode === 'app' ? 'on' : ''} onClick={() => pick('app')}><b>App only</b> <span className="muted">fix the app's number, nothing goes to METRC</span></button>
+          {p.package_tag && <button className={mode === 'metrc' ? 'on' : ''} onClick={() => pick('metrc')}><b>METRC only</b> <span className="muted">fix METRC's number, the app's weight stays</span></button>}
+        </div></div>}
+      <div className="field"><label>{mode === 'metrc' ? 'New METRC weight (lbs)' : 'New weight (lbs)'}</label>
         <input type="number" inputMode="decimal" min="0" step="0.01" value={w} autoFocus onChange={e => setW(e.target.value)} />
-        {diff != null && diff !== 0 && <div className="muted">{diff > 0 ? '+' : ''}{lbs(diff)}</div>}</div>
-      {canAppOnly && <label className="check"><input type="checkbox" checked={appOnly} onChange={e => setAppOnly(e.target.checked)} />
-        <span><b>App only (audit)</b> <span className="muted">fix the app's number, nothing goes to METRC</span></span></label>}
-      {!appOnly && <div className="field"><label>Reason</label>
+        {diff != null && diff !== 0 && <div className="muted">{diff > 0 ? '+' : ''}{lbs(diff)}{mode === 'metrc' ? ' in METRC' : ''}</div>}</div>
+      {!appOnly && <div className="field"><label>{mode === 'metrc' ? 'METRC reason' : 'Reason'}</label>
         <div className="choices col">{WEIGHT_REASONS.map(r => <button key={r.k} className={reason === r.k ? 'on' : ''} onClick={() => setReason(r.k)}><b>{r.l}</b> <span className="muted">{r.hint}</span></button>)}</div></div>}
-      <div className="field"><label>{appOnly ? 'Why (goes in the history)' : 'Note (optional)'}</label><input value={note} onChange={e => setNote(e.target.value)} placeholder={appOnly ? 'e.g. METRC already right after the 10/28 audit' : 'e.g. reweighed on scale 2'} /></div>
+      <div className="field"><label>{appOnly ? 'Why (goes in the history)' : 'Note (optional)'}</label><input value={note} onChange={e => setNote(e.target.value)} placeholder={appOnly ? 'e.g. METRC already right after the 10/28 audit' : mode === 'metrc' ? 'e.g. match Farm Data (296.82)' : 'e.g. reweighed on scale 2'} /></div>
       {appOnly ? <div className="metrcnote"><b>METRC</b> Nothing. Only the app's weight changes. Use it when METRC is already right or you're fixing METRC by hand.</div>
+        : mode === 'metrc' ? <div className="metrcnote"><b>METRC</b> A to-do adjusts package {p.package_tag} to exactly {n >= 0 ? lbs(n) : 'this weight'}. The app's weight stays {lbs(p.current_weight) || 'as it is'}.</div>
         : <MetrcNote kind="weight" p={p} reason={reason} />}
       <div className="row end">
         <button className="ghost" onClick={onClose}>Cancel</button>
-        <button className="primary" disabled={!(n >= 0) || busy || (appOnly && !note.trim())} onClick={() => onSubmit(n, note, reason, appOnly)}>Save</button>
+        <button className="primary" disabled={!(n >= 0) || busy || (appOnly && !note.trim()) || (mode === 'metrc' && metrcLbs != null && Math.abs(n - metrcLbs) < 0.005)} onClick={() => onSubmit(n, note, reason, mode)}>Save</button>
       </div>
     </Dialog>
   )

@@ -48,6 +48,7 @@ import type { PTab } from './proc/tabs'
 import type { ATab } from './acct/tabs'
 import { LicensesPanel, PURPOSE_LABEL } from './licenses'
 import { TestRows } from './comp/trace'
+import { MetrcWeightRow } from './comp/metrcweight'
 import { LoadForm, LoadView, PickLoad, TransitView, stopColor } from './loads'
 import { InboundView } from './inbound'
 import { ReceivingView } from './receiving'
@@ -1230,11 +1231,16 @@ export default function App() {
       )}
       {form?.kind === 'weight' && (
         <WeightForm p={form.p} busy={busy} onClose={() => setForm(null)}
-          canAppOnly={!!me?.access?.owner || !!me?.access?.perms?.distribution?.audit_weight}
-          onSubmit={(w, note, reason, appOnly) => submit(() => appOnly
+          canAppOnly={!!me?.access?.owner || !!me?.access?.perms?.distribution?.audit_weight} sb={backend.client()}
+          onSubmit={(w, note, reason, mode) => submit(() => mode === 'app'
             ? (async () => { const { error } = await backend.client()!.rpc('adjust_weight_app_only', { p_pallet_id: form.p.id, p_weight: w, p_note: note })
                 if (error) throw new Error(/adjust_weight_app_only|schema cache/i.test(error.message) ? `${error.message} (run 097_audit_weight.sql in Supabase)` : error.message) })()
-            : backend.adjustWeight(form.p.id, w, note, reason), () => appOnly ? 'Weight updated in the app only (nothing to METRC)' : 'Weight updated')} />
+            : mode === 'metrc'
+            // TEMPORARY (114): METRC only. Queues a METRC adjustment to w; the app's weight stays as it is
+            ? (async () => { const { error } = await backend.client()!.rpc('adjust_weight_metrc_only', { p_pallet_id: form.p.id, p_weight: w, p_reason: reason, p_note: note || null })
+                if (error) throw new Error(/adjust_weight_metrc_only|schema cache/i.test(error.message) ? `${error.message} (run 114_weight_check.sql in Supabase)` : error.message) })()
+            : backend.adjustWeight(form.p.id, w, note, reason),
+            () => mode === 'app' ? 'Weight updated in the app only (nothing to METRC)' : mode === 'metrc' ? `METRC to-do made: METRC to ${w} lbs (app weight unchanged)` : 'Weight updated')} />
       )}
       {form?.kind === 'newchoice' && (
         <NewPalletChooser where={slotLabel(form.slot)} onClose={() => setForm(null)}
@@ -1800,7 +1806,8 @@ function PalletSheet({ ix, p, others, busy, where, flash, onArchived, onClose, o
         <dl>
           <dt>Location</dt><dd>{live && (p.slot_id != null || container) ? <a onClick={onGo}>{container ? whereIs(ix, container.slot_id) : whereIs(ix, p.slot_id)}</a> : live ? where(p) : statusText[p.status] ?? p.status}</dd>
           {(p.boxes || p.partial) ? <><dt>Boxes</dt><dd>{p.boxes ?? ''}{p.partial ? <span className="muted"> · last pallet (partial)</span> : null}</dd></> : null}
-          <dt>Weight</dt><dd>{lbs(weightOf(ix, p)) || 'unknown'}{!isMixed && p.og_weight && p.og_weight !== p.current_weight ? <span className="muted"> (started at {lbs(p.og_weight)})</span> : null}</dd>
+          <dt>{!isMixed && p.package_tag ? 'App weight' : 'Weight'}</dt><dd>{lbs(weightOf(ix, p)) || 'unknown'}{!isMixed && p.og_weight && p.og_weight !== p.current_weight ? <span className="muted"> (started at {lbs(p.og_weight)})</span> : null}</dd>
+          {!isMixed && <MetrcWeightRow sb={backend.client()} palletId={p.id} appLbs={p.current_weight ?? null} tag={p.package_tag ?? null} />}
           {!isMixed && <>
             <dt>METRC tag</dt><dd className="mono">{p.package_tag ?? (p.tag_pending ? 'pending' : 'none')}</dd>
             <dt>Harvested</dt><dd>{p.harvest_date ?? ''}</dd>

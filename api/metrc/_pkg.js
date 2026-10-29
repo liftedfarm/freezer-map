@@ -28,7 +28,9 @@ export async function sendAdjust(job, ctx) {
   const cur = r4(p.quantity)
   // The app's weight now, not the weight written on this to-do: later splits, picks and adjustments change it.
   const pal = job.pallet_id ? await one(`pallets?id=eq.${job.pallet_id}&select=current_weight,status`) : null
-  const now = pal?.current_weight != null ? r4(pal.current_weight) : null
+  // "METRC only" (114, temporary catch-up): METRC goes to exactly the number on the to-do; the app's weight is left alone
+  const metrcOnly = !!d.metrc_only
+  const now = !metrcOnly && pal?.current_weight != null ? r4(pal.current_weight) : null
   // Later to-dos on this package still waiting (a split not sent yet, say): replay just this step so they still line up.
   const later = await db(`comp_metrc_actions?select=id&touch_tags=ov.{${enc(up(job.tag))}}&status=in.(todo,error)&id=gt.${job.id}&limit=1`)
   if (!later?.length && now != null && Math.abs(now - cur) < 0.0001) throw new Skip(`METRC already shows ${cur} lb, same as the app`)
@@ -38,7 +40,7 @@ export async function sendAdjust(job, ctx) {
   const delta = r4(target - cur)
   if (Math.abs(delta) < 0.0001) throw new Skip(`METRC already shows ${target} lb`)
   const reason = await reasonFor(ctx, job.license, d.reason)
-  const note = [`Lifted app ${job.code ?? ''}: ${cur} > ${target} lb`, d.reason ? REASON_LABEL[d.reason] : null, job.details?.note].filter(Boolean).join('. ').slice(0, 250)
+  const note = [`Lifted app ${job.code ?? ''}: ${cur} > ${target} lb${metrcOnly ? ' (METRC only)' : ''}`, d.reason ? REASON_LABEL[d.reason] : null, job.details?.note].filter(Boolean).join('. ').slice(0, 250)
   const body = [{
     id: p.id, isFinishedGood: false, currentQuantity: cur, currentQuantityUom: p.unitOfMeasureAbbreviation,
     adjustmentQuantity: delta, adjustmentUnitOfMeasureId: p.unitOfMeasureId,

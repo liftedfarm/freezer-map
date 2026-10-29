@@ -188,7 +188,7 @@ export function makeBackend(): Backend {
 // Any change saved to the database (push, finish, flip, split, depart...) may have made METRC to-dos. Shortly after one,
 // ask the server to send whatever is ready (Auto kinds, Live only). It sends in to-do order and holds back anything still
 // waiting on an earlier step, so the order stays right. The 1-minute timer on the server is the backup.
-const READS = /\/rpc\/(load_blockers|stop_shipping|ship_quote|ship_settings|receiving_list|my_alerts|tag_search|tag_suggest|tag_range_|comp_reconcile|comp_farm_licenses|metrc_sync_status|metrc_tag_counts|metrc_me|pallet_manifests|app_used_tags|next_tags|nursery_next_tags|strain_profiles|reserve_strains|strain_menu_info)/
+const READS = /\/rpc\/(load_blockers|stop_shipping|ship_quote|ship_settings|receiving_list|my_alerts|tag_search|tag_suggest|tag_range_|comp_reconcile|comp_farm_licenses|metrc_sync_status|metrc_tag_counts|metrc_me|pallet_manifests|app_used_tags|next_tags|nursery_next_tags|strain_profiles|reserve_strains|strain_menu_info|pallet_metrc_weight)/
 let kickTimer: ReturnType<typeof setTimeout> | null = null
 let kickBusy = false, kickAgain = false, kickAuth = ''
 function kickMetrc() {

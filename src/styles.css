@@ -612,6 +612,7 @@ body.dragging { user-select: none; -webkit-user-select: none; cursor: grabbing; 
 .drow { display: flex; justify-content: space-between; align-items: center; gap: 10px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font: inherit; color: var(--ink); text-align: left; font-size: 14px; }
 .drow.click { cursor: pointer; }
 .pill.warnp { background: color-mix(in srgb, var(--warn) 18%, var(--panel)); color: var(--warn); white-space: nowrap; }
+.pill.okp { background: color-mix(in srgb, var(--ok, #2e9e5b) 18%, var(--panel)); color: var(--ok, #2e9e5b); white-space: nowrap; }
 .pill.badp { background: color-mix(in srgb, var(--bad) 16%, var(--panel)); color: var(--bad); white-space: nowrap; }
 .dmeter { display: grid; gap: 4px; }
 .dmeter-l { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; flex-wrap: wrap; }

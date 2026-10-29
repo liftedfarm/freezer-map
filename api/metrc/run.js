@@ -9,11 +9,12 @@
 //   { action: 'incoming', license?, module? } incoming METRC deliveries for our licenses (Inbound / Receiving per module)
 //   { action: 'inbound_receive', license, delivery_id }  receive a delivery in METRC (Live) and bring it into the app
 //   { action: 'kick' }                      right after a save in the app: send to-dos that are ready (Auto kinds, Live only)
+//   { action: 'package_weight', pallet_id }  TEMPORARY (114): what METRC shows right now for a pallet's tag (pallet card)
 //   { action: 'tag_range', planting_id, purpose, count, first?, after?, save? }  plant tag runs for a planting:
 //        suggest the next clean run (no first), check a run (first), or check and hold it for the planting (save)
 import { sendQueue, asUser, caller, db, isLive, missing, rpc, runJob, send, t3, testConnection } from './_t3.js'
 import { incoming, loadChecklist, receiveDelivery } from './_xfer.js'
-import { enc, t3file, up } from './_core.js'
+import { enc, packageAnywhere, t3file, up } from './_core.js'
 import { checkRun, suggestRun } from './_tagrange.js'
 
 export const config = { maxDuration: 300 }
@@ -174,6 +175,18 @@ export default async function handler(req, res) {
       await db('events', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ user_email: me.email, type: 'inbound_delivery',
         note: `Manifest ${d.manifest} from ${d.from}`, details: { license: lic, site: l.site, manifest: d.manifest, from: d.from, packages: d.items.length, request, app } }) }).catch(() => {})
       return send(res, 200, { live, ok: true, info: `Received manifest ${d.manifest} in METRC. App: ${app.in} back in, ${app.new} new, ${app.skipped} not pallets.`, app })
+    }
+    if (body.action === 'package_weight') {
+      // TEMPORARY (114, remove once the app and METRC are in sync): live METRC weight for the pallet card.
+      // pallet_metrc_weight runs as the caller, so only staff get through; it also gives the tag and license.
+      const w = await asUser(req, 'pallet_metrc_weight', { p_pallet_id: Number(body.pallet_id) })
+      if (!w?.tag) return send(res, 200, { tag: null })
+      const hit = await packageAnywhere(w.license, w.tag)
+      if (!hit) return send(res, 200, { tag: w.tag, license: w.license, found: false })
+      const p = hit.p
+      return send(res, 200, { tag: w.tag, license: w.license, found: true, state: hit.state, qty: p.quantity ?? p.shippedQuantity ?? null,
+                              uom: p.unitOfMeasureAbbreviation ?? p.shippedUnitOfMeasureAbbreviation ?? null, item: p.item?.name ?? p.productName ?? null,
+                              last_modified: p.lastModified ?? null })
     }
     if (body.action === 'tag_range') {
       const purpose = body.purpose === 'flower' ? 'flower' : 'batch'
