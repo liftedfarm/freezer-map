@@ -51,7 +51,7 @@ import { TestRows } from './comp/trace'
 import { LoadForm, LoadView, PickLoad, TransitView, stopColor } from './loads'
 import { InboundView } from './inbound'
 import { ReceivingView } from './receiving'
-import { ShippingQuote, ShippingSettings, rpc } from './ship'
+import { FillTolerance, ShippingQuote, ShippingSettings, rpc } from './ship'
 import { metrcRun } from './metrcCall'
 import { TagSuggestProvider } from './tagSuggest'
 import type { LoadCtx } from './loads'
@@ -785,6 +785,7 @@ export default function App() {
     lists={['customers', 'strains']} canTerms={salesAdmin} extra={[{ k: 'terms', l: 'Payment terms', node: <TermsPanel backend={backend} flash={flash} canEdit={salesAdmin} /> },
       { k: 'deadlines', l: 'Reserve deadlines', node: <DeadlinesPanel backend={backend} flash={flash} /> },
       { k: 'shipping', l: 'Shipping', node: <ShippingSettings sb={backend.client()} flash={flash} canEdit={salesAdmin || isAdminOf('dist')} /> },
+      { k: 'fulfill', l: 'Fulfillment', node: <FillTolerance sb={backend.client()} flash={flash} canEdit={salesAdmin || isAdminOf('dist')} /> },
       { k: 'people', l: 'People', node: <ModulePeople sb={backend.client()} module="sales" flash={flash} /> }]} />
   const cultSettings = <Suspense fallback={<p className="muted">Loading…</p>}><CultView backend={backend} flash={flash} tab="setup" go={setCultTab} onPalletsChanged={() => { reload() }} /></Suspense>
   const strainSettings = <div className="modset"><SettingsView key="cult-strains" backend={backend} flash={flash} onChanged={() => { reload() }} inventoryStrains={invStrains} title="Strains" lists={['strains']} focus="cult" /></div>

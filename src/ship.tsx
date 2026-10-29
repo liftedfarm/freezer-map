@@ -194,3 +194,24 @@ function CustomerShip({ c, zones, canEdit, onSave }: { c: ShipSettings['customer
       onBlur={() => Number(pct) !== c.pct && onSave(c.zone_id, 'split', Number(pct))} /><span className="muted small">% Lifted pays</span></>}
   </div>
 }
+
+/** Sales > Settings > Fulfillment: how far off a line can be (lbs) and still count as filled without Sales' OK */
+export function FillTolerance({ sb, flash, canEdit }: { sb: SupabaseClient | null; flash: Flash; canEdit: boolean }) {
+  const [v, setV] = useState<string>('')
+  const [cur, setCur] = useState<number | null>(null)
+  const load = () => rpc<number>(sb, 'fill_tolerance', {}, '106_fill_tolerance').then(n => { setCur(Number(n)); setV(String(n)) }).catch(e => flash((e as Error).message, true))
+  useEffect(() => { load() }, [])
+  const save = async () => {
+    try { await rpc(sb, 'set_fill_tolerance', { p_lbs: Number(v) }, '106_fill_tolerance'); flash(`Lines within ${Number(v)} lbs count as filled`); await load() }
+    catch (e) { flash((e as Error).message, true) }
+  }
+  return <div className="shipset">
+    <h3>Filling order lines</h3>
+    <p className="muted small">A line counts as filled when what's assigned is within this many lbs of what was ordered (over or short), so it doesn't wait on Sales to OK it. The invoice bills what was actually assigned. 0 = must match exactly.</p>
+    <div className="row">
+      <label>Within <input type="number" inputMode="decimal" min={0} max={100} step={0.5} value={v} disabled={!canEdit} onChange={e => setV(e.target.value)} style={{ maxWidth: 90 }} /> lbs</label>
+      {canEdit && <button className="primary small" disabled={v === '' || Number(v) === cur || !(Number(v) >= 0)} onClick={save}>Save</button>}
+    </div>
+    {cur == null && <p className="muted small">Loading…</p>}
+  </div>
+}
