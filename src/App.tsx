@@ -227,6 +227,13 @@ function describe(ix: Index, e: InvEvent, names?: Map<number, string>) {
       return `${code} weight adjusted ${d?.from != null ? `from ${lbs(d.from)} ` : ''}to ${lbs(d?.to)}${r ? ` (${r.l})` : ''}` }
     case 'weight_audit': { const d = e.details as { from?: number | null; to?: number } | null
       return `${code} weight set ${d?.from != null ? `from ${lbs(d.from)} ` : ''}to ${lbs(d?.to)} in the app only (audit, not sent to METRC)` }
+    case 'manifest_sync': { const d = e.details as { manifest?: string; tag?: string; to_site?: string; shipped_to?: string; new?: boolean; from?: string | number; to?: number } | null
+      const m = `manifest ${d?.manifest ?? ''} (already in METRC)`
+      const tg = d?.tag ? ` …${d.tag.slice(-6)}` : ''
+      if (d?.shipped_to) return d.new ? `${code}${tg} added as shipped to ${d.shipped_to} from ${d.from ?? ''}: ${m}` : `${code}${tg} shipped to ${d.shipped_to}: ${m}`
+      if (d?.to_site) return d.new ? `${code}${tg} made from ${d.from ?? ''} and sent to ${d.to_site}: ${m}` : `${code} tagged${tg}, sent to ${d.to_site}: ${m}`
+      if (typeof d?.from === 'number' || d?.to != null) return `${code} weight ${d?.from != null ? `from ${lbs(Number(d.from))} ` : ''}to ${lbs(d?.to)}: ${m}`
+      return `${code} caught up with ${m}` }
     case 'freezer_status': {
       const f = e.freezer_id != null ? ix.freezer.get(e.freezer_id) : undefined
       const d = e.details as { from?: string; to?: string } | null
