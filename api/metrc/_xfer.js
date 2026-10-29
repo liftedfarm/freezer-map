@@ -36,9 +36,9 @@ export async function planTransfer(ctx, spec) {
 
   // transfer type: set in Settings, and one that doesn't need prices
   const types = inp.transferTypes ?? []
-  // not set yet: between our own licenses defaults to METRC's plain "Transfer" type
-  const typeName = (await setting(TYPE_SETTING[spec.typeKey], '')) ||
-    (spec.typeKey === 'internal' ? types.find(t => lc(t.name) === 'transfer')?.name ?? '' : '')
+  // not set yet (or set to a type this license doesn't have): METRC's plain "Transfer" type, for our own moves and customers alike
+  const setType = await setting(TYPE_SETTING[spec.typeKey], '')
+  const typeName = (setType && types.some(t => lc(t.name) === lc(setType)) ? setType : '') || types.find(t => lc(t.name) === 'transfer')?.name || setType
   const type = typeName ? types.find(t => lc(t.name) === lc(typeName)) : null
   const wholesale = type && /wholesale/i.test(`${type.transactionType ?? ''} ${type.transactionTypeName ?? ''}`)
   add('type', 'Transfer type', type && !wholesale,
@@ -75,15 +75,21 @@ export async function planTransfer(ctx, spec) {
   add('tags', 'Every package has a METRC tag', pk.length && !noTag.length, !pk.length ? 'No packages' : noTag.length ? `No tag: ${noTag.map(p => p.code).join(', ')}` : `${pk.length} packages`)
   const t = await tol()
   const found = [], missing = [], held = [], off = []
-  await Promise.all(pk.filter(p => p.tag).map(async p => {
-    const m = await packageByTag(lic, p.tag).catch(() => null)
+  // a few at a time, and a look that errors (T3 busy / rate limit) is tried again before it counts as missing
+  const look = async tag => { try { return await packageByTag(lic, tag) } catch { await new Promise(r => setTimeout(r, 800)); return packageByTag(lic, tag).catch(() => undefined) } }
+  const unsure = []
+  const todo = pk.filter(p => p.tag)
+  for (let i = 0; i < todo.length; i += 4) await Promise.all(todo.slice(i, i + 4).map(async p => {
+    const m = await look(p.tag)
+    if (m === undefined) { unsure.push(`${p.code} ${up(p.tag)}`); return }
     if (!m) { missing.push(`${p.code} ${up(p.tag)}`); return }
     if (m.isOnHold || m.isOnInvestigationHold || m.isInTransit) held.push(`${p.code} (${m.isInTransit ? 'in transit' : 'on hold'})`)
     if (p.lbs != null && LB.test(m.unitOfMeasureAbbreviation || '') && Math.abs(r4(m.quantity) - r4(p.lbs)) > t) off.push(`${p.code}: METRC ${m.quantity}, app ${r4(p.lbs)}`)
     found.push({ ...p, m })
   }))
-  add('metrc', `Active on ${lic} in METRC`, !missing.length && !held.length && found.length,
-    missing.length ? `Not active on ${lic}: ${missing.join(', ')}` : held.length ? held.join(', ') : `${found.length} packages`)
+  add('metrc', `Active on ${lic} in METRC`, !missing.length && !unsure.length && !held.length && found.length,
+    missing.length ? `Not active on ${lic}: ${missing.join(', ')}` : unsure.length ? `METRC didn't answer for ${unsure.join(', ')}. Run Check METRC again.`
+      : held.length ? held.join(', ') : `${found.length} packages`)
   add('weights', 'Weights match METRC', !off.length, off.length ? `${off.join('; ')} (more than ${t} lb apart: adjust first)` : 'All within tolerance')
   const tags = pk.map(p => up(p.tag)).filter(Boolean)
   const open = tags.length ? await db(`comp_metrc_actions?select=id,action,tag&touch_tags=ov.{${tags.map(enc).join(',')}}&status=in.(todo,error)&kind=not.in.(transfer,manifest,ship_check,receive,tag,new_package)` +
