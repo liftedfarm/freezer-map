@@ -326,7 +326,6 @@ export function LoadView({ ctx, loadId, onBack, onEdit }: { ctx: LoadCtx; loadId
   const stopOf = (id: number) => stops.find(s => s.id === id)
   const cust = (s?: LoadStop) => ctx.customers.find(c => c.id === s?.customer_id)
   const totalW = items.reduce((a, i) => { const p = ctx.pallet(i.pallet_id); return a + (p ? ctx.weight(p) : 0) }, 0)
-  const unloaded = items.filter(i => !i.loaded).length
   const canEdit = editable(l)
   const spaces = v?.spaces ?? 0, across = v?.across ?? 2
   const rows = Math.ceil(spaces / across)
@@ -531,14 +530,14 @@ export function LoadView({ ctx, loadId, onBack, onEdit }: { ctx: LoadCtx; loadId
         {canEdit && (() => {
           const go = isPickup(l) ? 'Picked up' : 'Depart'
           const blocked = (blockers?.length ?? 0) > 0
-          return <button className="primary" disabled={ctx.busy || !items.length || unloaded > 0 || metrcBlock.length > 0 || blocked}
-            title={unloaded ? `${unloaded} not loaded yet` : metrcBlock.length ? `METRC checklist not green: stop ${metrcBlock.join(', ')}` : blocked ? 'See the list above' : ''}
+          return <button className="primary" disabled={ctx.busy || !items.length || metrcBlock.length > 0 || blocked}
+            title={metrcBlock.length ? `METRC checklist not green: stop ${metrcBlock.join(', ')}` : blocked ? 'See the list above' : ''}
             onClick={() => setDepartAsk(true)}>
-            {unloaded ? `${go} (${unloaded} not loaded)` : metrcBlock.length ? `${go} (METRC check)` : blocked ? `${go} (not ready)` : go}</button>
+            {metrcBlock.length ? `${go} (METRC check)` : blocked ? `${go} (not ready)` : go}</button>
         })()}
         {canEdit && <button className="ghost" disabled={ctx.busy} onClick={() => ctx.confirm(`Cancel ${l.code}? Planned pallets stay where they are${(ctx.orders ?? []).some(o => o.stop?.load_id === l.id) ? ', and its orders go back to Ready in Fulfillment' : ''}.`, 'Cancel load', async () => { if (await ctx.run(async () => { await ctx.api.cancelLoad(l.id); await ctx.refreshOrders?.() }, `${l.code} cancelled`)) onBack() })}>Cancel load</button>}
       </div>
-      {canEdit && <p className="muted">Planned pallets stay in their freezer until someone taps "Pulled onto truck" (or scans the pallet's tag with Scan). Tap a pallet to split, merge, weigh or retag it right on the load. Depart unlocks when everything is loaded and every order is complete and OK'd; it makes the METRC manifests first, then the invoices.</p>}
+      {canEdit && <p className="muted">Depart puts everything planned on the truck (no need to tap "Pulled onto truck" first, but you can, or scan tags while loading). To move a pallet, tap its position, then Move on truck and tap where it goes (tap a full position to stack). In a stack, Put on top sets the order; the top comes off first. Depart unlocks when every order is complete and OK'd; it makes the METRC manifests first, then the invoices.</p>}
 
       {posOpen != null && (
         <PositionSheet ctx={ctx} load={l} pos={posOpen} items={items.filter(i => i.position === posOpen)} stops={stops}
