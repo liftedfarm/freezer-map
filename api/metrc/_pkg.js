@@ -62,7 +62,9 @@ async function createFromPackages(ctx, job, { tag, qty, sources, item, note }) {
   const body = [{
     actualDate,
     ingredients: sources.map(s => ({ packageId: s.p.id, quantity: s.take, unitOfMeasureId: s.p.unitOfMeasureId, ...(s.finish ? { finishDate: actualDate } : {}) })),
-    itemId: item, quantity: qty, tagId, unitOfMeasureId: sources[0].p.unitOfMeasureId,
+    // same item as the source package(s): METRC's "Use same item". Without it, a package received from another license (the
+    // GVR hub's stock from OHR) fails T3's CREATE_PACKAGES_ITEM_IDS_EXIST check, because that item isn't one of the hub's own.
+    itemId: item, useSameItem: sources.every(s => itemId(s.p) === item), quantity: qty, tagId, unitOfMeasureId: sources[0].p.unitOfMeasureId,
     ...(locationId ? { locationId } : {}),
     note: note.slice(0, 250),
   }]
