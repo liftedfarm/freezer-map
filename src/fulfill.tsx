@@ -204,7 +204,7 @@ function OrderPage({ o, back, backend, reload, flash, pallets, heldBy, onLoad, i
       {editable && (() => {
         // packing: build mixed pallets from this order's packages (they stay held), or add to one already started for this customer
         const mine = o.lines.flatMap(l => l.picks.map(pk => pal.get(pk.pallet_id))).filter((p): p is Pallet => !!p)
-        const loose = mine.filter(p => !p.container_id && p.status === 'in_freezer')
+        const loose = mine.filter(p => !p.container_id && (p.status === 'in_freezer' || p.status === 'unslotted'))
         const mixedIds = [...new Set(pallets.filter(x => x.container_id && heldBy.get(x.id)?.customer_id === o.customer_id).map(x => x.container_id!))]
         const tops = new Set(mine.map(p => p.container_id ?? p.id)).size
         if (!mine.length) return null
@@ -233,7 +233,7 @@ function OrderPage({ o, back, backend, reload, flash, pallets, heldBy, onLoad, i
               {sel.length > 1 && <button className="primary small" disabled={busy} onClick={() => mix(null)}>Build mixed pallet ({sel.length} · {n0(selW)} lbs)</button>}
               {mixedIds.map(mid => <button key={mid} className="ghost small" disabled={busy} onClick={() => mix(mid)}>Add to {pal.get(mid)?.code}</button>)}
             </div>}
-            {sel.length > 1 && <p className="muted small-note">The mixed pallet goes in the slot of the first one ticked (stacked). Move it on the freezer map if you need to.</p>}
+            {sel.length > 1 && <p className="muted small-note">The mixed pallet goes in the slot of the first ticked one that's in a freezer (stacked), or waits on Needs a spot if none are. Move it on the freezer map if you need to.</p>}
           </>}
         </section>
       })()}
