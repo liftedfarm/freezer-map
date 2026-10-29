@@ -1148,3 +1148,11 @@ html:has(.app.shell), html:has(.app.shell) body { height: 100%; overflow: hidden
 .drow.picked { border-color: var(--brand); box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand) 30%, transparent); }
 .stagecard.needspot { border-color: color-mix(in srgb, #d97706 55%, var(--line)); }
 .spotlist { margin: 6px 0 12px; }
+/* Import customers from QuickBooks */
+.qboimp .qbrow { cursor: default; }
+.qboimp .prev.s-update { cursor: pointer; }
+.qboimp .qbdiff { grid-column: 1 / -1; display: grid; gap: 4px; padding: 4px 0 2px 66px; font-size: 13px; }
+.qboimp .qbdiff b { font-weight: 600; }
+.qboimp .prev select { max-width: 230px; }
+.qboimp h3 { margin: 12px 0 4px; font-size: 15px; }
+@media (max-width: 600px) { .qboimp .prev { grid-template-columns: 1fr; } .qboimp .qbdiff { padding-left: 0; } .qboimp .prev select { max-width: 100%; } }

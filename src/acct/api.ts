@@ -12,7 +12,7 @@ export interface QLine { line_id: number; product: string | null; item: string |
 export interface Payload {
   env: Env; invoice_id: number; doc_number: string; date: string; due: string | null; terms: string | null; total: number; status: string; memo: string | null
   so: string | null; nursery: boolean; seller_license: string | null
-  customer: { id: number; name: string; legal_name: string; kind: string; email: string | null; qbo_id: string | null }
+  customer: { id: number; name: string; legal_name: string; qbo_name?: string | null; kind: string; email: string | null; qbo_id: string | null }
   lines: QLine[]; problems: string[]; push: Push | null
 }
 export interface Product { code: string; name: string; grp: 'flower' | 'bio' | 'clones' | 'shipping' | 'adjust' | 'other'; sort: number; active: boolean }

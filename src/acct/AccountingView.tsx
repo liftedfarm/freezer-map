@@ -271,7 +271,7 @@ function SendSheet({ api, id, flash, canEdit, env, onClose, onChanged, onPdf }: 
         {sentLabel && <p className="ok-t">{sentLabel}{p.push?.balance != null ? ` · balance ${money(Number(p.push.balance))}` : ''}</p>}
         {p.push?.status === 'error' && <div className="warnbox">Last try: {p.push.error}</div>}
         {p.problems.length > 0 && <div className="warnbox">{p.problems.map((x, k) => <div key={k}>{x}</div>)}</div>}
-        {!p.customer.qbo_id && p.customer.kind === 'external' && <p className="muted small">The customer isn't linked to QuickBooks yet. On send it's matched by name ("{p.customer.legal_name}") or added.</p>}
+        {!p.customer.qbo_id && p.customer.kind === 'external' && <p className="muted small">The customer isn't linked to QuickBooks yet. On send it's matched by name ("{p.customer.qbo_name || p.customer.legal_name}") or added.</p>}
         <table className="restable acctlines">
           <thead><tr><th>Line</th><th>QuickBooks product</th><th>Class</th><th className="num">Qty</th><th className="num">Price</th><th className="num">Amount</th>{editable && <th />}</tr></thead>
           <tbody>{p.lines.map((l, k) => {

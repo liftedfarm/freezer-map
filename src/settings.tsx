@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { readSheet } from 'read-excel-file/browser'
 import type { Backend } from './api'
+import { QboCustomerImport } from './qboImport'
 import type { Customer, CustomerTerms, ListName, ListRow, ReserveYears, Settings, Strain, Vehicle } from './types'
 
 // ---------- column definitions per list ----------
@@ -30,6 +31,7 @@ const COLS: Record<ListName, Col[]> = {
     { key: 'license', label: 'License #', kind: 'text', synonyms: ['license', 'license #', 'license number', 'licence', 'state license'] },
     { key: 'address', label: 'Address', kind: 'text', synonyms: ['address', 'location', 'ship to'] },
     { key: 'contact', label: 'Contact', kind: 'text', synonyms: ['contact', 'phone', 'email', 'contact info'] },
+    { key: 'qbo_name', label: 'QuickBooks name', kind: 'text', synonyms: ['quickbooks name', 'qbo name', 'qb name', 'quickbooks customer'], hint: 'exactly as in QuickBooks; invoices are matched on it. Import from QuickBooks fills it in' },
     { key: 'legal_name', label: 'Legal name', kind: 'text', synonyms: ['legal name', 'legal', 'entity', 'company legal name'], hint: 'on invoices, if different' },
     { key: 'payment_terms', label: 'Payment terms', kind: 'terms', synonyms: ['payment terms', 'terms', 'net'], hint: 'default for this customer' },
     { key: 'sample_hold_days', label: 'Sample hold (days)', kind: 'int', synonyms: ['sample hold', 'sample hold days', 'hold days'], hint: 'how long a sample order holds product after it ships; blank = 10' },
@@ -172,12 +174,14 @@ function downloadTemplate(list: ListName, rows: ListRow[]) {
 
 /** A module's Settings: the shared lists it uses (vehicles, customers, strains) plus any extra sections of its own.
  *  The Strains list is the same one in every module that shows it. */
-export function SettingsView({ backend, inventoryStrains, onChanged, flash, lists, title, extra, canTerms, focus = 'dist' }: {
+export function SettingsView({ backend, inventoryStrains, onChanged, flash, lists, title, extra, canTerms, focus = 'dist', startOn }: {
   backend: Backend; inventoryStrains: Map<string, number>
   onChanged: () => void; flash: (t: string, bad?: boolean) => void
   lists: ListName[]; title: string; extra?: { k: string; l: string; node: ReactNode }[]; canTerms?: boolean
   /** which module is looking: decides which strain numbers lead the row */
   focus?: StrainFocus
+  /** open on one of the extra sections instead of the first list */
+  startOn?: string
 }) {
   const [data, setData] = useState<Settings | null>(null)
   const [err, setErr] = useState<string | null>(null)
@@ -187,7 +191,8 @@ export function SettingsView({ backend, inventoryStrains, onChanged, flash, list
   const [edit, setEdit] = useState<Partial<ListRow> | null>(null)
   const [plan, setPlan] = useState<{ rows: PlanRow[]; found: string[]; file: string } | null>(null)
   const [busy, setBusy] = useState(false)
-  const [other, setOther] = useState<string | null>(lists.length ? null : extra?.[0]?.k ?? null)
+  const [other, setOther] = useState<string | null>(startOn ?? (lists.length ? null : extra?.[0]?.k ?? null))
+  const [qbo, setQbo] = useState(false)
   const [terms, setTerms] = useState<{ code: string; label: string }[]>([])
   useEffect(() => { if (lists.includes('customers')) backend.paymentTerms().then(t => setTerms(t.filter(x => x.active))).catch(() => {}) }, [])
 
@@ -252,6 +257,7 @@ export function SettingsView({ backend, inventoryStrains, onChanged, flash, list
       {other ? extra?.find(x => x.k === other)?.node : <>
       <div className="row toolbar">
         <input className="search" type="search" placeholder={`Search ${TITLES[tab].toLowerCase()}`} value={q} onChange={e => setQ(e.target.value)} />
+        {tab === 'customers' && <button className="ghost" onClick={() => setQbo(true)}>Import from QuickBooks</button>}
         <button className="primary" onClick={() => setEdit(tab === 'customers' ? { kind: 'external', active: true } as Partial<Customer> : tab === 'strains' ? { aliases: [], active: true, show_on_menu: true } as Partial<Strain> : { active: true, spaces: 8, across: 2 } as Partial<Vehicle>)}>+ Add</button>
       </div>
       <Fold id={`set.${tab}.tools`} title="Import, export and retired">
@@ -288,6 +294,8 @@ export function SettingsView({ backend, inventoryStrains, onChanged, flash, list
         extra={tab === 'customers' && edit.id != null && (edit as Customer).kind !== 'internal' && canTerms ? <TermsByYear backend={backend} c={edit as Customer} />
           : tab === 'strains' && edit.id != null && profiles.get(edit.id) ? <StrainProfileEdit sb={backend.client()} p={profiles.get(edit.id)!} flash={flash} onSaved={loadProfilesNow} /> : null} />}
       {plan && <ImportPreview list={tab} plan={plan} busy={busy} onClose={() => setPlan(null)} onApply={applyPlan} />}
+      {qbo && tab === 'customers' && <QboCustomerImport backend={backend} customers={rows as Customer[]} terms={terms} flash={flash}
+        onDone={() => { load(); onChanged() }} onClose={() => setQbo(false)} />}
       </>}
     </div>
   )

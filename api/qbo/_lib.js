@@ -169,8 +169,11 @@ const addr = text => {
 export async function customerId(c, cu) {
   const have = await getRef('customer', cu.id)
   if (have) return have
-  const name = String(cu.legal_name || cu.name).replace(/:/g, '-').slice(0, 500)
-  let found = await findOne(c, 'Customer', 'DisplayName', name)
+  // the QuickBooks name (from the QuickBooks import) is matched first and exactly; then the legal name, then the app name
+  const qn = cu.qbo_name ? String(cu.qbo_name).trim() : ''
+  let found = qn ? await findOne(c, 'Customer', 'DisplayName', qn) : null
+  const name = (qn || String(cu.legal_name || cu.name).replace(/:/g, '-')).slice(0, 500)
+  if (!found && !qn) found = await findOne(c, 'Customer', 'DisplayName', name)
   if (!found && cu.name && cu.name !== name) found = await findOne(c, 'Customer', 'DisplayName', cu.name)
   if (!found) {
     const body = { DisplayName: name, CompanyName: name.slice(0, 100) }
