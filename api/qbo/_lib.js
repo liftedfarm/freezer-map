@@ -166,6 +166,52 @@ const addr = text => {
   ls.slice(0, 5).forEach((l, i) => { a[`Line${i + 1}`] = l.slice(0, 500) })
   return a
 }
+
+// ---------- email addresses ----------
+// The billing email box in the app can hold several addresses ("a@x.com, b@x.com; c@x.com").
+// QuickBooks keeps several in one box too, comma-separated (its own screens do this): the invoice To box
+// (BillEmail) takes 100 characters, Cc (BillEmailCc) 200, the customer's email 100.
+/** every address in the box, in order, each once */
+export function emailList(text) {
+  const seen = new Set(), out = []
+  for (const part of String(text || '').split(/[,;\s]+/)) {
+    const a = part.replace(/^[<("']+|[>)"'.]+$/g, '')
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(a) || seen.has(a.toLowerCase())) continue
+    seen.add(a.toLowerCase()); out.push(a)
+  }
+  return out
+}
+/** as many addresses as fit in max characters (comma, no space), and the ones that didn't */
+function packEmails(list, max) {
+  const take = [], rest = []
+  let len = 0
+  for (const a of list) {
+    const add = a.length + (take.length ? 1 : 0)
+    if (len + add <= max) { take.push(a); len += add } else rest.push(a)
+  }
+  return [take.join(','), rest]
+}
+/** the invoice's email boxes: everything in To, then Cc for what doesn't fit. oneTo: only the first address in To, the rest in Cc */
+export function invoiceEmails(text, oneTo = false) {
+  const all = emailList(text)
+  if (!all.length) return { left: [] }
+  const [to, rest] = oneTo ? [all[0], all.slice(1)] : packEmails(all, 100)
+  const [cc, left] = packEmails(rest, 200)
+  return { BillEmail: to ? { Address: to } : undefined, BillEmailCc: cc ? { Address: cc } : undefined, left }
+}
+const emailError = e => /e-?mail/i.test(String((e && e.message) || e))
+/** send an invoice with all the billing addresses; if QuickBooks ever refuses several in the To box, send again with one To and the rest as Cc */
+export async function sendWithEmails(send, body, text) {
+  try { return await send(body) }
+  catch (e) {
+    if (!emailError(e) || !String((body.BillEmail && body.BillEmail.Address) || '').includes(',')) throw e
+    const m = invoiceEmails(text, true)
+    const b = { ...body, BillEmail: m.BillEmail }
+    if (m.BillEmailCc) b.BillEmailCc = m.BillEmailCc; else delete b.BillEmailCc
+    return send(b)
+  }
+}
+
 export async function customerId(c, cu) {
   const have = await getRef('customer', cu.id)
   if (have) return have
@@ -177,13 +223,16 @@ export async function customerId(c, cu) {
   if (!found && cu.name && cu.name !== name) found = await findOne(c, 'Customer', 'DisplayName', cu.name)
   if (!found) {
     const body = { DisplayName: name, CompanyName: name.slice(0, 100) }
-    if (cu.email) body.PrimaryEmailAddr = { Address: String(cu.email).split(/[,;\s]+/)[0] }
+    const emails = emailList(cu.email)
+    if (emails.length) body.PrimaryEmailAddr = { Address: packEmails(emails, 100)[0] || emails[0].slice(0, 100) }
     if (cu.phone) body.PrimaryPhone = { FreeFormNumber: String(cu.phone).slice(0, 30) }
     if (cu.billing_address) body.BillAddr = addr(cu.billing_address)
     if (cu.ship_to_address) body.ShipAddr = addr(cu.ship_to_address)
     const notes = [cu.license ? `License ${cu.license}` : null, cu.contact ? `Billing contact ${cu.contact}` : null].filter(Boolean).join(' · ')
     if (notes) body.Notes = notes.slice(0, 2000)
-    found = (await qbo(c, 'POST', 'customer', body)).Customer
+    // all the billing addresses; if QuickBooks refuses several, just the first
+    found = (await qbo(c, 'POST', 'customer', body).catch(e => (emailError(e) && emails.length > 1
+      ? qbo(c, 'POST', 'customer', { ...body, PrimaryEmailAddr: { Address: emails[0].slice(0, 100) } }) : Promise.reject(e)))).Customer
   }
   await setRef('customer', cu.id, found.Id, found.DisplayName)
   return found.Id
@@ -218,7 +267,10 @@ async function pushInvoice_(c, invoiceId, by) {
     PrivateNote: [`From the Lifted Farms app`, p.so ? `order ${p.so}` : null, p.seller_license ? `seller license ${p.seller_license}` : null, p.terms ? `terms ${p.terms}` : null].filter(Boolean).join(' · ').slice(0, 4000),
   }
   if (p.memo) body.CustomerMemo = { value: String(p.memo).slice(0, 1000) }
-  if (p.customer.email) body.BillEmail = { Address: String(p.customer.email).split(/[,;\s]+/)[0] }
+  // every billing address on the customer card: To first, Cc for any that don't fit
+  const mail = invoiceEmails(p.customer.email)
+  if (mail.BillEmail) body.BillEmail = mail.BillEmail
+  if (mail.BillEmailCc) body.BillEmailCc = mail.BillEmailCc
   const term = await termId(c, p.terms_code, p.terms)
   if (term) body.SalesTermRef = { value: term }
 
@@ -232,10 +284,11 @@ async function pushInvoice_(c, invoiceId, by) {
     note = r2(existing.TotalAmt) !== r2(p.total) ? `${body.DocNumber} was already in QuickBooks with a different total ($${existing.TotalAmt}). Linked it without changing it. Fix it in QuickBooks.`
       : `${body.DocNumber} was already in QuickBooks. Linked it.`
   } else if (existing) {
-    inv = (await qbo(c, 'POST', 'invoice', { ...body, Id: existing.Id, SyncToken: existing.SyncToken, sparse: true })).Invoice; mode = 'updated'
+    inv = (await sendWithEmails(b => qbo(c, 'POST', 'invoice', { ...b, Id: existing.Id, SyncToken: existing.SyncToken, sparse: true }), body, p.customer.email)).Invoice; mode = 'updated'
   } else {
-    inv = (await qbo(c, 'POST', 'invoice', body)).Invoice
+    inv = (await sendWithEmails(b => qbo(c, 'POST', 'invoice', b), body, p.customer.email)).Invoice
   }
+  if (mode !== 'linked' && mail.left.length) note = `QuickBooks' email boxes are full. Not on the invoice: ${mail.left.join(', ')}.`
   // which QuickBooks line is which app line (prices changed there come back); only when we wrote the lines ourselves
   const ql = (inv.Line || []).filter(x => x.DetailType === 'SalesItemLineDetail')
   const lineMap = mode !== 'linked' && ql.length === map.length ? map.map((m, i) => ({ ...m, qbo_line_id: String(ql[i].Id) })) : null
