@@ -93,9 +93,10 @@ export function SplitForm({ p, where, busy, onClose, onSubmit, onLoad }: {
 export type PkgItem = { id: number; metrc_name: string; crop_year: number; finish: string; site: string; current: boolean }
 
 /** One button for split (part of it) and repackage (all of it): in METRC both are a new package from the package. */
-export function NewPackageForm({ p, where, busy, onClose, onSubmit, onLoad, loadItems }: {
+export function NewPackageForm({ p, where, busy, onClose, onSubmit, onLoad, loadItems, loadMetrcItem }: {
   p: Pallet; where: string | null; busy: boolean; onClose: () => void; onLoad?: string | null
   loadItems: () => Promise<PkgItem[]>
+  loadMetrcItem?: () => Promise<string | null>
   onSubmit: (whole: boolean, lbs: number, tag: string | null, pending: boolean, dest: Dest, itemId: number | null, note: string) => void
 }) {
   const w = p.current_weight ?? 0
@@ -107,6 +108,8 @@ export function NewPackageForm({ p, where, busy, onClose, onSubmit, onLoad, load
   const [note, setNote] = useState('')
   const [items, setItems] = useState<PkgItem[] | null>(null)
   const [itemId, setItemId] = useState<number | null>(null)
+  const [metrcItem, setMetrcItem] = useState<string | null>(null)
+  useEffect(() => { let on = true; loadMetrcItem?.().then(x => { if (on) setMetrcItem(x) }).catch(() => {}); return () => { on = false } }, [p.id])
   useEffect(() => { let on = true; loadItems().then(x => { if (on) setItems(x) }).catch(() => { if (on) setItems([]) }); return () => { on = false } }, [p.id])
   const cur = items?.find(i => i.current)
   const others = (items ?? []).filter(i => !i.current)
@@ -142,6 +145,7 @@ export function NewPackageForm({ p, where, busy, onClose, onSubmit, onLoad, load
           {others.map(i => <option key={i.id} value={i.id}>{i.metrc_name}</option>)}
         </select>
         {picked && <div className="muted small">The new package goes on {picked.metrc_name}. METRC needs that item on this license.</div>}
+        {!picked && cur && metrcItem && metrcItem.toLowerCase() !== cur.metrc_name.toLowerCase() && <div className="warn-t small">METRC has …{(p.package_tag ?? '').slice(-6)} as {metrcItem}. Same item means the app's item: the new package goes on {cur.metrc_name}. METRC needs that item on this license.</div>}
       </div>
       {!whole && <DestField dest={dest} setDest={setDest} sameLabel={where && p.status !== 'in_transit' ? `Same slot (${where})${onLoad ? ', off the load' : ''}` : null}
         loadLabel={onLoad ? `Stays on ${onLoad}` : null} />}

@@ -96,7 +96,7 @@ export async function sendSplit(job, ctx) {
   // the parent used up in the app (and METRC has about what's taken): take it all and finish it
   const finish = Number(parent.current_weight ?? 1) <= 0.0001 && Math.abs(r4(src.quantity) - qty) <= t
   const r = await createFromPackages(ctx, job, {
-    tag, qty, item: d.item_name ? (await itemByName(ctx, job.license, d.item_name)).id : itemId(src),
+    tag, qty, item: d.item_name ? (await itemByName(ctx, job.license, d.item_name)).id : (await sameItem(ctx, job.license, child, src, parent.package_tag)).id,
     sources: [{ tag: parent.package_tag, p: src, take: finish ? r4(src.quantity) : qty, finish }],
     note: `Lifted app split: ${child.code} from ${parent.code}`,
   })
@@ -110,6 +110,19 @@ async function itemByName(ctx, lic, name) {
   const hit = items.find(i => lc(i.name) === lc(name))
   if (!hit) throw new Error(`METRC has no item "${name}" on ${lic}. Pick another item, or add it in METRC first.`)
   return hit
+}
+
+// "Same item" on the New package button (135): the app's item for the package (what it really is), not whatever METRC
+// had on the old package. Falls back to METRC's item when the app has none or they're the same; stops when the app's
+// item isn't on this license in METRC yet, instead of quietly carrying the wrong item over.
+async function sameItem(ctx, lic, pal, src, from) {
+  const srcName = src.item?.name ?? null
+  const appName = pal?.item_id ? (await one(`items?id=eq.${pal.item_id}&select=metrc_name`).catch(() => null))?.metrc_name ?? null : null
+  if (!appName || lc(appName) === lc(srcName ?? '')) return { id: itemId(src), name: srcName, changed: false }
+  const items = await cached(ctx, `items:${lic}`, () => all('/v2/packages/create/source-items', { licenseNumber: lic }, 10).catch(() => []))
+  const hit = items.find(i => lc(i.name) === lc(appName))
+  if (!hit) throw new Error(`METRC has ${from} as "${srcName ?? '?'}", the app has ${pal.code} as "${appName}", and METRC has no "${appName}" item on ${lic}. Create that item in METRC, then send again.`)
+  return { id: hit.id, name: appName, changed: true }
 }
 
 // ---------- New package, all of it (132): same pallet, new tag; the old package emptied and finished ----------
@@ -134,13 +147,15 @@ export async function sendRepackage(job, ctx) {
   const pal = job.pallet_id ? await pallet(job.pallet_id) : null
   const app = pal?.current_weight != null ? r4(pal.current_weight) : null
   if (app != null && Math.abs(qty - app) > await tol()) throw new Error(`METRC has ${from} at ${qty} lb, the app has ${pal.code} at ${app} lb. Fix the weight first, then send.`)
-  const item = d.item_name ? (await itemByName(ctx, lic, d.item_name)).id : itemId(src)
+  const same = d.item_name ? null : await sameItem(ctx, lic, pal, src, from)
+  const item = d.item_name ? (await itemByName(ctx, lic, d.item_name)).id : same.id
   const r = await createFromPackages(ctx, job, {
     tag, qty, item,
     sources: [{ tag: from, p: src, take: qty, finish: true }],
     note: `Lifted app ${pal?.code ?? job.code ?? ''}: repackaged onto ${tag} (was ${from})${d.note ? `. ${d.note}` : ''}`,
   })
   if (d.item_name) r.info += ` · item ${d.item_name}`
+  else if (same?.changed) r.info += ` · item ${same.name} (the app's item; METRC had the old package as ${src.item?.name ?? '?'})`
   return r
 }
 

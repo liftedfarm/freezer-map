@@ -1211,6 +1211,7 @@ export default function App() {
       {form?.kind === 'split' && (
         <NewPackageForm p={form.p} where={form.p.slot_id != null ? where(form.p) : null} busy={busy} onClose={() => setForm(null)}
           loadItems={() => backend.newPackageItems(form.p.id)}
+          loadMetrcItem={() => backend.pkgMetrcItem(form.p.id)}
           onLoad={editLoadOf(form.p.id) ? `${editLoadOf(form.p.id)!.load.code} with it (stop ${editLoadOf(form.p.id)!.stop.seq}${editLoadOf(form.p.id)!.item.loaded ? ', on the truck' : ''})` : null}
           onSubmit={(whole, n, tag, pending, dest, itemId, note) => {
             const p = form.p

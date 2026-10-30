@@ -85,6 +85,8 @@ export interface Backend {
   /** New package button: part of it = split, all of it = repackage onto a new tag (same pallet) */
   newPackage(palletId: number, lbs: number, tag: string | null, tagPending: boolean, destSlot: number | null, itemId: number | null, note?: string, keepOnLoad?: boolean): Promise<Pallet>
   newPackageItems(palletId: number): Promise<{ id: number; metrc_name: string; crop_year: number; finish: string; site: string; current: boolean }[]>
+  /** METRC's item on the package's tag (from the last METRC pull) */
+  pkgMetrcItem(palletId: number): Promise<string | null>
   createMixed(slotId: number, lines: MixLine[], note?: string): Promise<Pallet>
   addToMixed(mixedId: number, lines: MixLine[], note?: string): Promise<void>
   takeOffMixed(palletId: number, slotId: number | null, note?: string): Promise<void>
@@ -648,6 +650,10 @@ class SupaBackend implements Backend {
     fail(error)
     return data as Pallet
   }
+  async pkgMetrcItem(palletId: number) {
+    const { data, error } = await this.sb.rpc('pallet_metrc_item', { p_pallet_id: palletId })
+    return error ? null : ((data as string | null) ?? null)
+  }
   async newPackageItems(palletId: number) {
     const { data, error } = await this.sb.rpc('new_package_items', { p_pallet_id: palletId })
     fail(error)
@@ -921,6 +927,7 @@ class DemoBackend implements Backend {
     return this.splitPallet(palletId, lbs, tag, tagPending, destSlot, note)
   }
   async newPackageItems(_palletId: number) { return [] }
+  async pkgMetrcItem(_palletId: number) { return null }
   async splitPallet(palletId: number, lbs: number, tag: string | null, tagPending: boolean, destSlot: number | null, note?: string) {
     const s = this.snap!, p = s.pallets.find(x => x.id === palletId)!
     this.loose(p)
