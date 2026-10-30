@@ -323,7 +323,7 @@ export function ItemGeneratorSheet({ sb, flash, onClose }: { sb: SupabaseClient;
 
         <div className="row toolbar" style={{ marginTop: 10 }}>
           <input className="search" type="search" placeholder="Search strains" value={q} onChange={e => setQ(e.target.value)} />
-          <button className="ghost small" onClick={() => setPick(x => { const n = new Set(x); shown.forEach(s => n.add(s.id)); return n })}>Select all shown</button>
+          <button className="ghost small" onClick={() => setPick(x => { const n = new Set(x); shown.filter(s => !s.trial).forEach(s => n.add(s.id)); return n })}>Select all shown (not trials)</button>
           <button className="ghost small" disabled={!pick.size} onClick={() => setPick(new Set())}>Clear ({pick.size})</button>
         </div>
         <div style={{ maxHeight: 220, overflow: 'auto', border: '1px solid var(--line)', borderRadius: 10, padding: '4px 8px' }}>
