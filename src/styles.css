@@ -1139,8 +1139,8 @@ html:has(.app.shell), html:has(.app.shell) body { height: 100%; overflow: hidden
 .row > .tagbox { flex: 1; }
 .tagbox .tagrow { flex-wrap: nowrap; }
 .tagbox-in { flex: 1; min-width: 0; width: 100%; padding: 9px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); font-size: 15px; }
-.tagbox:not(.compact) .tagbox-in { min-width: min(calc(24ch + 24px), 100%); }
-.tagbox.compact .tagbox-in { padding: 6px 8px; font-size: 14px; min-width: calc(24ch + 20px); }
+.tagbox:not(.compact) .tagbox-in { min-width: min(calc(24ch + 38px), 100%); }
+.tagbox.compact .tagbox-in { padding: 6px 8px; font-size: 14px; min-width: calc(24ch + 34px); }
 .tagbox-list.floating { position: fixed; z-index: 1000; top: auto; max-width: none; }
 .tagbox-list { position: absolute; z-index: 60; left: 0; top: calc(100% + 2px); width: max(100%, 28ch); max-width: calc(100vw - 32px); max-height: 264px; overflow-y: auto;
   background: var(--panel); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.18); padding: 4px; }
