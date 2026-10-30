@@ -121,8 +121,8 @@ export function NewPackageForm({ p, where, busy, onClose, onSubmit, onLoad, load
       <div className="field">
         <label>How much goes in the new package?</label>
         <div className="choices">
-          <button className={!whole ? 'on' : ''} onClick={() => setWhole(false)}>Part of it (split)</button>
-          <button className={whole ? 'on' : ''} disabled={!canWhole} onClick={() => { setWhole(true); setPending(false) }}>All of it (repackage)</button>
+          <button className={!whole ? 'on' : ''} onClick={() => { if (whole) setTag(''); setWhole(false) }}>Part of it (split)</button>
+          <button className={whole ? 'on' : ''} disabled={!canWhole} onClick={() => { if (!whole) setTag(''); setWhole(true); setPending(false) }}>All of it (repackage)</button>
         </div>
         {!canWhole && <div className="muted small">{!p.package_tag ? 'All of it needs the current METRC tag first.' : onLoad ? 'All of it: take it off the load first.' : `All of it: only from a freezer or unslotted (${p.status.replace('_', ' ')}).`}</div>}
       </div>
@@ -134,10 +134,10 @@ export function NewPackageForm({ p, where, busy, onClose, onSubmit, onLoad, load
         </div>}
       </div>}
       {whole && <div className="muted">{p.code} keeps its number, spot and history. Only the tag{itemId ? ' and item' : ''} change. All {lbs(w)} goes on the new tag.</div>}
-      {whole ? <TagField tag={tag} setTag={setTag} pallet={p.id} /> : <TagField tag={tag} setTag={setTag} pending={pending} setPending={setPending} pallet={p.id} />}
+      {whole ? <TagField tag={tag} setTag={setTag} pallet={p.id} label="New METRC tag (type the last digits of the label you're putting on)" /> : <TagField tag={tag} setTag={setTag} pending={pending} setPending={setPending} pallet={p.id} />}
       <div className="field">
         <label>Item</label>
-        <select value={itemId ?? ''} onChange={e => setItemId(e.target.value ? Number(e.target.value) : null)} disabled={items == null}>
+        <select style={{ width: '100%', maxWidth: '100%' }} value={itemId ?? ''} onChange={e => setItemId(e.target.value ? Number(e.target.value) : null)} disabled={items == null}>
           <option value="">{items == null ? 'Loading…' : `Same item${cur ? ` (${cur.metrc_name})` : ''}`}</option>
           {others.map(i => <option key={i.id} value={i.id}>{i.metrc_name}</option>)}
         </select>
