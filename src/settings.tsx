@@ -7,7 +7,7 @@ import type { ReactNode } from 'react'
 import { readSheet } from 'read-excel-file/browser'
 import type { Backend } from './api'
 import { QboCustomerImport } from './qboImport'
-import { StrainCodesSheet, StrainMetrcSheet, loadStrainPlan } from './strainMetrc'
+import { ItemGeneratorSheet, StrainCodesSheet, StrainMetrcSheet, loadStrainPlan } from './strainMetrc'
 import type { Customer, CustomerTerms, ListName, ListRow, ReserveYears, Settings, Strain, Vehicle } from './types'
 
 // ---------- column definitions per list ----------
@@ -197,6 +197,7 @@ export function SettingsView({ backend, inventoryStrains, onChanged, flash, list
   const [terms, setTerms] = useState<{ code: string; label: string }[]>([])
   const [metrcFor, setMetrcFor] = useState<{ id: number; isNew: boolean } | null>(null)
   const [codes, setCodes] = useState(false)
+  const [gen, setGen] = useState(false)
   const sb = backend.client()
   useEffect(() => { if (lists.includes('customers')) backend.paymentTerms().then(t => setTerms(t.filter(x => x.active))).catch(() => {}) }, [])
 
@@ -271,6 +272,7 @@ export function SettingsView({ backend, inventoryStrains, onChanged, flash, list
         <input className="search" type="search" placeholder={`Search ${TITLES[tab].toLowerCase()}`} value={q} onChange={e => setQ(e.target.value)} />
         {tab === 'customers' && <button className="ghost" onClick={() => setQbo(true)}>Import from QuickBooks</button>}
         {tab === 'strains' && sb && <button className="ghost" onClick={() => setCodes(true)}>METRC codes</button>}
+        {tab === 'strains' && sb && <button className="ghost" onClick={() => setGen(true)}>METRC item generator</button>}
         <button className="primary" onClick={() => setEdit(tab === 'customers' ? { kind: 'external', active: true } as Partial<Customer> : tab === 'strains' ? { aliases: [], active: true, show_on_menu: true } as Partial<Strain> : { active: true, spaces: 8, across: 2 } as Partial<Vehicle>)}>+ Add</button>
       </div>
       <Fold id={`set.${tab}.tools`} title="Import, export and retired">
@@ -311,6 +313,7 @@ export function SettingsView({ backend, inventoryStrains, onChanged, flash, list
             </> : null} />}
       {metrcFor && sb && <StrainMetrcSheet sb={sb} strainId={metrcFor.id} isNew={metrcFor.isNew} flash={flash} onClose={() => { setMetrcFor(null); load() }} />}
       {codes && sb && <StrainCodesSheet sb={sb} onClose={() => setCodes(false)} />}
+      {gen && sb && <ItemGeneratorSheet sb={sb} flash={flash} onClose={() => setGen(false)} />}
       {plan && <ImportPreview list={tab} plan={plan} busy={busy} onClose={() => setPlan(null)} onApply={applyPlan} />}
       {qbo && tab === 'customers' && <QboCustomerImport backend={backend} customers={rows as Customer[]} terms={terms} flash={flash}
         onDone={() => { load(); onChanged() }} onClose={() => setQbo(false)} />}
