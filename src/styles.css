@@ -1158,3 +1158,7 @@ html:has(.app.shell), html:has(.app.shell) body { height: 100%; overflow: hidden
 .qboimp .prev select { max-width: 230px; }
 .qboimp h3 { margin: 12px 0 4px; font-size: 15px; }
 @media (max-width: 600px) { .qboimp .prev { grid-template-columns: 1fr; } .qboimp .qbdiff { padding-left: 0; } .qboimp .prev select { max-width: 100%; } }
+/* 132: strain METRC sheet + codes */
+.sheet .tbl { border-collapse: collapse; }
+.sheet .tbl td, .sheet .tbl th { padding: 5px 6px; border-bottom: 1px solid var(--line); vertical-align: top; text-align: left; }
+.metrc-lic + .metrc-lic { border-top: 1px solid var(--line); margin-top: 6px; }

@@ -5,6 +5,7 @@ import { F, errText } from '../cult/ui'
 import type { PushKind, T3Conn } from './api'
 import type { Ctx } from './ctx'
 import { T3More } from './t3more'
+import { ItemRules } from './itemrules'
 
 // Compliance > Settings > METRC through T3: connection test, Dry run / Live, adjustment reasons, Off / Approve / Auto per kind.
 
@@ -98,5 +99,6 @@ export function T3Settings({ c }: { c: Ctx }) {
         <td className="muted small hide-s">{k.updated_by ? `${k.updated_by.split('@')[0]} ${when(k.updated_at)}` : ''}</td>
       </tr>))}</tbody></table></div>
     <T3More c={c} conn={conn} set={set} save={async (k, v) => { try { await c.api.setSetting(k, v); await load(); c.flash('Saved') } catch (e) { c.flash(errText(e), true) } }} />
+    <ItemRules c={c} />
   </Fold>
 }

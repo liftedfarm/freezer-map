@@ -162,12 +162,36 @@ async function syncLicense(license, by, t0) {
     if (full) {
       try { await syncTags(license, out, now) } catch (e) { out.notes.push(`tags: ${String(e.message || e).slice(0, 200)}`) }
       try { await syncPlants(license, out, now) } catch (e) { out.notes.push(`plants: ${String(e.message || e).slice(0, 200)}`) }
+      try { await syncSetup(license, out, now) } catch (e) { out.notes.push(`items: ${String(e.message || e).slice(0, 200)}`) }
     }
     complete = full
   } catch (e) { error = String(e.message || e).slice(0, 800) }
   const { timeUp, live, ...counts } = out
   await db(`metrc_sync_runs?id=eq.${run.id}`, { method: 'PATCH', body: JSON.stringify({ finished_at: new Date().toISOString(), counts, complete, error }), headers: { Prefer: 'return=minimal' } })
   return { license, complete, error, ...counts }
+}
+
+/** METRC's strains and active items for a license (the new-strain METRC sheet checks names against these) */
+async function syncSetup(license, out, now) {
+  let ok = await pages('/v2/strains', { licenseNumber: license }, async rows => {
+    await upsert('metrc_strains', rows.map(x => ({ license, id: x.id, name: x.name, archived: !!x.isArchived, seen_at: now })), 'license,id')
+    out.strains += rows.length
+  }, out)
+  out.items ??= 0
+  ok = ok && await pages('/v2/items', { licenseNumber: license }, async rows => {
+    await upsert('metrc_items', rows.map(x => ({ license, id: x.id, name: x.name, category: x.productCategoryName ?? null, uom: x.unitOfMeasureName ?? null,
+      strain_id: x.strainId ?? null, strain: x.strainName ?? null, archived: !!x.isArchived, seen_at: now })), 'license,id')
+    out.items += rows.length
+  }, out)
+  // a full pull: items METRC no longer lists are gone (archived / discontinued)
+  if (ok) await db(`metrc_items?license=eq.${encodeURIComponent(license)}&seen_at=lt.${encodeURIComponent(now)}`, { method: 'DELETE', headers: { Prefer: 'return=minimal' } })
+  return ok
+}
+async function syncSetupOnly(license, t0) {
+  const out = { calls: 0, strains: 0, items: 0, notes: [], timeUp: () => Date.now() - t0 > BUDGET_MS }
+  let complete = false, error = null
+  try { complete = await syncSetup(license, out, new Date().toISOString()) } catch (e) { error = String(e.message || e).slice(0, 500) }
+  return { license, complete, error, strains: out.strains, items: out.items, calls: out.calls }
 }
 
 /** METRC's available tags for a license, replacing the last pull's list. Package tags always; plant tags only when a license
@@ -342,7 +366,7 @@ export default async function handler(req, res) {
     if (!secret || req.headers.authorization !== `Bearer ${secret}`) return send(res, 401, { error: 'no' })
   } else if (req.method === 'POST') {
     const me = await caller(req)
-    if (!me || !me.can_send) return send(res, 403, { error: 'Only Compliance (or a Distribution / Processing Admin) can pull from METRC' })
+    if (!me || !(me.can_send || (only === 'setup' && me.can_strains))) return send(res, 403, { error: 'Only Compliance (or a Distribution / Processing Admin) can pull from METRC' })
     by = me.email
   } else return send(res, 405, { error: 'GET (cron) or POST' })
   if (missing().length) return send(res, 200, { skipped: `missing ${missing().join(', ')}` })
@@ -353,6 +377,10 @@ export default async function handler(req, res) {
     const conn = (await db('metrc_connection?id=eq.1&select=licenses'))?.[0]
     const reach = (conn?.licenses ?? []).filter(l => l.in_t3).map(l => l.license)
     let want = Array.isArray(req.body?.licenses) && req.body.licenses.length ? req.body.licenses.filter(l => reach.includes(l)) : reach
+    if (only === 'setup') {   // licenses that hold strains and items (not transport)
+      const keep = (await db('licenses?select=license_no&kind=in.(cultivation,processor,nursery)&active=is.true')).map(l => l.license_no)
+      want = want.filter(l => keep.includes(l))
+    }
     if (only === 'plants' && !req.body?.licenses?.length) {   // farm licenses only
       const farms = (await db('licenses?select=license_no&kind=eq.cultivation&active=is.true')).map(l => l.license_no)
       want = want.filter(l => farms.includes(l))
@@ -361,7 +389,7 @@ export default async function handler(req, res) {
     const results = []
     for (const lic of want) {
       if (Date.now() - t0 > BUDGET_MS) { results.push({ license: lic, complete: false, left: true }); continue }
-      results.push(only === 'tags' ? await syncTagsOnly(lic, t0) : only === 'plants' ? await syncPlantsOnly(lic, t0) : await syncLicense(lic, by, t0))
+      results.push(only === 'tags' ? await syncTagsOnly(lic, t0) : only === 'plants' ? await syncPlantsOnly(lic, t0) : only === 'setup' ? await syncSetupOnly(lic, t0) : await syncLicense(lic, by, t0))
     }
     let closed = 0
     try { closed = await rpc('metrc_autoclose', {}) } catch { /* 071 missing */ }

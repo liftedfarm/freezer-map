@@ -44,7 +44,10 @@ export async function sendNurseryClones(job, ctx) {
   for (const t of lots.filter(Boolean)) { lot = await plantBatch(lic, t, '/v2/plantbatches/create/packages/source-plantbatches'); if (lot) break }
   if (!lot) throw new Error(`No ${b.strain} mother lot in METRC on ${lic} to cut from (looked for ${lots.filter(Boolean).join(', ') || 'mothers with a plant tag'})`)
   const items = await all('/v2/plantbatches/create/packages/source-items', { licenseNumber: lic }, 5)
-  const item = items.find(i => lc(i.strainName) === lc(b.strain) && /clone/i.test(i.name)) ?? items.find(i => strainMatch(i.name, b.strain) && /clone/i.test(i.name))
+  // the strain's own clone item the app made (132: 1PN (FL27WB) - Strain - Clone, or the code when coded), else any clone item for the strain
+  const mine = await rpc('nursery_metrc_item', { p_strain: b.strain, p_license: lic, p_on: day(b.cut_on, job), p_finish: 'CL' }).catch(() => null)
+  const item = (mine?.id ? items.find(i => i.id === mine.id) : null)
+    ?? items.find(i => lc(i.strainName) === lc(b.strain) && /clone/i.test(i.name)) ?? items.find(i => strainMatch(i.name, b.strain) && /clone/i.test(i.name))
   if (!item) throw new Error(`No METRC clone item for ${b.strain} on ${lic}. Make "${b.strain} - Clone" (or similar) in METRC.`)
   const tagId = await tagIdFor(ctx, lic, '/v2/plantbatches/create/packages/source-tags', tag)
   const body = [{ plantBatchId: lot.id, count: Number(b.cuttings), itemId: item.id, tagId, actualDate: day(b.cut_on, job), isFromMotherPlant: true,

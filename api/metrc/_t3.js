@@ -7,6 +7,7 @@ import {
   sendFlower, sendHarvestFinish, sendHarvestPackage, sendHarvestPlants, sendHarvestWaste, sendNurseryClones, sendNurseryLoss,
   sendNurseryMothers, sendPlantLoss, sendPlanting,
 } from './_plants.js'
+import { sendItemCreate, sendStrainCreate } from './_setup.js'
 
 export { asUser, caller, db, isLive, missing, rpc, send, setting, t3 } from './_core.js'
 
@@ -57,6 +58,7 @@ const SENDERS = {
   nursery_clones: sendNurseryClones, nursery_mothers: sendNurseryMothers, nursery_loss: sendNurseryLoss,
   planting: sendPlanting, plant_loss: sendPlantLoss, flower: sendFlower,
   harvest_plants: sendHarvestPlants, harvest_package: sendHarvestPackage, harvest_waste: sendHarvestWaste, harvest_finish: sendHarvestFinish,
+  strain_create: sendStrainCreate, item_create: sendItemCreate,
 }
 export const canSend = kind => !!SENDERS[kind]
 const VERIFY = new Set(['tag', 'new_package', 'ship_check'])   // checks: they never change METRC
@@ -78,6 +80,11 @@ async function earlier(job) {
   const pid = job.details?.planting_id
   if (pid && ['plant_loss', 'flower'].includes(job.kind)) {
     const e = await db(`comp_metrc_actions?select=id,action&details->>planting_id=eq.${enc(String(pid))}&kind=in.(planting,plant_loss,flower)&status=in.(todo,error)&id=lt.${job.id}&order=id&limit=1`)
+    if (e?.length) return e[0]
+  }
+  // a new strain's items wait for the strain on the same license
+  if (job.kind === 'item_create' && job.details?.strain_id) {
+    const e = await db(`comp_metrc_actions?select=id,action&kind=eq.strain_create&license=eq.${enc(job.license)}&details->>strain_id=eq.${enc(String(job.details.strain_id))}&status=in.(todo,error)&id=lt.${job.id}&limit=1`)
     if (e?.length) return e[0]
   }
   if (job.kind === 'nursery_mothers' && job.details?.batch_id) {

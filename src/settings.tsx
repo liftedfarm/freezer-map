@@ -7,6 +7,7 @@ import type { ReactNode } from 'react'
 import { readSheet } from 'read-excel-file/browser'
 import type { Backend } from './api'
 import { QboCustomerImport } from './qboImport'
+import { StrainCodesSheet, StrainMetrcSheet, loadStrainPlan } from './strainMetrc'
 import type { Customer, CustomerTerms, ListName, ListRow, ReserveYears, Settings, Strain, Vehicle } from './types'
 
 // ---------- column definitions per list ----------
@@ -194,6 +195,9 @@ export function SettingsView({ backend, inventoryStrains, onChanged, flash, list
   const [other, setOther] = useState<string | null>(startOn ?? (lists.length ? null : extra?.[0]?.k ?? null))
   const [qbo, setQbo] = useState(false)
   const [terms, setTerms] = useState<{ code: string; label: string }[]>([])
+  const [metrcFor, setMetrcFor] = useState<{ id: number; isNew: boolean } | null>(null)
+  const [codes, setCodes] = useState(false)
+  const sb = backend.client()
   useEffect(() => { if (lists.includes('customers')) backend.paymentTerms().then(t => setTerms(t.filter(x => x.active))).catch(() => {}) }, [])
 
   const load = () => backend.loadSettings().then(d => { setData(d); setErr(null) }).catch(e => setErr(String(e?.message ?? e)))
@@ -214,7 +218,15 @@ export function SettingsView({ backend, inventoryStrains, onChanged, flash, list
 
   async function save(row: Partial<ListRow>) {
     setBusy(true)
-    try { await backend.saveRow(tab, row); await load(); onChanged(); setEdit(null); flash('Saved') }
+    try {
+      await backend.saveRow(tab, row); await load(); onChanged(); setEdit(null); flash('Saved')
+      // a new strain: show what METRC needs for it (only to people who can send it)
+      if (tab === 'strains' && !row.id && sb) {
+        const { data: made } = await sb.from('strains').select('id').ilike('name', String(row.name ?? '').trim().replace(/[%_\\]/g, m => `\\${m}`)).limit(1)
+        const id = (made?.[0] as { id: number } | undefined)?.id
+        if (id) loadStrainPlan(sb, id, {}).then(p => { if (p.can_send) setMetrcFor({ id, isNew: true }) }).catch(() => {})
+      }
+    }
     catch (e) { flash((e as Error).message, true) } finally { setBusy(false) }
   }
   async function addMissing() {
@@ -258,6 +270,7 @@ export function SettingsView({ backend, inventoryStrains, onChanged, flash, list
       <div className="row toolbar">
         <input className="search" type="search" placeholder={`Search ${TITLES[tab].toLowerCase()}`} value={q} onChange={e => setQ(e.target.value)} />
         {tab === 'customers' && <button className="ghost" onClick={() => setQbo(true)}>Import from QuickBooks</button>}
+        {tab === 'strains' && sb && <button className="ghost" onClick={() => setCodes(true)}>METRC codes</button>}
         <button className="primary" onClick={() => setEdit(tab === 'customers' ? { kind: 'external', active: true } as Partial<Customer> : tab === 'strains' ? { aliases: [], active: true, show_on_menu: true } as Partial<Strain> : { active: true, spaces: 8, across: 2 } as Partial<Vehicle>)}>+ Add</button>
       </div>
       <Fold id={`set.${tab}.tools`} title="Import, export and retired">
@@ -292,7 +305,12 @@ export function SettingsView({ backend, inventoryStrains, onChanged, flash, list
 
       {edit && <EditForm list={tab} row={edit} busy={busy} onClose={() => setEdit(null)} onSave={save} terms={terms}
         extra={tab === 'customers' && edit.id != null && (edit as Customer).kind !== 'internal' && canTerms ? <TermsByYear backend={backend} c={edit as Customer} />
-          : tab === 'strains' && edit.id != null && profiles.get(edit.id) ? <StrainProfileEdit sb={backend.client()} p={profiles.get(edit.id)!} flash={flash} onSaved={loadProfilesNow} /> : null} />}
+          : tab === 'strains' && edit.id != null ? <>
+              {sb && <div className="row" style={{ margin: '6px 0 10px' }}><button className="ghost small" onClick={() => { const id = edit.id!; setEdit(null); setMetrcFor({ id, isNew: false }) }}>METRC: strain and items on every license</button></div>}
+              {profiles.get(edit.id) && <StrainProfileEdit sb={backend.client()} p={profiles.get(edit.id)!} flash={flash} onSaved={loadProfilesNow} />}
+            </> : null} />}
+      {metrcFor && sb && <StrainMetrcSheet sb={sb} strainId={metrcFor.id} isNew={metrcFor.isNew} flash={flash} onClose={() => { setMetrcFor(null); load() }} />}
+      {codes && sb && <StrainCodesSheet sb={sb} onClose={() => setCodes(false)} />}
       {plan && <ImportPreview list={tab} plan={plan} busy={busy} onClose={() => setPlan(null)} onApply={applyPlan} />}
       {qbo && tab === 'customers' && <QboCustomerImport backend={backend} customers={rows as Customer[]} terms={terms} flash={flash}
         onDone={() => { load(); onChanged() }} onClose={() => setQbo(false)} />}
