@@ -1,4 +1,5 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { createPortal } from 'react-dom'
 import { ScanButton } from './scan'
 import { useTagCtx } from './tagSuggest'
 import type { TagPool, TagWhere } from './tagSuggest'
@@ -11,6 +12,19 @@ import type { TagPool, TagWhere } from './tagSuggest'
 //  * a full tag that isn't available says why: already on a pallet in the app, on another license's list, or not on the list
 
 const clean = (v: string) => v.toUpperCase().replace(/\s/g, '')
+
+// every tag box on the screen shares what it holds, so a tag picked on one line isn't offered on another
+const held = new Map<string, string>()
+let heldVer = 0
+const subs = new Set<() => void>()
+const setHeld = (id: string, v: string | null) => {
+  const prev = held.get(id) ?? null
+  if (prev === v) return
+  if (v) held.set(id, v); else held.delete(id)
+  heldVer++; subs.forEach(f => f())
+}
+const subscribe = (f: () => void) => { subs.add(f); return () => { subs.delete(f) } }
+const useHeldVersion = () => useSyncExternalStore(subscribe, () => heldVer)
 const when = (iso?: string | null) => (iso ? new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '')
 
 export function TagInput({ value, onChange, where = {}, keep, disabled, placeholder, autofill, compact, autoFocus }: {
@@ -26,10 +40,16 @@ export function TagInput({ value, onChange, where = {}, keep, disabled, placehol
   const [hi, setHi] = useState(0)
   const [why, setWhy] = useState<{ tag: string; text: string } | null>(null)
   const box = useRef<HTMLDivElement>(null)
+  const listEl = useRef<HTMLDivElement>(null)
+  const ver = useHeldVersion()
+  // this box's tag, for the other boxes on the screen
+  useEffect(() => { setHeld(lid, clean(value).length === 24 ? clean(value) : null) }, [lid, value])
+  useEffect(() => () => setHeld(lid, null), [lid])
+  const others = useMemo(() => new Set([...held.entries()].filter(([k]) => k !== lid).map(([, v]) => v)), [ver, lid])
   const key = `${where.pallet ?? ''}|${where.slot ?? ''}|${where.purpose ?? ''}|${where.type ?? ''}|${where.site ?? ''}`
 
   useEffect(() => { let on = true; c?.search(where, null, 40).then(p => { if (on) setPool(p) }); return () => { on = false } }, [c, key])
-  useEffect(() => { if (autofill && pool?.autofill && pool.tags.length && !value && !disabled) onChange(pool.tags[0]) }, [pool, autofill])
+  useEffect(() => { const t = pool?.tags.find(x => !others.has(x)); if (autofill && pool?.autofill && t && !value && !disabled) onChange(t) }, [pool, autofill])
 
   const q = clean(value)
   const digits = /^\d+$/.test(q)
@@ -42,11 +62,11 @@ export function TagInput({ value, onChange, where = {}, keep, disabled, placehol
 
   // ones ending in what was typed first (last digits), then the rest that contain it
   const list = useMemo(() => {
-    if (q.length < 2 || hits?.q !== q) return (pool?.tags ?? []).slice(0, 40)
-    const end = hits.tags.filter(t => t.endsWith(q)), rest = hits.tags.filter(t => !t.endsWith(q))
+    if (q.length < 2 || hits?.q !== q) return (pool?.tags ?? []).filter(t => !others.has(t)).slice(0, 40)
+    const end = hits.tags.filter(t => t.endsWith(q) && !others.has(t)), rest = hits.tags.filter(t => !t.endsWith(q) && !others.has(t))
     return [...end, ...rest].slice(0, 60)
-  }, [q, hits, pool])
-  const ends = hits?.q === q && q.length < 24 ? hits.tags.filter(t => t.endsWith(q)) : []
+  }, [q, hits, pool, others])
+  const ends = hits?.q === q && q.length < 24 ? hits.tags.filter(t => t.endsWith(q) && !others.has(t)) : []
   const only = ends.length === 1 ? ends[0] : null
   const full = q.length === 24
   const off = !!pool?.from_metrc && full && hits?.q === q && !hits.tags.includes(q) && !(keep && clean(keep) === q)
@@ -76,7 +96,7 @@ export function TagInput({ value, onChange, where = {}, keep, disabled, placehol
   // close when tapping outside
   useEffect(() => {
     if (!open) return
-    const h = (e: MouseEvent | TouchEvent) => { if (box.current && !box.current.contains(e.target as Node)) setOpen(false) }
+    const h = (e: MouseEvent | TouchEvent) => { const n = e.target as Node; if (box.current && !box.current.contains(n) && !listEl.current?.contains(n)) setOpen(false) }
     document.addEventListener('mousedown', h); document.addEventListener('touchstart', h)
     return () => { document.removeEventListener('mousedown', h); document.removeEventListener('touchstart', h) }
   }, [open])
@@ -89,6 +109,26 @@ export function TagInput({ value, onChange, where = {}, keep, disabled, placehol
     return <>{t.slice(0, i)}<b>{t.slice(i, i + q.length)}</b>{t.slice(i + q.length)}</>
   }
   const showList = open && !disabled && list.length > 0 && !(full && list.length === 1 && list[0] === q)
+  const dup = full && others.has(q)
+
+  // the list floats over the page (not inside a table or sheet that would cut it off), under the box or above it near the bottom
+  const [pos, setPos] = useState<{ left: number; top?: number; bottom?: number; width: number; maxH: number } | null>(null)
+  useLayoutEffect(() => {
+    if (!showList) { setPos(null); return }
+    const place = () => {
+      const r = box.current?.querySelector('.tagbox-in')?.getBoundingClientRect() ?? box.current?.getBoundingClientRect()
+      if (!r) return
+      const vw = window.innerWidth, vh = window.innerHeight
+      const width = Math.min(Math.max(r.width, 300), vw - 16)
+      const left = Math.max(8, Math.min(r.left, vw - width - 8))
+      const below = vh - r.bottom - 8, above = r.top - 8
+      if (below >= 180 || below >= above) setPos({ left, top: r.bottom + 2, width, maxH: Math.min(264, below) })
+      else setPos({ left, bottom: vh - r.top + 2, width, maxH: Math.min(264, above) })
+    }
+    place()
+    window.addEventListener('scroll', place, true); window.addEventListener('resize', place)
+    return () => { window.removeEventListener('scroll', place, true); window.removeEventListener('resize', place) }
+  }, [showList])
 
   return <div className={`tagbox ${compact ? 'compact' : ''}`} ref={box}>
     <div className="row tagrow">
@@ -105,13 +145,15 @@ export function TagInput({ value, onChange, where = {}, keep, disabled, placehol
         }} />
       <ScanButton compact={compact} disabled={disabled} onScan={t => pick(clean(t))} />
     </div>
-    {showList && <div className="tagbox-list" id={`tl${lid}`} role="listbox">
+    {showList && pos && createPortal(<div className="tagbox-list floating" id={`tl${lid}`} role="listbox" ref={listEl}
+      style={{ left: pos.left, top: pos.top, bottom: pos.bottom, width: pos.width, maxHeight: pos.maxH }}>
       {list.map((t, i) => <button type="button" key={t} role="option" aria-selected={i === hi} className={`mono-in ${i === hi ? 'on' : ''}`}
         onMouseDown={e => e.preventDefault()} onClick={() => pick(t)}>{mark(t)}</button>)}
-    </div>}
+    </div>, document.body)}
     {!compact && pool?.from_metrc && <div className="muted small-note">{pool.license}{pool.free != null ? ` · ${pool.free.toLocaleString()} available` : ''}
       {only && digits ? <> · <b>Enter</b> for …{only.slice(-9)}</> : q.length >= 2 && !full && hits?.q === q ? ` · ${hits.tags.length >= 200 ? '200+' : hits.tags.length} match` : ''}</div>}
     {compact && only && digits && <div className="muted small-note">Enter for …{only.slice(-9)}</div>}
+    {dup && <div className="warn-t small-note">Already picked on another line here.</div>}
     {off && why?.tag === q && why.text && <div className="warn-t small-note">{why.text}</div>}
   </div>
 }
