@@ -86,10 +86,30 @@ export const unhtml = s => String(s ?? '').replace(/&amp;/g, '&').replace(/&lt;/
 export const WRITE_MAX = 25   // METRC (through T3) takes at most 25 entries in one write
 export async function write(ctx, path, license, body) {
   const one = b => t3('POST', path, { query: { licenseNumber: license, submit: ctx.live ? 'true' : undefined, applyDynamicValidation: 'true' }, body: b })
+    .catch(e => explain(e, path, license, b, ctx))
   if (!Array.isArray(body) || body.length <= WRITE_MAX) return one(body)
   const out = []
   for (let i = 0; i < body.length; i += WRITE_MAX) out.push(await one(body.slice(i, i + WRITE_MAX)))
   return out
+}
+
+// METRC refused a live write and T3 only passed on "Metrc responded with status code 400" (137). Ask again as a check
+// (no submit, T3's own validation against METRC's data), which often names the field; then add what's usually behind it.
+async function explain(e, path, license, b, ctx) {
+  if (!(e instanceof T3Error) || !ctx.live || !/status code 4\d\d/i.test(e.message)) throw e
+  let why = null
+  try {
+    await t3('POST', path, { query: { licenseNumber: license, applyDynamicValidation: 'true' }, body: b })
+  } catch (v) { why = v instanceof T3Error ? v.message : String(v?.message ?? v) }
+  const hint = /packages\/create/.test(path)
+    ? 'METRC often refuses a new package when the item moves to another category (Fresh Cannabis Plant to Flower, say), the item or strain isn\'t on this license, the tag isn\'t one of this license\'s, or the source package doesn\'t have that much.'
+    : /packages\/adjust/.test(path) ? 'METRC often refuses an adjustment when the reason needs a note, or the new weight is below 0.'
+    : /transfers/.test(path) ? 'METRC often refuses a manifest when a package isn\'t active here, the driver or vehicle is missing, or the destination license is wrong.'
+    : 'METRC didn\'t say why.'
+  const msg = why
+    ? `METRC refused it. Checking the same request says: ${why}`
+    : `METRC refused it (${e.message}) and didn't say why; the check run passes. ${hint} Try the same thing on the METRC website to see METRC's own message.`
+  throw new T3Error(msg.slice(0, 900), e.status, e.body)
 }
 
 /** every row of a T3 collection (stops after maxPages) */
