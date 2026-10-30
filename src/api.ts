@@ -82,6 +82,9 @@ export interface Backend {
   clearReview(palletId: number, note?: string): Promise<void>
   flagReview(palletId: number, reason: string): Promise<void>
   splitPallet(palletId: number, lbs: number, tag: string | null, tagPending: boolean, destSlot: number | null, note?: string, keepOnLoad?: boolean): Promise<Pallet>
+  /** New package button: part of it = split, all of it = repackage onto a new tag (same pallet) */
+  newPackage(palletId: number, lbs: number, tag: string | null, tagPending: boolean, destSlot: number | null, itemId: number | null, note?: string, keepOnLoad?: boolean): Promise<Pallet>
+  newPackageItems(palletId: number): Promise<{ id: number; metrc_name: string; crop_year: number; finish: string; site: string; current: boolean }[]>
   createMixed(slotId: number, lines: MixLine[], note?: string): Promise<Pallet>
   addToMixed(mixedId: number, lines: MixLine[], note?: string): Promise<void>
   takeOffMixed(palletId: number, slotId: number | null, note?: string): Promise<void>
@@ -637,6 +640,19 @@ class SupaBackend implements Backend {
     const { error } = await this.sb.rpc('clear_review', { p_pallet_id: palletId, p_note: note || null })
     fail(error)
   }
+  async newPackage(palletId: number, lbs: number, tag: string | null, tagPending: boolean, destSlot: number | null, itemId: number | null, note?: string, keepOnLoad?: boolean) {
+    const { data, error } = await this.sb.rpc('new_package', {
+      p_pallet_id: palletId, p_lbs: lbs, p_tag: tag, p_tag_pending: tagPending, p_dest_slot: destSlot, p_item_id: itemId, p_note: note || null,
+      p_keep_on_load: !!keepOnLoad,
+    })
+    fail(error)
+    return data as Pallet
+  }
+  async newPackageItems(palletId: number) {
+    const { data, error } = await this.sb.rpc('new_package_items', { p_pallet_id: palletId })
+    fail(error)
+    return (data ?? []) as { id: number; metrc_name: string; crop_year: number; finish: string; site: string; current: boolean }[]
+  }
   async splitPallet(palletId: number, lbs: number, tag: string | null, tagPending: boolean, destSlot: number | null, note?: string, keepOnLoad?: boolean) {
     const { data, error } = await this.sb.rpc('split_pallet', {
       p_pallet_id: palletId, p_lbs: lbs, p_new_tag: tag, p_tag_pending: tagPending, p_dest_slot: destSlot, p_note: note || null,
@@ -895,6 +911,16 @@ class DemoBackend implements Backend {
   private tagUsed(tag: string, except?: number) {
     return this.snap!.pallets.find(p => p.package_tag === tag && p.id !== except && (p.status === 'in_freezer' || p.status === 'unslotted'))?.code
   }
+  async newPackage(palletId: number, lbs: number, tag: string | null, tagPending: boolean, destSlot: number | null, _itemId: number | null, note?: string) {
+    const p = this.snap!.pallets.find(x => x.id === palletId)!
+    if (p.current_weight != null && lbs >= p.current_weight) {
+      if (!tag) throw new Error('Enter the new METRC tag')
+      await this.setTag(palletId, tag, note)
+      return structuredClone(this.snap!.pallets.find(x => x.id === palletId)!)
+    }
+    return this.splitPallet(palletId, lbs, tag, tagPending, destSlot, note)
+  }
+  async newPackageItems(_palletId: number) { return [] }
   async splitPallet(palletId: number, lbs: number, tag: string | null, tagPending: boolean, destSlot: number | null, note?: string) {
     const s = this.snap!, p = s.pallets.find(x => x.id === palletId)!
     this.loose(p)

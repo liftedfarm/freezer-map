@@ -11,7 +11,7 @@ import { Backend, CONFIG_MISSING, IS_PORTAL, makeBackend, portalUrl } from './ap
 import { FREEZER_STATUSES, PRODUCT_LABEL, PRODUCT_SHORT, FINISH_LABEL } from './types'
 import { DistInventory, SalesInventory } from './inventory'
 import type { InvCtx } from './inventory'
-import { MergeForm, MergeHere, MixedBuilder, NewPalletChooser, PickMixed, SingleForm, SplitForm, TagForm, WeightForm, lbs } from './forms'
+import { MergeForm, MergeHere, MixedBuilder, NewPackageForm, NewPalletChooser, PickMixed, SingleForm, TagForm, WeightForm, lbs } from './forms'
 import { SettingsView } from './settings'
 import { ModulePeople, UsersTab } from './users'
 import { PermissionsPanel } from './perms'
@@ -217,6 +217,8 @@ function describe(ix: Index, e: InvEvent, names?: Map<number, string>) {
       return `${code} split: ${lbs(e.lbs)} off to ${d?.child}${d?.mixed ? ` (onto ${d.mixed})` : ''}, ${lbs(d?.remaining)} left` }
     case 'split_from': { const d = e.details as { parent?: string; tag?: string | null; mixed?: string } | null
       return `${code} created from ${d?.parent} (${lbs(e.lbs)})${d?.mixed ? ` onto ${d.mixed}` : ''}${d?.tag ? '' : ', tag pending'}` }
+    case 'repackage': { const d = e.details as { from?: string; to?: string; item_name?: string } | null
+      return `${code} repackaged onto …${(d?.to ?? '').slice(-6)} (was …${(d?.from ?? '').slice(-6)}), ${lbs(e.lbs)}${d?.item_name ? `, item ${d.item_name}` : ''}` }
     case 'merge': { const d = e.details as { sources?: string[] } | null
       return `${code} made by merging ${(d?.sources ?? []).join(', ')} (${lbs(e.lbs)})` }
     case 'merged_into': { const d = e.details as { into?: string } | null
@@ -1205,11 +1207,13 @@ export default function App() {
         onSubmit={(r, note) => { const p = removeP; setRemoveP(null); act(() => backend.removePallet(p.id, r, note), `${p.code} removed`) }} />}
 
       {form?.kind === 'split' && (
-        <SplitForm p={form.p} where={form.p.slot_id != null ? where(form.p) : null} busy={busy} onClose={() => setForm(null)}
+        <NewPackageForm p={form.p} where={form.p.slot_id != null ? where(form.p) : null} busy={busy} onClose={() => setForm(null)}
+          loadItems={() => backend.newPackageItems(form.p.id)}
           onLoad={editLoadOf(form.p.id) ? `${editLoadOf(form.p.id)!.load.code} with it (stop ${editLoadOf(form.p.id)!.stop.seq}${editLoadOf(form.p.id)!.item.loaded ? ', on the truck' : ''})` : null}
-          onSubmit={(n, tag, pending, dest, note) => {
+          onSubmit={(whole, n, tag, pending, dest, itemId, note) => {
             const p = form.p
-            const run = (slot: number | null, keep = false) => submit(() => backend.splitPallet(p.id, n, tag, pending, slot, note, keep), c => `${c.code} created (${lbs(n)})${keep ? ' on the load' : ''}`, () => setPalletId(null))
+            if (whole) { submit(() => backend.newPackage(p.id, n, tag, false, null, itemId, note), c => `${c.code} is on …${(c.package_tag ?? '').slice(-6)} now. METRC to-do queued.`); return }
+            const run = (slot: number | null, keep = false) => submit(() => backend.newPackage(p.id, n, tag, pending, slot, itemId, note, keep), c => `${c.code} created (${lbs(n)})${keep ? ' on the load' : ''}`, () => setPalletId(null))
             if (dest === 'load') run(null, true)
             else if (dest === 'same') run(null)
             else startPlacing({ title: `Splitting ${lbs(n)} off ${p.code}`, sub: 'Tap the slot the new piece goes to.', run: slot => run(slot.id) }, p)
@@ -1876,7 +1880,7 @@ function PalletSheet({ ix, p, others, busy, where, flash, onArchived, onClose, o
         {live && !isMixed && !container && (<>
           <div className="row actions">
             <button className="primary big" disabled={busy} onClick={onMove}>{onTruck ? 'Back to a freezer' : 'Move'}</button>
-            <button className="ghost big" disabled={busy || !p.current_weight} onClick={() => onForm('split')}>Split</button>
+            <button className="ghost big" disabled={busy || !p.current_weight} onClick={() => onForm('split')}>New package</button>
             <button className="ghost big" disabled={busy || !p.strain} onClick={() => onForm('merge')}>Merge</button>
           </div>
           <div className="row">

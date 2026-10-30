@@ -90,6 +90,74 @@ export function SplitForm({ p, where, busy, onClose, onSubmit, onLoad }: {
   )
 }
 
+export type PkgItem = { id: number; metrc_name: string; crop_year: number; finish: string; site: string; current: boolean }
+
+/** One button for split (part of it) and repackage (all of it): in METRC both are a new package from the package. */
+export function NewPackageForm({ p, where, busy, onClose, onSubmit, onLoad, loadItems }: {
+  p: Pallet; where: string | null; busy: boolean; onClose: () => void; onLoad?: string | null
+  loadItems: () => Promise<PkgItem[]>
+  onSubmit: (whole: boolean, lbs: number, tag: string | null, pending: boolean, dest: Dest, itemId: number | null, note: string) => void
+}) {
+  const w = p.current_weight ?? 0
+  const [whole, setWhole] = useState(false)
+  const [amt, setAmt] = useState('')
+  const [tag, setTag] = useState('')
+  const [pending, setPending] = useState(false)
+  const [dest, setDest] = useState<Dest>(onLoad ? 'load' : where ? 'same' : 'other')
+  const [note, setNote] = useState('')
+  const [items, setItems] = useState<PkgItem[] | null>(null)
+  const [itemId, setItemId] = useState<number | null>(null)
+  useEffect(() => { let on = true; loadItems().then(x => { if (on) setItems(x) }).catch(() => { if (on) setItems([]) }); return () => { on = false } }, [p.id])
+  const cur = items?.find(i => i.current)
+  const others = (items ?? []).filter(i => !i.current)
+  const n = whole ? w : parseFloat(amt)
+  const canWhole = !!p.package_tag && (p.status === 'in_freezer' || p.status === 'unslotted') && !onLoad
+  const okAmt = whole ? w > 0 : n > 0 && n < w
+  const ok = okAmt && (whole ? tag.trim().length > 0 : (pending || tag.trim().length > 0))
+  const picked = items?.find(i => i.id === itemId)
+  return (
+    <Dialog title={`New package from ${p.code}`} onClose={onClose}>
+      <p className="muted">{p.strain}{PL(p) ? ` ${PL(p)}` : ''} · {lbs(w)} now{p.package_tag ? ` · tag …${p.package_tag.slice(-6)}` : ''}</p>
+      <div className="field">
+        <label>How much goes in the new package?</label>
+        <div className="choices">
+          <button className={!whole ? 'on' : ''} onClick={() => setWhole(false)}>Part of it (split)</button>
+          <button className={whole ? 'on' : ''} disabled={!canWhole} onClick={() => { setWhole(true); setPending(false) }}>All of it (repackage)</button>
+        </div>
+        {!canWhole && <div className="muted small">{!p.package_tag ? 'All of it needs the current METRC tag first.' : onLoad ? 'All of it: take it off the load first.' : `All of it: only from a freezer or unslotted (${p.status.replace('_', ' ')}).`}</div>}
+      </div>
+      {!whole && <div className="field">
+        <label>Lbs for the new package</label>
+        <input type="number" inputMode="decimal" min="0" step="0.01" value={amt} onChange={e => setAmt(e.target.value)} autoFocus />
+        {amt && <div className={n > 0 && n < w ? 'muted' : 'warn-t'}>
+          {n > 0 && n < w ? `New pallet ${lbs(n)} · ${p.code} keeps ${lbs(w - n)}` : `Must be more than 0 and less than ${lbs(w)}. For all of it, pick All of it.`}
+        </div>}
+      </div>}
+      {whole && <div className="muted">{p.code} keeps its number, spot and history. Only the tag{itemId ? ' and item' : ''} change. All {lbs(w)} goes on the new tag.</div>}
+      {whole ? <TagField tag={tag} setTag={setTag} pallet={p.id} /> : <TagField tag={tag} setTag={setTag} pending={pending} setPending={setPending} pallet={p.id} />}
+      <div className="field">
+        <label>Item</label>
+        <select value={itemId ?? ''} onChange={e => setItemId(e.target.value ? Number(e.target.value) : null)} disabled={items == null}>
+          <option value="">{items == null ? 'Loading…' : `Same item${cur ? ` (${cur.metrc_name})` : ''}`}</option>
+          {others.map(i => <option key={i.id} value={i.id}>{i.metrc_name}</option>)}
+        </select>
+        {picked && <div className="muted small">The new package goes on {picked.metrc_name}. METRC needs that item on this license.</div>}
+      </div>
+      {!whole && <DestField dest={dest} setDest={setDest} sameLabel={where && p.status !== 'in_transit' ? `Same slot (${where})${onLoad ? ', off the load' : ''}` : null}
+        loadLabel={onLoad ? `Stays on ${onLoad}` : null} />}
+      {!whole && onLoad && dest !== 'load' && <div className="muted small">The piece comes off the load{p.status === 'in_transit' ? ' and the truck' : ''}. If {p.code} is held for an order, that line gets lighter.</div>}
+      <div className="field"><label>Note (optional)</label><input value={note} onChange={e => setNote(e.target.value)} placeholder={whole ? 'e.g. label on the trim bin is 7194' : 'e.g. pulled for Acquamarcia order'} /></div>
+      <div className="metrc-note muted small">METRC: {whole
+        ? `new package on the new tag from …${(p.package_tag ?? '').slice(-6)}, all ${lbs(w)}, ${picked ? picked.metrc_name : 'same item'}. The old tag goes to 0 and is finished.`
+        : `new package split from …${(p.package_tag ?? '').slice(-6)} with the new tag, ${picked ? picked.metrc_name : 'same item'}. ${p.code} keeps the rest under its tag.`}</div>
+      <div className="row end">
+        <button className="ghost" onClick={onClose}>Cancel</button>
+        <button className="primary" disabled={!ok || busy} onClick={() => onSubmit(whole, n, (whole || !pending) ? tag : null, !whole && pending, dest, itemId, note)}>{whole ? 'Repackage' : 'Split'}</button>
+      </div>
+    </Dialog>
+  )
+}
+
 export function MergeForm({ p, candidates, whereOf, busy, onClose, onSubmit, onLoad }: {
   p: Pallet; candidates: Pallet[]; whereOf: (x: Pallet) => string; busy: boolean; onClose: () => void; onLoad?: string | null
   onSubmit: (ids: number[], tag: string | null, pending: boolean, dest: Dest, note: string) => void

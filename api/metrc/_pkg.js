@@ -95,11 +95,53 @@ export async function sendSplit(job, ctx) {
   if (r4(src.quantity) + t < qty) throw new Error(`METRC has only ${src.quantity} lb in ${up(parent.package_tag)}; the split takes ${qty}. Fix the parent's weight first.`)
   // the parent used up in the app (and METRC has about what's taken): take it all and finish it
   const finish = Number(parent.current_weight ?? 1) <= 0.0001 && Math.abs(r4(src.quantity) - qty) <= t
-  return createFromPackages(ctx, job, {
-    tag, qty, item: itemId(src),
+  const r = await createFromPackages(ctx, job, {
+    tag, qty, item: d.item_name ? (await itemByName(ctx, job.license, d.item_name)).id : itemId(src),
     sources: [{ tag: parent.package_tag, p: src, take: finish ? r4(src.quantity) : qty, finish }],
     note: `Lifted app split: ${child.code} from ${parent.code}`,
   })
+  if (d.item_name) r.info += ` · item ${d.item_name}`
+  return r
+}
+
+// the item picked on the New package button, by its METRC name on this license
+async function itemByName(ctx, lic, name) {
+  const items = await cached(ctx, `items:${lic}`, () => all('/v2/packages/create/source-items', { licenseNumber: lic }, 10).catch(() => []))
+  const hit = items.find(i => lc(i.name) === lc(name))
+  if (!hit) throw new Error(`METRC has no item "${name}" on ${lic}. Pick another item, or add it in METRC first.`)
+  return hit
+}
+
+// ---------- New package, all of it (132): same pallet, new tag; the old package emptied and finished ----------
+export async function sendRepackage(job, ctx) {
+  const d = job.details || {}
+  const lic = job.license
+  if (!lic) throw new Error('No license on this to-do')
+  const tag = up(job.tag ?? d.to), from = up(d.from)
+  if (!tag || !from) throw new Error('This to-do is missing a tag')
+  const done = await packageByTag(lic, tag)
+  if (done) {
+    if (lc(done.sourcePackageLabels ?? '').includes(lc(from))) throw new Skip(`METRC already has ${tag} from ${from}`)
+    throw new Error(`${tag} is already a different METRC package (${done.item?.name ?? '?'}, ${done.quantity} ${done.unitOfMeasureAbbreviation ?? ''}). Pick another tag.`)
+  }
+  const src = await packageByTag(lic, from)
+  if (!src) {
+    const where = await packageAnywhere(lic, from)
+    throw new Error(where ? `${from} is ${where.state} on ${lic} in METRC, not active` : `${from} isn't in METRC on ${lic}`)
+  }
+  lbsOnly(src, from)
+  const qty = r4(src.quantity)
+  const pal = job.pallet_id ? await pallet(job.pallet_id) : null
+  const app = pal?.current_weight != null ? r4(pal.current_weight) : null
+  if (app != null && Math.abs(qty - app) > await tol()) throw new Error(`METRC has ${from} at ${qty} lb, the app has ${pal.code} at ${app} lb. Fix the weight first, then send.`)
+  const item = d.item_name ? (await itemByName(ctx, lic, d.item_name)).id : itemId(src)
+  const r = await createFromPackages(ctx, job, {
+    tag, qty, item,
+    sources: [{ tag: from, p: src, take: qty, finish: true }],
+    note: `Lifted app ${pal?.code ?? job.code ?? ''}: repackaged onto ${tag} (was ${from})${d.note ? `. ${d.note}` : ''}`,
+  })
+  if (d.item_name) r.info += ` · item ${d.item_name}`
+  return r
 }
 
 export async function sendCombine(job, ctx) {
