@@ -23,6 +23,7 @@ import { CrewTab, RunDayLog } from '../pay/CrewView'
 import type { RunLite } from '../pay/CrewView'
 import { InvTable } from '../invtable'
 import { ItemLotRows, TestRows } from '../comp/trace'
+import { PackageActions } from '../pkgactions'
 import type { Col, GroupBy, Chip } from '../invtable'
 import { MetrcNote } from '../metrc'
 import type { InvAction } from '../metrc'
@@ -31,7 +32,9 @@ import type { PalletManifest } from '../metrcCall'
 import { CloseLotButton, ComingBack, NeedsOurTag, ReceiveBackButton, lotBack } from './Returns'
 
 /** the freezer map's pallet actions, handed down from App (same dialogs, same METRC queue) */
-export interface InvBridge { act: (p: Pallet, kind: InvAction) => void; info: (id: number) => { load?: string; mixed?: string; inSnap: boolean }; tick: number }
+export interface InvBridge { act: (p: Pallet, kind: InvAction) => void; info: (id: number) => { load?: string; mixed?: string; inSnap: boolean }; tick: number
+  /** flag for review (why) or clear the flag (null) */
+  flag?: (p: Pallet, why: string | null) => void }
 
 // ---------- small helpers ----------
 const n0 = (x: number | null | undefined) => (x == null || !isFinite(x) ? '' : Math.round(x).toLocaleString())
@@ -707,16 +710,13 @@ function PackageSheet({ c, p, onClose }: { c: Ctx; p: Pallet; onClose: () => voi
     {can && here && c.inv && info?.inSnap && <>
       {info.mixed && <div className="infobox">On mixed pallet {info.mixed}. It moves with it; take it off on the freezer map to make a new package from it or merge it.</div>}
       {info.load && <div className="infobox">Planned on load {info.load}. Take it off the load in Transit to make a new package, merge or remove it.</div>}
-      <div className="row invacts">
-        {p.slot_id != null && !info.mixed && <button className="ghost small" onClick={() => go(() => c.putAway(p))}>Move</button>}
-        <button className="ghost small" disabled={!!r || !!info.mixed || !w(p)} onClick={() => go(() => c.inv!.act(p, 'split'))}>New package</button>
-        <button className="ghost small" disabled={!!r || !!info.mixed || !p.strain} onClick={() => go(() => c.inv!.act(p, 'merge'))}>Merge</button>
-        <button className="ghost small" disabled={!!r || !!info.mixed || !!info.load} onClick={() => go(() => c.inv!.act(p, 'addto'))}>Pull for mixed pallet</button>
-        {p.status === 'in_freezer' && !info.load && !info.mixed && <button className="ghost small" disabled={!!r} onClick={() => go(() => c.inv!.act(p, 'load'))}>Put on a load</button>}
-        <button className="ghost small" onClick={() => go(() => c.inv!.act(p, 'weight'))}>Adjust weight</button>
-        <button className="ghost small" onClick={() => go(() => c.inv!.act(p, 'tag'))}>{p.package_tag ? 'Edit tag' : 'Enter tag'}</button>
-        {!info.load && <button className="ghost small danger" disabled={!!r || !!h} onClick={() => go(() => c.inv!.act(p, 'remove'))}>Remove</button>}
-      </div>
+      <PackageActions p={p} busy={false}
+        move={p.slot_id != null && !info.mixed ? { label: 'Move', run: () => go(() => c.putAway(p)) } : null}
+        onForm={k => go(() => c.inv!.act(p, k))}
+        onLoad={p.status === 'in_freezer' && !info.load && !info.mixed ? () => go(() => c.inv!.act(p, 'load')) : null}
+        onRemove={!info.load ? () => go(() => c.inv!.act(p, 'remove')) : null}
+        onFlag={c.inv.flag ? why => c.inv!.flag!(p, why) : null} onClear={c.inv.flag ? () => c.inv!.flag!(p, null) : null}
+        off={{ split: !!r || !!info.mixed || !w(p), merge: !!r || !!info.mixed, addto: !!r || !!info.mixed || !!info.load, remove: !!r || !!h }} />
       <p className="muted small-note">Each of these shows what to do in METRC and puts it on the Compliance METRC to-do list.</p>
     </>}
     <Forecast c={c} p={p} />

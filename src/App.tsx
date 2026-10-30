@@ -48,6 +48,7 @@ import type { PTab } from './proc/tabs'
 import type { ATab } from './acct/tabs'
 import { LicensesPanel, PURPOSE_LABEL } from './licenses'
 import { TestRows } from './comp/trace'
+import { PackageActions } from './pkgactions'
 import { MetrcWeightRow } from './comp/metrcweight'
 import { LoadForm, LoadView, PickLoad, TransitView, stopColor } from './loads'
 import { InboundView } from './inbound'
@@ -757,6 +758,7 @@ export default function App() {
     else if (kind === 'load') setPickLoad(p)
     else if (kind === 'remove') setRemoveP(p)
   }
+  const invFlag = (pp: Pallet, why: string | null) => act(() => why == null ? backend.clearReview(pp.id) : backend.flagReview(pp.id, why), why == null ? 'Flag cleared' : 'Flagged for review')
   const invInfo = (id: number) => {
     const p = ix.pallet.get(id), m = p?.container_id ? ix.pallet.get(p.container_id) : undefined
     return { load: ix.loadOf.get(id)?.load.code, mixed: m?.code, inSnap: !!p }
@@ -1036,7 +1038,7 @@ export default function App() {
         {view === 'proc' && cur === 'proc' && procTab === 'activity' && <ActivityView ix={ix} module="processing" />}
         {view === 'proc' && cur === 'proc' && procTab !== 'activity' && <Suspense fallback={<p className="muted">Loading…</p>}><ProcessingView backend={backend} flash={flash} tab={procTab} go={setProcTab}
           isAdmin={isAdminOf('proc')} canEdit={lv.processing === 'user' || lv.processing === 'admin'} customers={snap.customers ?? []} strains={snap.strains ?? []} onChanged={() => { reload() }}
-          inv={{ act: invAct, info: invInfo, tick: invTick }} /></Suspense>}
+          inv={{ act: invAct, info: invInfo, tick: invTick, flag: invFlag }} /></Suspense>}
         {view === 'acct' && cur === 'acct' && acctTab === 'activity' && <ActivityView ix={ix} module="accounting" />}
         {view === 'acct' && cur === 'acct' && acctTab !== 'activity' && <Suspense fallback={<p className="muted">Loading…</p>}><AccountingView backend={backend} flash={flash} tab={acctTab} go={setAcctTab}
           isAdmin={isAdminOf('acct')} canEdit={lv.accounting === 'user' || lv.accounting === 'admin'} notice={GO_ACCT ? QBO_BACK : null} /></Suspense>}
@@ -1758,7 +1760,6 @@ function PalletSheet({ ix, p, others, busy, where, flash, onArchived, onClose, o
   const [hist, setHist] = useState<InvEvent[] | null>(null)
   const [kin, setKin] = useState<Pallet[]>([])
   const contents = ix.contentsOf.get(p.id) ?? []
-  const [flagWhy, setFlagWhy] = useState<string | null>(null)
   useEffect(() => { setHist(null); backend.palletEvents(p.id).then(setHist) }, [p.id, p.slot_id, p.needs_review, p.current_weight, p.package_tag, p.status, p.container_id, contents.length])
   useEffect(() => {
     if (p.parent_id == null && p.merged_into == null && !/^C\d+$/.test(p.code) && !hist?.some(e => e.type === 'split')) { setKin([]); return }
@@ -1877,29 +1878,15 @@ function PalletSheet({ ix, p, others, busy, where, flash, onArchived, onClose, o
             <button className="ghost small" disabled={busy} onClick={() => onForm('tag')}>{p.package_tag ? 'Edit tag' : 'Enter tag'}</button>
           </div>
         </>)}
-        {live && !isMixed && !container && (<>
-          <div className="row actions">
-            <button className="primary big" disabled={busy} onClick={onMove}>{onTruck ? 'Back to a freezer' : 'Move'}</button>
-            <button className="ghost big" disabled={busy || !p.current_weight} onClick={() => onForm('split')}>New package</button>
-            <button className="ghost big" disabled={busy || !p.strain} onClick={() => onForm('merge')}>Merge</button>
-          </div>
-          <div className="row">
-            <button className="ghost small" disabled={busy || (!!loadInfo && !loadEditable)} onClick={() => onForm('addto')}>Pull for mixed pallet</button>
-            {inFreezer && !loadInfo && <button className="ghost small" disabled={busy} onClick={onPutOnLoad}>Put on a load</button>}
-            <button className="ghost small" disabled={busy} onClick={() => onForm('weight')}>Adjust weight</button>
-            <button className="ghost small" disabled={busy} onClick={() => onForm('tag')}>{p.package_tag ? 'Edit tag' : 'Enter tag'}</button>
-            {p.needs_review && <button className="ghost small" disabled={busy} onClick={onClear}>Clear flag</button>}
-            <button className="ghost small" disabled={busy} onClick={() => setFlagWhy(p.needs_review ?? '')}>{p.needs_review ? 'Change flag' : 'Flag for review'}</button>
-            {(!loadInfo || loadEditable) && <button className="ghost small danger" disabled={busy} onClick={onRemove}>Remove</button>}
-          </div>
-          {flagWhy != null && <div className="flagform">
-            <label><span>Why does {p.code} need review?</span>
-              <input autoFocus value={flagWhy} placeholder="e.g. Not on the reefer sheet, can't find it" onChange={e => setFlagWhy(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter' && flagWhy.trim()) { onFlag(flagWhy.trim()); setFlagWhy(null) } if (e.key === 'Escape') setFlagWhy(null) }} /></label>
-            <div className="row"><button className="ghost small" onClick={() => setFlagWhy(null)}>Cancel</button>
-              <button className="primary small" disabled={busy || !flagWhy.trim()} onClick={() => { onFlag(flagWhy.trim()); setFlagWhy(null) }}>Flag it</button></div>
-          </div>}
-        </>)}
+        {live && !isMixed && !container && (
+          <PackageActions p={p} busy={busy} big
+            move={{ label: onTruck ? 'Back to a freezer' : 'Move', run: onMove }}
+            onForm={onForm}
+            onLoad={inFreezer && !loadInfo ? onPutOnLoad : null}
+            onRemove={!loadInfo || loadEditable ? onRemove : null}
+            onFlag={onFlag} onClear={onClear}
+            off={{ addto: !!loadInfo && !loadEditable }} />
+        )}
         {onArchived && <div className="row actions"><button className="primary big" onClick={onArchived}>Bring back or delete…</button></div>}
         <h3>History</h3>
         {!hist && <p className="muted">Loading…</p>}
