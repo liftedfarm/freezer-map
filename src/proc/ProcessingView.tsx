@@ -705,11 +705,11 @@ function PackageSheet({ c, p, onClose }: { c: Ctx; p: Pallet; onClose: () => voi
       {free && takes('machine', p) && p.product !== 'bucked' && <button className="ghost" onClick={() => go(() => c.start('machine', [p.id]))}>Machine trim</button>}
     </div>}
     {can && here && c.inv && info?.inSnap && <>
-      {info.mixed && <div className="infobox">On mixed pallet {info.mixed}. It moves with it; take it off on the freezer map to split or merge it.</div>}
-      {info.load && <div className="infobox">Planned on load {info.load}. Take it off the load in Transit to split, merge or remove it.</div>}
+      {info.mixed && <div className="infobox">On mixed pallet {info.mixed}. It moves with it; take it off on the freezer map to make a new package from it or merge it.</div>}
+      {info.load && <div className="infobox">Planned on load {info.load}. Take it off the load in Transit to make a new package, merge or remove it.</div>}
       <div className="row invacts">
         {p.slot_id != null && !info.mixed && <button className="ghost small" onClick={() => go(() => c.putAway(p))}>Move</button>}
-        <button className="ghost small" disabled={!!r || !!info.mixed || !w(p)} onClick={() => go(() => c.inv!.act(p, 'split'))}>Split</button>
+        <button className="ghost small" disabled={!!r || !!info.mixed || !w(p)} onClick={() => go(() => c.inv!.act(p, 'split'))}>New package</button>
         <button className="ghost small" disabled={!!r || !!info.mixed || !p.strain} onClick={() => go(() => c.inv!.act(p, 'merge'))}>Merge</button>
         <button className="ghost small" disabled={!!r || !!info.mixed || !!info.load} onClick={() => go(() => c.inv!.act(p, 'addto'))}>Pull for mixed pallet</button>
         {p.status === 'in_freezer' && !info.load && !info.mixed && <button className="ghost small" disabled={!!r} onClick={() => go(() => c.inv!.act(p, 'load'))}>Put on a load</button>}
