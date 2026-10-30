@@ -28,7 +28,7 @@ import { MetrcNote } from '../metrc'
 import type { InvAction } from '../metrc'
 import { openMetrcManifest } from '../metrcCall'
 import type { PalletManifest } from '../metrcCall'
-import { CloseLotButton, ComingBack, NeedsOurTag } from './Returns'
+import { CloseLotButton, ComingBack, NeedsOurTag, ReceiveBackButton, lotBack } from './Returns'
 
 /** the freezer map's pallet actions, handed down from App (same dialogs, same METRC queue) */
 export interface InvBridge { act: (p: Pallet, kind: InvAction) => void; info: (id: number) => { load?: string; mixed?: string; inSnap: boolean }; tick: number }
@@ -140,6 +140,7 @@ export default function ProcessingView({ backend, flash, tab, go, isAdmin, canEd
   return (
     <div className="proc">
       {tab === 'dashboard' && <Dashboard c={c} go={go} />}
+      {tab === 'inbound' && <Inbound c={c} />}
       {tab === 'incoming' && <Drying c={c} />}
       {tab === 'runs' && <Runs c={c} onStart={k => setStartKind({ kind: k })} />}
       {tab === 'crew' && sb && <CrewTab sb={sb} runs={d.runs.filter(r => !simple(r.kind)) as RunLite[]} flash={flash} canEdit={canEdit} isAdmin={isAdmin} onOpenRun={(id, date) => { const r = d.runs.find(x => x.id === id); if (r) c.openRun(r, date) }} />}
@@ -259,6 +260,15 @@ function ByStrain({ d }: { d: PData }) {
 }
 
 // ---------- Drying: dry harvests > wet packages > processors > back unbucked ----------
+function Inbound({ c }: { c: Ctx }) {
+  return <div className="list">
+    <h2>Inbound</h2>
+    <p className="muted">Product coming back from processors on their METRC manifest. Open a manifest, give every package a spot (our tag and a reweigh if you have them), and Receive. Which wet lot each package came from is sorted out in Drying › Receive back.</p>
+    {c.sb && <ComingBack sb={c.sb} api={c.api} flash={c.flash} reload={c.reload} isAdmin={c.isAdmin} />}
+    {c.sb && <NeedsOurTag d={c.d} api={c.api} sb={c.sb} flash={c.flash} reload={c.reload} isAdmin={c.isAdmin} openPkg={c.openPkg} />}
+  </div>
+}
+
 function Drying({ c }: { c: Ctx }) {
   const { d } = c
   const [wet, setWet] = useState<DryHarvest | null>(null)
@@ -273,8 +283,7 @@ function Drying({ c }: { c: Ctx }) {
   return (
     <div className="list">
       <h2>Drying</h2>
-      <p className="muted">Dry flower leaves the farm as raw wet weight (not deleafed) in one METRC package and goes to a drying processor or our trailers. Processors send it back dry, on their METRC manifest: receive the manifest below, and each package goes onto our own tag.</p>
-      {c.sb && <ComingBack sb={c.sb} api={c.api} flash={c.flash} reload={c.reload} isAdmin={c.isAdmin} />}
+      <p className="muted">Dry flower leaves the farm as raw wet weight (not deleafed) in one METRC package and goes to a drying processor or our trailers. Processors send it back dry on their METRC manifest, received in Processing › Inbound. Here, put what came back toward each wet lot (Receive back) and close the lot when it's all back.</p>
 
       <h3 className="csec">Dry harvests to package <span className="muted">{toPack.length || ''}</span></h3>
       {toPack.length ? <div className="cwrap fit"><table className="ctable">
@@ -298,11 +307,10 @@ function Drying({ c }: { c: Ctx }) {
       {[...byProc.entries()].map(([pid, ps]) => <div key={pid}>
         <h4 className="subh row between"><span>{c.procName(pid) || 'Unknown processor'} <span className="muted">{ps.length} · {n0(sum(ps.map(w)))} lbs</span></span></h4>
         <PkgTable c={c} rows={ps} extra={p => <span className="row nowrap" style={{ justifyContent: 'flex-end', gap: 6 }}>{c.mfst(p)}{p.sent_on ? <span className={days(p.sent_on, today()) > 21 ? 'warn-t' : 'muted'}>{days(p.sent_on, today())} days out</span> : null}
+          {lotBack(p, d) && <span className="okp pill">{lotBack(p, d)}</span>}
+          {c.isAdmin && <ReceiveBackButton p={p} d={d} api={c.api} flash={c.flash} reload={c.reload} />}
           {c.isAdmin && <CloseLotButton p={p} d={d} api={c.api} flash={c.flash} reload={c.reload} />}</span>} />
       </div>)}
-      {away.length > 0 && <p className="muted small">A wet lot closes by itself when its packages are received above. Close lot is for lots that came back before (or with More coming).</p>}
-
-      {c.sb && <NeedsOurTag d={d} api={c.api} sb={c.sb} flash={c.flash} reload={c.reload} isAdmin={c.isAdmin} openPkg={c.openPkg} />}
 
       <h3 className="csec">Back, needs a spot <span className="muted">{backHere.length || ''}</span></h3>
       {backHere.length ? <PkgTable c={c} rows={backHere} extra={p => c.canEdit ? <span className="row"><button className="ghost small" onClick={e => { e.stopPropagation(); c.putAway(p) }}>Put in a trailer</button>

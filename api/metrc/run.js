@@ -8,10 +8,10 @@
 //   { action: 'manifest_pdf', license, manifest } the METRC manifest PDF (base64)
 //   { action: 'incoming', license?, module? } incoming METRC deliveries for our licenses (Inbound / Receiving per module)
 //   { action: 'inbound_receive', license, delivery_id }  receive a delivery in METRC (Live) and bring it into the app
-//   { action: 'proc_returns' }               processor returns waiting (Processing > Drying): incoming deliveries from processors,
-//                                            each package matched to its wet lot
-//   { action: 'proc_return_receive', license, delivery_id, lines: [{ tag, wet_lot_id, our_tag, reweigh, more_coming }] }
-//                                            receive it in METRC, make the dry packages, close the wet lots, queue the retags
+//   { action: 'proc_returns' }               processor returns waiting (Processing > Inbound): incoming deliveries from processors,
+//                                            each package linked to its wet lot when METRC's source package is one of ours
+//   { action: 'proc_return_receive', license, delivery_id, lines: [{ tag, slot_id, our_tag, reweigh }] }
+//                                            receive it in METRC, make the dry packages in their spots, queue the retags
 //   { action: 'kick' }                      right after a save in the app: send to-dos that are ready (Auto kinds, Live only)
 //   { action: 'package_weight', pallet_id }  TEMPORARY (114): what METRC shows right now for a pallet's tag (pallet card)
 //   { action: 'tag_range', planting_id, purpose, count, first?, after?, save? }  plant tag runs for a planting:
@@ -195,7 +195,8 @@ export default async function handler(req, res) {
       const procLic = new Set((m.processor_licenses ?? []).map(up))
       const hit = new Map((m.rows ?? []).map(r => [up(r.tag), r]))
       const keep = out.filter(d => d.error || procLic.has(up(d.from_license)) || (d.items ?? []).some(p => hit.get(up(p.tag))?.how === 'source'))
-      for (const d of keep) for (const p of d.items ?? []) { const r = hit.get(up(p.tag)); p.wet_lot_id = r?.wet_lot_id ?? null; p.match = r?.how ?? null }
+      // linked only on an exact source match; a same-strain guess is left for Drying > Receive back
+      for (const d of keep) for (const p of d.items ?? []) { const r = hit.get(up(p.tag)); p.wet_lot_id = r?.how === 'source' ? r.wet_lot_id : null; p.wet_lot = p.wet_lot_id ? (m.lots ?? []).find(l => l.id === p.wet_lot_id)?.code ?? null : null }
       return send(res, 200, { live: await isLive(), deliveries: keep, lots: m.lots ?? [] })
     }
     if (body.action === 'proc_return_receive') {
@@ -213,14 +214,20 @@ export default async function handler(req, res) {
       // our tags: not on anything else, and one of our METRC tags
       const want = [...lines.values()].map(x => up(x.our_tag)).filter(Boolean)
       if (new Set(want).size !== want.length) return send(res, 400, { error: 'The same tag is on two packages' })
+      // every package needs a spot, and the spots have to have room, before anything happens in METRC
+      const spotErr = await rpc('proc_spots_check', { p_site: l.site, p_slots: d.items.map(p => Number(lines.get(up(p.tag))?.slot_id) || null) })
+      if (spotErr) return send(res, 400, { error: spotErr })
+      // the wet lot: only METRC's own source match (our wet tag)
+      const m = await rpc('proc_returns_match', { p_rows: d.items.map(p => ({ tag: p.tag, strain: p.strain, item: p.item, source_labels: p.source_labels ?? [] })) })
+      const lotOf = new Map((m.rows ?? []).filter(r => r.how === 'source').map(r => [up(r.tag), r.wet_lot_id]))
       const ctx = { live, by: me.email }
       const { body: request } = await receiveDelivery(ctx, lic, d)
       if (!live) return send(res, 200, { live, ok: true, info: `Dry run OK: METRC would take manifest ${d.manifest} (${d.items.length} packages). Nothing changed.` })
       const left = (await incoming({}, lic, false)).some(x => Number(x.delivery_id) === Number(d.delivery_id))
       if (left) return send(res, 200, { live, ok: false, info: 'Sent, but METRC still shows the delivery as incoming. Check it in METRC.' })
       const rows = d.items.map(p => { const x = lines.get(up(p.tag)) ?? {}
-        return { tag: p.tag, lbs: Number(p.qty), item: p.item, strain: p.strain, wet_lot_id: x.wet_lot_id ?? null, our_tag: x.our_tag ? up(x.our_tag) : null,
-                 reweigh: x.reweigh ?? null, more_coming: !!x.more_coming } })
+        return { tag: p.tag, lbs: Number(p.qty), item: p.item, strain: p.strain, wet_lot_id: lotOf.get(up(p.tag)) ?? null, slot_id: Number(x.slot_id) || null,
+                 our_tag: x.our_tag ? up(x.our_tag) : null, reweigh: x.reweigh ?? null } })
       const app = await rpc('proc_return_receive', { p_site: l.site, p_license: lic, p_manifest: d.manifest, p_from: d.from, p_rows: rows, p_by: me.email })
       await db(`metrc_app_transfers?delivery_id=eq.${Number(d.delivery_id)}`, { method: 'PATCH', body: JSON.stringify({ state: 'received', received_at: new Date().toISOString(), received_by: me.email }), headers: { Prefer: 'return=minimal' } }).catch(() => {})
       const sibs = await db(`comp_metrc_actions?select=id&kind=eq.receive&status=in.(todo,error)&tag=in.(${d.items.map(p => enc(p.tag)).join(',')})`)
@@ -232,7 +239,7 @@ export default async function handler(req, res) {
       const kind = (await db('metrc_push_kinds?kind=eq.retag&select=mode'))?.[0]?.mode
       if (kind === 'auto') { const q = await sendQueue({ live, by: me.email, deadline: t0 + 45000 }, null, t0, 45000); sent = q.out }
       return send(res, 200, { live, ok: true, app, sent,
-        info: `Received manifest ${d.manifest}: ${(app.rows ?? []).length} packages${(app.closed ?? []).length ? `, ${app.closed.length} wet lot${app.closed.length === 1 ? '' : 's'} closed` : ''}.` })
+        info: `Received manifest ${d.manifest}: ${(app.rows ?? []).length} package${(app.rows ?? []).length === 1 ? '' : 's'} in their spots.` })
     }
     if (body.action === 'package_weight') {
       // TEMPORARY (114, remove once the app and METRC are in sync): live METRC weight for the pallet card.
