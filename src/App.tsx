@@ -379,6 +379,8 @@ const GO = new URLSearchParams(location.search).get('go')
 const GO_TAB: 'requests' | 'orders' | null = GO === 'requests' || GO === 'orders' ? GO : null
 // back from connecting QuickBooks (api/qbo/callback): Accounting > Settings
 const GO_ACCT = GO === 'accounting'
+// ?go=accounting&tab=settings: Intuit's Connect / Reconnect link (and public/qbo-disconnected.html) open Accounting > Settings
+const GO_ACCT_SETTINGS = GO_ACCT && new URLSearchParams(location.search).get('tab') === 'settings'
 const QBO_BACK = (() => { const q = new URLSearchParams(location.search); return q.get('qbo') ? { qbo: q.get('qbo')!, msg: q.get('msg') } : null })()
 
 export default function App() {
@@ -396,7 +398,7 @@ export default function App() {
   const [adminTab, setAdminTabS] = useState<AdminTab>('dash')
   const [procTab, setProcTabS] = useState<PTab>(() => ([...PROC_TABS, ...PROC_TAIL].find(x => x.t === stored('proc.tab'))?.t ?? 'dashboard'))
   const [compTab, setCompTabS] = useState<CTab>(() => ([...COMP_TABS, ...COMP_TAIL].find(x => x.t === stored('comp.tab'))?.t ?? 'dashboard'))
-  const [acctTab, setAcctTabS] = useState<ATab>(GO_ACCT ? (QBO_BACK ? 'settings' : 'dashboard') : 'dashboard')
+  const [acctTab, setAcctTabS] = useState<ATab>(GO_ACCT ? (QBO_BACK || GO_ACCT_SETTINGS ? 'settings' : 'dashboard') : 'dashboard')
   const [nurTab, setNurTabS] = useState<NTab>(() => ([...NURSERY_TABS, ...NURSERY_TAIL].find(t => t.t === stored('nur.tab'))?.t ?? 'dashboard'))
   const [modMenu, setModMenu] = useState(false)
   const [more, setMore] = useState(false)

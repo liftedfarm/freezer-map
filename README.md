@@ -69,6 +69,13 @@ Run `supabase/046_accounting.sql`. Then in Vercel > Settings > Environment Varia
 - optional `CRON_SECRET` (the nightly payment check in `vercel.json` sends it), `QBO_REDIRECT_URI` (default `https://freezer-map-8i3h.vercel.app/api/qbo/callback`)
 
 The redirect URI must also be listed in the Intuit app (Settings > Redirect URIs). An Accounting Admin connects in Accounting > Settings.
+
+Intuit production app settings (static pages in `public/`):
+- Host domain: `freezer-map-8i3h.vercel.app` · Launch URL: `https://freezer-map-8i3h.vercel.app`
+- Connect / Reconnect URL: `https://freezer-map-8i3h.vercel.app/?go=accounting&tab=settings` (opens Accounting > Settings)
+- Disconnect URL: `https://freezer-map-8i3h.vercel.app/qbo-disconnected.html`
+- EULA: `https://freezer-map-8i3h.vercel.app/eula.html` · Privacy policy: `https://freezer-map-8i3h.vercel.app/privacy.html`
+- Production redirect URI: `https://freezer-map-8i3h.vercel.app/api/qbo/callback`
 Server functions: `api/qbo/connect.js` (start sign-in), `callback.js` (Intuit sends the browser back), `run.js` (status, push, sync, check, setup, disconnect, auto), `cron.js` (nightly balances).
 
 Auto-send (invoices go 30 minutes after they're made, `api/qbo/autopush.js`) is switched on and off in Accounting > Settings > QuickBooks by an Accounting Admin (`app_settings` key `acct.auto_push`). Turn it off before switching `QBO_ENV` from sandbox to production, send one invoice by hand to check it, then turn it back on.
