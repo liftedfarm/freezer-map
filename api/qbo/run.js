@@ -1,5 +1,5 @@
-// Accounting actions: { action: 'status' | 'push' | 'sync' | 'check' | 'setup' | 'disconnect', invoice_id? }
-import { Busy, ENV, caller, classId, companyName, connection, itemId, missingSetup, pushInvoice, qbo, query, revoke, rpc, send, syncBalances, syncCustomers, table } from './_lib.js'
+// Accounting actions: { action: 'status' | 'push' | 'sync' | 'check' | 'setup' | 'disconnect' | 'auto', invoice_id?, on? }
+import { Busy, ENV, caller, classId, companyName, connection, itemId, missingSetup, pushInvoice, qbo, query, revoke, rpc, send, syncBalances, syncCustomers, table, upsert } from './_lib.js'
 
 export const config = { maxDuration: 60 }
 
@@ -74,6 +74,22 @@ export default async function handler(req, res) {
       }
       await table(`qbo_refs?env=eq.sandbox&kind=in.(item,class)`, { method: 'DELETE' })
       return send(res, 200, { env: ENV, ...made, income_account: income.Name })
+    }
+    if (action === 'auto') {
+      // auto-send on / off (app_settings acct.auto_push). Anyone in Accounting sees it; an Accounting Admin changes it ({ on: true | false }).
+      const read = async key => (await table(`app_settings?key=eq.${key}&select=value`))?.[0]?.value
+      if (typeof body.on === 'boolean') {
+        if (!me.admin || me.viewing_as) return send(res, 403, { error: 'Only an Accounting Admin can turn auto-send on or off' })
+        const was = (await read('acct.auto_push')) ?? 'true'
+        await upsert('app_settings', [{ key: 'acct.auto_push', value: body.on ? 'true' : 'false' }], 'key')
+        await table('events', { method: 'POST', body: JSON.stringify({ user_email: me.email, type: 'app_setting', note: 'acct.auto_push',
+          details: { key: 'acct.auto_push', value: body.on ? 'true' : 'false', was, env: ENV } }) }).catch(() => {})
+      }
+      const [on, minutes] = await Promise.all([read('acct.auto_push'), read('acct.auto_push_minutes')])
+      // invoices already past their wait: they go within 10 minutes of auto-send being on (the check stops at 40)
+      let due = null
+      try { due = ((await rpc('acct_autopush_due', { p_env: ENV })) || []).length } catch { /* still show the switch */ }
+      return send(res, 200, { env: ENV, on: (on ?? 'true') === 'true', minutes: Number(minutes) || 30, due })
     }
     if (action === 'disconnect') {
       if (!me.admin || me.viewing_as) return send(res, 403, { error: 'Only an Accounting Admin' })

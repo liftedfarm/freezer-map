@@ -334,6 +334,40 @@ function SettingsTab({ api, flash, conn, env, refresh, sb, canEdit }: { api: Acc
   )
 }
 
+/** Settings > QuickBooks: auto-send on / off. Off = nothing goes to QuickBooks on its own (pause it while switching sandbox to the real books). */
+function AutoSend({ api, flash, env, conn }: { api: AcctApi; flash: Flash; env: Env; conn: { connected: boolean } | null }) {
+  type Auto = { on: boolean; minutes: number; due: number | null }
+  const [auto, setAuto] = useState<Auto | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const load = () => api.server<Auto>('run', { action: 'auto' }).then(a => { setAuto(a); setErr(null) }).catch(e => setErr(msg(e)))
+  useEffect(() => { load() }, [conn])
+  async function flip(on: boolean) {
+    if (!auto) return
+    const waiting = auto.due ? `${auto.due >= 40 ? '40 or more invoices are' : auto.due === 1 ? '1 invoice is' : `${auto.due} invoices are`} already waiting and will go to ${ENV_LABEL[env]} within 10 minutes.` : ''
+    const ask = on
+      ? `Turn auto-send on? New invoices for outside customers will go to ${ENV_LABEL[env]} ${auto.minutes} minutes after they're made.${waiting ? `\n\n${waiting} Check To send first.` : ''}`
+      : 'Turn auto-send off? Nothing goes to QuickBooks on its own until it\'s back on. Invoices made while it\'s off won\'t go later on their own: send them from To send.'
+    if (!confirm(ask)) return
+    setBusy(true)
+    try { setAuto(await api.server<Auto>('run', { action: 'auto', on })); flash(on ? 'Auto-send is on' : 'Auto-send is off') }
+    catch (e) { flash(msg(e), true) } finally { setBusy(false) }
+  }
+  return (
+    <>
+      <h3>Auto-send</h3>
+      {err ? <p className="bad-t small">Couldn't load auto-send: {err}</p> : !auto ? <p className="muted small">Loading…</p> : <>
+        <p>{auto.on ? <b className="ok-t">On</b> : <b className="bad-t">Off</b>}{' · '}
+          {auto.on ? `new invoices for outside customers go to ${ENV_LABEL[env]} ${auto.minutes} minutes after they're made (editing restarts the clock).`
+            : 'nothing goes to QuickBooks on its own. Send invoices by hand from To send.'}</p>
+        {!!auto.due && <p className={auto.on ? 'muted small' : 'warn-t small'}>{auto.due >= 40 ? '40 or more invoices are' : auto.due === 1 ? '1 invoice is' : `${auto.due} invoices are`} past their wait{auto.on ? ' and going out now.' : ' and will go within 10 minutes of turning auto-send on.'}</p>}
+        <div className="row wrap"><button className={auto.on ? 'ghost' : 'primary'} disabled={busy} onClick={() => flip(!auto.on)}>{busy ? 'Saving…' : auto.on ? 'Turn auto-send off' : 'Turn auto-send on'}</button></div>
+        <p className="muted small">Turn it off before switching from the sandbox to your real QuickBooks, send one invoice by hand to check it, then turn it back on. While it's off, new invoices aren't queued, so they won't go later on their own.</p>
+      </>}
+    </>
+  )
+}
+
 function ConnPanel({ api, flash, conn, env, refresh }: { api: AcctApi; flash: Flash; conn: { env: Env; connected: boolean; company?: string; error?: string } | null; env: Env; refresh: () => void }) {
   const [busy, setBusy] = useState<string | null>(null)
   const [rows, setRows] = useState<Conn[]>([])
@@ -358,6 +392,7 @@ function ConnPanel({ api, flash, conn, env, refresh }: { api: AcctApi; flash: Fl
         ? <div className="warnbox">Not found in QuickBooks with exactly these names:{check.missing.products.length > 0 && <div>Products: {check.missing.products.join(', ')}</div>}{check.missing.classes.length > 0 && <div>Classes: {check.missing.classes.join(', ')}</div>}
             <div className="small">Add them in QuickBooks, or fix the names here under Products / Classes.{env === 'sandbox' ? ' On the sandbox, Set up sandbox adds them.' : ''}</div></div>
         : <p className="ok-t">✓ All {check.products} products and the {check.classes} classes the rules use are in QuickBooks.</p>)}
+      <AutoSend api={api} flash={flash} env={env} conn={conn} />
       <h3>How it works</h3>
       <ul className="muted small">
         <li>Which QuickBooks the app talks to is set in Vercel (QBO_ENV = sandbox or production). Switching means changing that, redeploying, and connecting here again.</li>
