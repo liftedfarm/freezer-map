@@ -89,6 +89,10 @@ export class ProcApi {
   }
   send(ids: number[], processor: number, on: string | null) { return this.rpc<number>('proc_send', { p_ids: ids, p_processor: processor, p_on: on }) }
   receive(ids: number[], site: string, tags: Record<string, string>) { return this.rpc<number>('proc_receive', { p_ids: ids, p_site: site, p_tags: tags }) }
+  /** 117 processor returns: our label is on (METRC new package from theirs), close a wet lot, link a return to its lot */
+  retag(pallet: number, tag: string) { return this.rpc<{ code: string; from: string; to: string }>('proc_retag', { p_pallet: pallet, p_tag: tag }) }
+  closeLot(lot: number) { return this.rpc<{ code: string; wet: number; dry: number; yield_pct: number | null }>('proc_close_lot', { p_lot: lot }) }
+  linkReturn(pallet: number, lot: number) { return this.rpc<void>('proc_link_return', { p_pallet: pallet, p_lot: lot }) }
   dried(ids: number[]) { return this.rpc<number>('proc_mark_dried', { p_ids: ids }) }
   startRun(kind: 'buck' | 'sort' | 'trim' | 'machine', inputs: { pallet: number; lbs: number | null }[], request: number | null, notes: string, site: string, on: string | null) {
     return this.rpc<Run>('proc_start_run', { p_kind: kind, p_inputs: inputs, p_request: request, p_notes: notes, p_site: site, p_on: on })

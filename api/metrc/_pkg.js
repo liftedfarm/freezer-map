@@ -1,6 +1,6 @@
 // Package senders: weight adjustments, splits, combines, finish (used up), tag and hand-made package checks, ship checks.
 import {
-  LB, Skip, Wait, db, enc, inputs, itemId, locationFrom, one, packageAnywhere, packageByTag, pallet, r4, reasonFrom, setting,
+  LB, Skip, Wait, all, cached, db, enc, inputs, itemId, lc, locationFrom, one, packageAnywhere, packageByTag, pallet, r4, reasonFrom, setting,
   tagIdFor, tol, up, write, ymd, adjustReasons,
 } from './_core.js'
 
@@ -219,4 +219,45 @@ export async function sendShipCheck(job, ctx) {
   if (where?.state === 'active') throw new Error(`${tag} is still active on ${lic} in METRC. It needs a manifest (or the move hasn't happened in METRC).`)
   if (where?.state === 'inactive') throw new Error(`${tag} is finished in METRC on ${lic}, not shipped on a manifest. Check what happened to it.`)
   throw new Error(`${tag} isn't in METRC on ${lic}`)
+}
+
+// ---------- processor return: new package from the processor's package onto our tag (117) ----------
+// The whole package, finished. Our item for the strain and product when METRC has it on this license; otherwise the
+// processor's item ("use same item", always allowed for a received package) and the result says so.
+const FINISH = { unbucked: 'UF', bucked: 'BF', bucked_standards: 'BS', standards: 'ST', smalls: 'SM', trim: 'TR' }
+const FIN_RE = { unbucked: /unbucked/i, bucked: /bucked dry flower|bucked flower/i, standards: /standards/i, smalls: /smalls/i, trim: /trim/i }
+export async function sendRetag(job, ctx) {
+  const d = job.details || {}
+  const lic = job.license
+  if (!lic) throw new Error('No license on this to-do')
+  const tag = up(job.tag ?? d.to), from = up(d.from)
+  if (!tag || !from) throw new Error('This to-do is missing a tag')
+  const done = await packageByTag(lic, tag)
+  if (done) {
+    if (lc(done.sourcePackageLabels ?? '').includes(lc(from))) throw new Skip(`METRC already has ${tag} from ${from}`)
+    throw new Error(`${tag} is already a different METRC package (${done.item?.name ?? '?'}, ${done.quantity} ${done.unitOfMeasureAbbreviation ?? ''}). Pick another tag.`)
+  }
+  const src = await packageByTag(lic, from)
+  if (!src) {
+    const where = await packageAnywhere(lic, from)
+    throw new Error(where ? `${from} is ${where.state} on ${lic} in METRC, not active. Receive the processor's manifest first.` : `${from} isn't in METRC on ${lic}`)
+  }
+  lbsOnly(src, from)
+  const qty = r4(src.quantity)
+  const pal = job.pallet_id ? await pallet(job.pallet_id) : null
+  // our item: the app's item for this strain / product / crop year, if METRC has that name on this license
+  const items = await cached(ctx, `items:${lic}`, () => all('/v2/packages/create/source-items', { licenseNumber: lic }, 10).catch(() => []))
+  const strain = pal?.strain ?? d.strain, product = pal?.product ?? d.product ?? 'unbucked'
+  const sn = lc(strain)
+  const mine = sn ? await db(`items?select=metrc_name,crop_year,strains(name)&finish=eq.${FINISH[product] ?? 'UF'}&active=is.true&order=crop_year.desc`).catch(() => []) : []
+  const want = (mine ?? []).filter(i => lc(i.strains?.name) === sn).map(i => lc(i.metrc_name))
+  const ours = want.map(n => items.find(i => lc(i.name) === n)).find(Boolean)
+    ?? items.find(i => sn && lc(i.strainName) === sn && (FIN_RE[product] ?? /./).test(i.name) && !/fresh frozen|wet|dry harvest/i.test(i.name))
+  const r = await createFromPackages(ctx, job, {
+    tag, qty, item: ours?.id ?? itemId(src),
+    sources: [{ tag: from, p: src, take: qty, finish: true }],
+    note: `Lifted app ${pal?.code ?? job.code ?? ''}: processor return onto our tag (was ${from})`,
+  })
+  r.info += ours ? ` · item ${ours.name}` : ` · kept the processor's item (${src.item?.name ?? '?'}): no ${strain ?? ''} ${product} item of ours on ${lic} in METRC`
+  return r
 }

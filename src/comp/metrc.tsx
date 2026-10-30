@@ -146,8 +146,8 @@ function Todo({ c }: { c: Ctx }) {
     try { await c.api.releaseMetrc(r.id); c.flash(kinds[r.kind ?? '']?.mode === 'auto' ? 'Released: goes on the next run' : 'Released: press Send when ready'); await load() }
     catch (e) { c.flash(errText(e), true) } finally { setBusy(false) }
   }
-  const exportCsv = () => download(`METRC to do ${today()}.csv`, toCsv(['When', 'License', 'Action', 'Package', 'Tag', 'Lbs', 'Details', 'Status', 'Note'],
-    shown.map(r => [when(r.at), r.license, r.action, r.code, r.tag, r.lbs, r.summary, ST[r.status][0], r.note])))
+  const exportCsv = () => download(`METRC to do ${today()}.csv`, toCsv(['#', 'When', 'License', 'Action', 'Package', 'Tag', 'Lbs', 'Details', 'Status', 'Note'],
+    shown.map(r => [r.id, when(r.at), r.license, r.action, r.code, r.tag, r.lbs, r.summary, ST[r.status][0], r.note])))
   const ids = shown.map(r => r.id)
   return <>
     <p className="muted">Everything done in the app that also has to be done in METRC (new packages, splits, combines, weight changes, runs, transfers), from when Compliance was switched on. Check them off once they're in METRC.</p>
@@ -164,9 +164,10 @@ function Todo({ c }: { c: Ctx }) {
       ...(status !== 'todo' ? [{ label: 'Back to to do', run: (ids: number[]) => setTo('todo', ids) }] : [])]} />
     {rows == null ? <p className="muted">Loading…</p> : !shown.length ? <p className="muted">{status === 'todo' ? 'Nothing waiting. Everything is checked off.' : 'Nothing here.'}</p>
       : <div className="tablewrap"><table className="ct">
-        <thead><tr><SelAll sel={sel} ids={ids} /><th>When</th><th>Action</th><th>Package</th><th className="hide-s">Tag</th><th className="num">Lbs</th><th className="hide-s">License</th><th>Status</th>{c.canEdit && !sel.on && <th />}</tr></thead>
+        <thead><tr><SelAll sel={sel} ids={ids} /><th className="num">#</th><th>When</th><th>Action</th><th>Package</th><th className="hide-s">Tag</th><th className="num">Lbs</th><th className="hide-s">License</th><th>Status</th>{c.canEdit && !sel.on && <th />}</tr></thead>
         <tbody>{shown.map(r => <tr key={r.id} onClick={() => sel.on && sel.toggle(r.id)} className={sel.on ? 'tap' : ''}>
           <SelBox sel={sel} id={r.id} />
+          <td className="num mono small">{r.id}</td>
           <td className="nowrap small">{when(r.at)}<div className="muted">{(r.details?.by as string | undefined)?.split('@')[0] ?? ''}</div></td>
           <td><b>{r.action}</b>{r.due_at && r.status === 'todo' && <div className={`small ${new Date(r.due_at) < new Date() ? 'neg' : 'muted'}`}>{new Date(r.due_at) > new Date() ? 'Not before' : 'Due'} {when(r.due_at)}</div>}{r.summary && <div className="muted small">{r.summary}</div>}{r.note && <div className={`small ${r.push_state === 'sent' ? 'muted' : 'neg'}`}>{r.note}</div>}
             {r.push_state && <div className="small" style={{ marginTop: 2 }}><span className={`pill ${PS[r.push_state][1]}`}>{PS[r.push_state][0]}</span>

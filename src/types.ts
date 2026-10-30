@@ -66,6 +66,9 @@ export interface Pallet {
   item_id?: number | null            // item (SKU) it belongs to (054)
   lot_id?: number | null             // harvest lot (054)
   grade?: Grade | null               // set on this pallet only; null = follow the lot / strain
+  wet_lot_id?: number | null         // 117: processor return, the wet lot it came from
+  their_tag?: boolean                // 117: still on the processor's tag (needs ours)
+  returned_at?: string | null        // 117: when it came back from the processor
 }
 
 /** one line when building or adding to a mixed pallet: whole package (lbs null) or lbs split off with a new tag */

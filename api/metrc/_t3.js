@@ -1,7 +1,7 @@
 // METRC through T3: the connection test and runJob (one to-do, sent or dry-run checked). Plumbing is in _core.js,
 // the senders in _pkg.js (packages), _xfer.js (transfers, manifests, receiving) and _plants.js (nursery, plantings, harvests).
 import { Held, Skip, Wait, adjustReasons, all, db, enc, list, rpc, t3 } from './_core.js'
-import { sendAdjust, sendCombine, sendFinish, sendNewPackageCheck, sendShipCheck, sendSplit, sendTagCheck } from './_pkg.js'
+import { sendAdjust, sendCombine, sendFinish, sendNewPackageCheck, sendRetag, sendShipCheck, sendSplit, sendTagCheck } from './_pkg.js'
 import { sendReceive, sendTransfer_ } from './_xfer.js'
 import {
   sendFlower, sendHarvestFinish, sendHarvestPackage, sendHarvestPlants, sendHarvestWaste, sendNurseryClones, sendNurseryLoss,
@@ -52,7 +52,7 @@ export async function testConnection(by) {
 
 // ---------- senders, one per kind ----------
 const SENDERS = {
-  adjust: sendAdjust, split: sendSplit, combine: sendCombine, finish: sendFinish, tag: sendTagCheck, new_package: sendNewPackageCheck,
+  adjust: sendAdjust, split: sendSplit, combine: sendCombine, finish: sendFinish, tag: sendTagCheck, new_package: sendNewPackageCheck, retag: sendRetag,
   transfer: sendTransfer_, manifest: sendTransfer_, ship_check: sendShipCheck, receive: sendReceive,
   nursery_clones: sendNurseryClones, nursery_mothers: sendNurseryMothers, nursery_loss: sendNurseryLoss,
   planting: sendPlanting, plant_loss: sendPlantLoss, flower: sendFlower,

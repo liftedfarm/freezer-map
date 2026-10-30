@@ -301,6 +301,9 @@ export async function incoming(ctx, license, withPackages = true) {
       row.items = (await all('/v2/transfers/packages', { licenseNumber: license, deliveryId: t.deliveryId }, 5)).map(p => ({
         id: p.packageId ?? p.id, tag: up(p.packageLabel ?? p.label), item: p.productName ?? p.item?.name, strain: p.itemStrainName ?? null,
         qty: p.shippedQuantity, uom: p.shippedUnitOfMeasureAbbreviation, state: p.shipmentPackageState,
+        // where it came from (processor returns: our wet package's tag), as the nightly sync reads it
+        source_labels: (Array.isArray(p.sourcePackageLabels) ? p.sourcePackageLabels : String(p.sourcePackageLabels ?? '').split(/[,;\s]+/)).map(up).filter(x => x.length > 10),
+        source_harvests: p.sourceHarvestNames ?? null,
       }))
     }
     out.push(row)

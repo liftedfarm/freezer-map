@@ -8,6 +8,10 @@
 //   { action: 'manifest_pdf', license, manifest } the METRC manifest PDF (base64)
 //   { action: 'incoming', license?, module? } incoming METRC deliveries for our licenses (Inbound / Receiving per module)
 //   { action: 'inbound_receive', license, delivery_id }  receive a delivery in METRC (Live) and bring it into the app
+//   { action: 'proc_returns' }               processor returns waiting (Processing > Drying): incoming deliveries from processors,
+//                                            each package matched to its wet lot
+//   { action: 'proc_return_receive', license, delivery_id, lines: [{ tag, wet_lot_id, our_tag, reweigh, more_coming }] }
+//                                            receive it in METRC, make the dry packages, close the wet lots, queue the retags
 //   { action: 'kick' }                      right after a save in the app: send to-dos that are ready (Auto kinds, Live only)
 //   { action: 'package_weight', pallet_id }  TEMPORARY (114): what METRC shows right now for a pallet's tag (pallet card)
 //   { action: 'tag_range', planting_id, purpose, count, first?, after?, save? }  plant tag runs for a planting:
@@ -175,6 +179,60 @@ export default async function handler(req, res) {
       await db('events', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ user_email: me.email, type: 'inbound_delivery',
         note: `Manifest ${d.manifest} from ${d.from}`, details: { license: lic, site: l.site, manifest: d.manifest, from: d.from, packages: d.items.length, request, app } }) }).catch(() => {})
       return send(res, 200, { live, ok: true, info: `Received manifest ${d.manifest} in METRC. App: ${app.in} back in, ${app.new} new, ${app.skipped} not pallets.`, app })
+    }
+    if (body.action === 'proc_returns') {
+      // product deliveries to OHR / GVR from a processor (its license on Processors), or with a package that came from one
+      // of our wet lots out at a processor (METRC source package)
+      const lics = (await ours()).filter(l => l.site !== '1PN')
+      const out = []
+      for (const l of lics) {
+        if (Date.now() - t0 > 45000) break
+        try { out.push(...(await incoming({}, l.license, true)).map(d => ({ ...d, site: l.site }))) }
+        catch (e) { out.push({ license: l.license, site: l.site, error: e.message }) }
+      }
+      const rows = out.flatMap(d => (d.items ?? []).map(p => ({ tag: p.tag, strain: p.strain, item: p.item, source_labels: p.source_labels ?? [] })))
+      const m = await rpc('proc_returns_match', { p_rows: rows })
+      const procLic = new Set((m.processor_licenses ?? []).map(up))
+      const hit = new Map((m.rows ?? []).map(r => [up(r.tag), r]))
+      const keep = out.filter(d => d.error || procLic.has(up(d.from_license)) || (d.items ?? []).some(p => hit.get(up(p.tag))?.how === 'source'))
+      for (const d of keep) for (const p of d.items ?? []) { const r = hit.get(up(p.tag)); p.wet_lot_id = r?.wet_lot_id ?? null; p.match = r?.how ?? null }
+      return send(res, 200, { live: await isLive(), deliveries: keep, lots: m.lots ?? [] })
+    }
+    if (body.action === 'proc_return_receive') {
+      if (!me.can_send) return send(res, 403, { error: 'Only a Processing Admin (or Compliance) can receive processor returns' })
+      const live = await isLive()
+      const lic = String(body.license || '')
+      const l = (await ours()).find(x => x.license === lic)
+      if (!l) return send(res, 400, { error: 'Not one of our licenses' })
+      const ds = await incoming({}, lic, true)
+      const d = ds.find(x => Number(x.delivery_id) === Number(body.delivery_id))
+      if (!d) return send(res, 404, { error: 'That delivery isn\'t waiting on this license any more (received already?)' })
+      const LBS = /^(lb|lbs|pound)/i
+      if (d.items.some(p => !LBS.test(p.uom ?? ''))) return send(res, 400, { error: 'This delivery has packages not in pounds. Receive it in Distribution > Inbound.' })
+      const lines = new Map((Array.isArray(body.lines) ? body.lines : []).map(x => [up(x.tag), x]))
+      // our tags: not on anything else, and one of our METRC tags
+      const want = [...lines.values()].map(x => up(x.our_tag)).filter(Boolean)
+      if (new Set(want).size !== want.length) return send(res, 400, { error: 'The same tag is on two packages' })
+      const ctx = { live, by: me.email }
+      const { body: request } = await receiveDelivery(ctx, lic, d)
+      if (!live) return send(res, 200, { live, ok: true, info: `Dry run OK: METRC would take manifest ${d.manifest} (${d.items.length} packages). Nothing changed.` })
+      const left = (await incoming({}, lic, false)).some(x => Number(x.delivery_id) === Number(d.delivery_id))
+      if (left) return send(res, 200, { live, ok: false, info: 'Sent, but METRC still shows the delivery as incoming. Check it in METRC.' })
+      const rows = d.items.map(p => { const x = lines.get(up(p.tag)) ?? {}
+        return { tag: p.tag, lbs: Number(p.qty), item: p.item, strain: p.strain, wet_lot_id: x.wet_lot_id ?? null, our_tag: x.our_tag ? up(x.our_tag) : null,
+                 reweigh: x.reweigh ?? null, more_coming: !!x.more_coming } })
+      const app = await rpc('proc_return_receive', { p_site: l.site, p_license: lic, p_manifest: d.manifest, p_from: d.from, p_rows: rows, p_by: me.email })
+      await db(`metrc_app_transfers?delivery_id=eq.${Number(d.delivery_id)}`, { method: 'PATCH', body: JSON.stringify({ state: 'received', received_at: new Date().toISOString(), received_by: me.email }), headers: { Prefer: 'return=minimal' } }).catch(() => {})
+      const sibs = await db(`comp_metrc_actions?select=id&kind=eq.receive&status=in.(todo,error)&tag=in.(${d.items.map(p => enc(p.tag)).join(',')})`)
+      if (sibs.length) await rpc('metrc_close_siblings', { p_ids: sibs.map(x => x.id), p_by: me.email, p_note: `Received manifest ${d.manifest} (processor return)` })
+      await db('events', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ user_email: me.email, type: 'inbound_delivery',
+        note: `Processor return: manifest ${d.manifest} from ${d.from}`, details: { license: lic, site: l.site, manifest: d.manifest, from: d.from, packages: d.items.length, request, app } }) }).catch(() => {})
+      // retags whose label is already on: send now (Auto), same as any other to-do
+      let sent = []
+      const kind = (await db('metrc_push_kinds?kind=eq.retag&select=mode'))?.[0]?.mode
+      if (kind === 'auto') { const q = await sendQueue({ live, by: me.email, deadline: t0 + 45000 }, null, t0, 45000); sent = q.out }
+      return send(res, 200, { live, ok: true, app, sent,
+        info: `Received manifest ${d.manifest}: ${(app.rows ?? []).length} packages${(app.closed ?? []).length ? `, ${app.closed.length} wet lot${app.closed.length === 1 ? '' : 's'} closed` : ''}.` })
     }
     if (body.action === 'package_weight') {
       // TEMPORARY (114, remove once the app and METRC are in sync): live METRC weight for the pallet card.

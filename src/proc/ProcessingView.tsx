@@ -28,6 +28,7 @@ import { MetrcNote } from '../metrc'
 import type { InvAction } from '../metrc'
 import { openMetrcManifest } from '../metrcCall'
 import type { PalletManifest } from '../metrcCall'
+import { CloseLotButton, ComingBack, NeedsOurTag } from './Returns'
 
 /** the freezer map's pallet actions, handed down from App (same dialogs, same METRC queue) */
 export interface InvBridge { act: (p: Pallet, kind: InvAction) => void; info: (id: number) => { load?: string; mixed?: string; inSnap: boolean }; tick: number }
@@ -61,7 +62,7 @@ interface Ctx {
   d: PData; api: ProcApi; flash: Flash; canEdit: boolean; isAdmin: boolean; reload: () => Promise<void>
   where: (p: Pallet) => string; procName: (id: number | null | undefined) => string; heldFor: (id: number) => string | null
   runOf: (palletId: number) => Run | undefined; openRun: (r: Run, logDate?: string) => void; openPkg: (p: Pallet) => void
-  start: (kind: Run['kind'], ids?: number[]) => void; send: (ids: number[]) => void; back: (ids: number[]) => void; putAway: (p: Pallet) => void
+  start: (kind: Run['kind'], ids?: number[]) => void; send: (ids: number[]) => void; putAway: (p: Pallet) => void
   manifest: (ids: number[]) => Promise<void>; dried: (ids: number[]) => Promise<void>
   /** the METRC manifest a package went out on, and a button that opens it */
   mfst: (p: Pallet) => ReactNode
@@ -83,7 +84,6 @@ export default function ProcessingView({ backend, flash, tab, go, isAdmin, canEd
   const [pkg, setPkg] = useState<Pallet | null>(null)
   const [startKind, setStartKind] = useState<{ kind: Run['kind']; req?: Req; ids?: number[] } | null>(null)
   const [sendIds, setSendIds] = useState<number[] | null>(null)
-  const [backIds, setBackIds] = useState<number[] | null>(null)
   const [away, setAway] = useState<Pallet | null>(null)
   const load = useCallback(async () => {
     if (!api) return
@@ -128,7 +128,7 @@ export default function ProcessingView({ backend, flash, tab, go, isAdmin, canEd
     heldFor: id => held.get(id) ?? null, runOf: id => openRuns.get(id),
     openRun: (r, date) => { setRun(r); setLogDate(date ?? null) }, openPkg: p => setPkg(p),
     sb, inv,
-    start: (kind, ids) => setStartKind({ kind, ids }), send: ids => setSendIds(ids), back: ids => setBackIds(ids), putAway: p => setAway(p),
+    start: (kind, ids) => setStartKind({ kind, ids }), send: ids => setSendIds(ids), putAway: p => setAway(p),
     manifest: async ids => {
       try { const m = await api.manifest(ids); const { manifestPdf, manifestFile } = await import('../manifest'); const b = await manifestPdf(m)
         const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = manifestFile(m); a.click() } catch (e) { flash(errText(e), true) }
@@ -149,7 +149,6 @@ export default function ProcessingView({ backend, flash, tab, go, isAdmin, canEd
       {tab === 'review' && <Review c={c} go={go} />}
       {tab === 'settings' && (isAdmin ? <SettingsTab c={c} sb={sb} /> : <div className="list"><h2>Settings</h2><p className="muted">Only Processing Admins can change Processing settings.</p></div>)}
       {sendIds && <SendSheet c={c} ids={sendIds} onClose={() => setSendIds(null)} />}
-      {backIds && <BackSheet c={c} ids={backIds} onClose={() => setBackIds(null)} />}
       {away && <PutAwaySheet c={c} p={away} sb={sb} onClose={() => setAway(null)} />}
       {startKind && <StartRun c={c} kind={startKind.kind} req={startKind.req} pre={startKind.ids} onClose={() => setStartKind(null)} onDone={r => { setStartKind(null); setRun(r) }} />}
       {run && <RunSheet key={run.id} c={c} run={d.runs.find(x => x.id === run.id) ?? run} logDate={logDate} setLogDate={setLogDate} onClose={() => { setRun(null); setLogDate(null) }} />}
@@ -263,7 +262,7 @@ function ByStrain({ d }: { d: PData }) {
 function Drying({ c }: { c: Ctx }) {
   const { d } = c
   const [wet, setWet] = useState<DryHarvest | null>(null)
-  const selWet = useSel(), selAway = useSel()
+  const selWet = useSel()
   const [older, setOlder] = useState(false)
   const toPack = toPackage(d, older), hidden = toPackage(d, true).length - toPackage(d).length
   const wetHere = d.pallets.filter(p => p.product === 'wet' && live(p))
@@ -274,7 +273,8 @@ function Drying({ c }: { c: Ctx }) {
   return (
     <div className="list">
       <h2>Drying</h2>
-      <p className="muted">Dry flower leaves the farm as raw wet weight (not deleafed) in one METRC package, goes to a drying processor or our trailers, and comes back unbucked. It isn't weighed on the stem: the wet weight stays on paper until bucking.</p>
+      <p className="muted">Dry flower leaves the farm as raw wet weight (not deleafed) in one METRC package and goes to a drying processor or our trailers. Processors send it back dry, on their METRC manifest: receive the manifest below, and each package goes onto our own tag.</p>
+      {c.sb && <ComingBack sb={c.sb} api={c.api} flash={c.flash} reload={c.reload} isAdmin={c.isAdmin} />}
 
       <h3 className="csec">Dry harvests to package <span className="muted">{toPack.length || ''}</span></h3>
       {toPack.length ? <div className="cwrap fit"><table className="ctable">
@@ -293,13 +293,16 @@ function Drying({ c }: { c: Ctx }) {
         { label: 'Buck', run: async ids => c.start('buck', ids) },
       ]} />
 
-      <h3 className="csec row between"><span>At processors <span className="muted">{away.length ? `${away.length} · ${n0(sum(away.map(w)))} lbs wet` : ''}</span></span>{away.length > 0 && c.canEdit && <SelButton sel={selAway} />}</h3>
+      <h3 className="csec"><span>At processors <span className="muted">{away.length ? `${away.length} · ${n0(sum(away.map(w)))} lbs wet` : ''}</span></span></h3>
       {!away.length && <p className="muted">Nothing out at a processor.</p>}
       {[...byProc.entries()].map(([pid, ps]) => <div key={pid}>
         <h4 className="subh row between"><span>{c.procName(pid) || 'Unknown processor'} <span className="muted">{ps.length} · {n0(sum(ps.map(w)))} lbs</span></span></h4>
-        <PkgTable c={c} rows={ps} sel={selAway} extra={p => <span className="row nowrap" style={{ justifyContent: 'flex-end', gap: 6 }}>{c.mfst(p)}{p.sent_on ? <span className={days(p.sent_on, today()) > 21 ? 'warn-t' : 'muted'}>{days(p.sent_on, today())} days out</span> : null}</span>} />
+        <PkgTable c={c} rows={ps} extra={p => <span className="row nowrap" style={{ justifyContent: 'flex-end', gap: 6 }}>{c.mfst(p)}{p.sent_on ? <span className={days(p.sent_on, today()) > 21 ? 'warn-t' : 'muted'}>{days(p.sent_on, today())} days out</span> : null}
+          {c.isAdmin && <CloseLotButton p={p} d={d} api={c.api} flash={c.flash} reload={c.reload} />}</span>} />
       </div>)}
-      <SelBar sel={selAway} noun="package" actions={[{ label: 'Back unbucked', run: async ids => c.back(ids) }]} />
+      {away.length > 0 && <p className="muted small">A wet lot closes by itself when its packages are received above. Close lot is for lots that came back before (or with More coming).</p>}
+
+      {c.sb && <NeedsOurTag d={d} api={c.api} sb={c.sb} flash={c.flash} reload={c.reload} isAdmin={c.isAdmin} openPkg={c.openPkg} />}
 
       <h3 className="csec">Back, needs a spot <span className="muted">{backHere.length || ''}</span></h3>
       {backHere.length ? <PkgTable c={c} rows={backHere} extra={p => c.canEdit ? <span className="row"><button className="ghost small" onClick={e => { e.stopPropagation(); c.putAway(p) }}>Put in a trailer</button>
@@ -377,25 +380,6 @@ function SendSheet({ c, ids, onClose }: { c: Ctx; ids: number[]; onClose: () => 
     <F label="Sent"><DateIn value={on} onChange={setOn} /></F>
     <p className="muted small-note">The packages leave the map until they come back. Next you can print the manifest sheet for the METRC transfer.</p>
     <SaveBar busy={busy} onCancel={onClose} onSave={save} saveLabel="Sent" disabled={proc == null} />
-  </Sheet>
-}
-
-function BackSheet({ c, ids, onClose }: { c: Ctx; ids: number[]; onClose: () => void }) {
-  const ps = c.d.pallets.filter(p => ids.includes(p.id))
-  const [site, setSite] = useState<string | null>('GVR')
-  const [tags, setTags] = useState<Record<string, string>>({})
-  const [busy, setBusy] = useState(false)
-  async function save() {
-    setBusy(true)
-    try { await c.api.receive(ids, site ?? 'GVR', Object.fromEntries(Object.entries(tags).filter(([, v]) => v.trim()))); c.flash(`${ids.length} back, unbucked. Put them in a trailer.`); await c.reload(); onClose() }
-    catch (e) { c.flash(errText(e), true) } finally { setBusy(false) }
-  }
-  return <Sheet title={`${ids.length} back unbucked`} onClose={onClose}>
-    <F label="Arrived at"><Pick value={site} options={[{ v: 'GVR', l: 'GVR (processor license)' }, { v: 'OHR', l: 'OHR' }]} onChange={setSite} /></F>
-    <p className="muted small-note">Not weighed: each keeps its wet weight until it's bucked. If the processor sent it back on a new METRC tag, enter it.</p>
-    {ps.map(p => <div key={p.id} className="row noline"><b className="grow">{p.code} <span className="muted">{p.strain} · {n0(w(p))} lbs · …{(p.package_tag ?? '').slice(-6)}</span></b>
-      <TagIn pallet={p.id} value={tags[p.id] ?? ''} placeholder="New tag (if it changed)" onChange={v => setTags(t => ({ ...t, [p.id]: v }))} /></div>)}
-    <SaveBar busy={busy} onCancel={onClose} onSave={save} saveLabel="Back" />
   </Sheet>
 }
 
@@ -706,7 +690,7 @@ function PackageSheet({ c, p, onClose }: { c: Ctx; p: Pallet; onClose: () => voi
       {free && (p.product === 'wet' || p.product === 'unbucked') && <button className="primary" onClick={() => go(() => c.start('buck', [p.id]))}>Buck</button>}
       {free && (p.product === 'wet' || p.product === 'unbucked') && <button className="ghost" onClick={() => go(() => c.send([p.id]))}>Send to processor</button>}
       {free && p.product === 'wet' && <button className="ghost" onClick={() => go(() => c.dried([p.id]))}>Dried here</button>}
-      {p.status === 'at_processor' && <button className="primary" onClick={() => go(() => c.back([p.id]))}>Back unbucked</button>}
+      {p.status === 'at_processor' && <span className="muted small">Comes back on the processor's METRC manifest: Processing › Drying › Coming back.</span>}
       {c.mfst(p)}
       {free && p.product === 'bucked' && <button className="ghost" onClick={() => go(() => c.start('sort', [p.id]))}>Sort</button>}
       {free && takes('trim', p) && <button className="primary" onClick={() => go(() => c.start('trim', [p.id]))}>Trim</button>}
