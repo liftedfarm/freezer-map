@@ -399,6 +399,7 @@ function ConnPanel({ api, flash, conn, env, refresh }: { api: AcctApi; flash: Fl
         <li>The sandbox is Intuit's test company. Sending there doesn't lock invoices or mark them paid.</li>
         <li>In the real QuickBooks: sent invoices lock in the app, and paid / balance come back from QuickBooks every night (or Check payments now).</li>
         <li>The QuickBooks login is kept on the server. Nobody can read it from the app.</li>
+        <li>Problems with QuickBooks? Email <a href="mailto:accounting@lifted-organics.com?subject=QuickBooks%20connection">accounting@lifted-organics.com</a>. Include the error message and its QuickBooks ref, if it shows one.</li>
       </ul>
       <h3>Matched in QuickBooks</h3>
       {refs == null ? <button className="ghost small" onClick={() => api.refs().then(setRefs).catch(e => flash(msg(e), true))}>Show matches</button> : (
