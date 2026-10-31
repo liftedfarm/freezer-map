@@ -65,9 +65,12 @@ export function authorizeUrl(state) {
 async function tokenCall(params) {
   const r = await fetch(TOKEN_URL, { method: 'POST', headers: { Authorization: basic(), Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(params) })
   const j = await r.json().catch(() => ({}))
-  if (!r.ok) throw new Error(j.error_description || j.error || `QuickBooks sign-in failed (${r.status})`)
+  if (!r.ok) { const e = new Error(j.error_description || j.error || `QuickBooks sign-in failed (${r.status})`); e.status = r.status; e.code = j.error; throw e }
   return j
 }
+// Intuit turned the sign-in down (invalid_grant: refresh token expired or revoked; invalid_client: wrong keys).
+// The app never asks again with the same login: it waits until an Accounting Admin reconnects (callback.js clears this).
+const RECONNECT = 'Reconnect needed: '
 const tokenRow = t => ({
   access_token: t.access_token, refresh_token: t.refresh_token,
   access_expires_at: new Date(Date.now() + (Number(t.expires_in) || 3600) * 1000).toISOString(),
@@ -84,12 +87,18 @@ export async function connection() {
   const rows = await table(`qbo_connection?env=eq.${ENV}&select=*`)
   const c = rows && rows[0]
   if (!c) throw new Error(`QuickBooks (${ENV}) isn't connected yet. An Accounting Admin can connect it in Accounting > Settings.`)
+  // turned down before: don't try that login again
+  if (String(c.last_error || '').startsWith(RECONNECT))
+    throw new Error(`The QuickBooks connection needs to be reconnected (${c.last_error.slice(RECONNECT.length)}). An Accounting Admin can do it in Accounting > Settings.`)
+  // renew only when the access token (1 hour) has run out or is about to
   if (!c.access_token || new Date(c.access_expires_at).getTime() < Date.now() + 5 * 60000) {
     let t
     try { t = tokenRow(await tokenCall({ grant_type: 'refresh_token', refresh_token: c.refresh_token })) }
     catch (e) {
-      await table(`qbo_connection?env=eq.${ENV}`, { method: 'PATCH', body: JSON.stringify({ last_error: `Sign-in expired: ${e.message}` }) }).catch(() => {})
-      throw new Error(`The QuickBooks connection expired (${e.message}). An Accounting Admin needs to connect it again in Accounting > Settings.`)
+      const refused = e.status >= 400 && e.status < 500   // Intuit said no: stop until someone reconnects
+      await table(`qbo_connection?env=eq.${ENV}`, { method: 'PATCH', body: JSON.stringify({ last_error: refused ? `${RECONNECT}${e.message}` : `Couldn't reach QuickBooks to renew the sign-in: ${e.message}` }) }).catch(() => {})
+      throw new Error(refused ? `The QuickBooks connection expired (${e.message}). An Accounting Admin needs to connect it again in Accounting > Settings.`
+        : `Couldn't reach QuickBooks (${e.message}). It will try again on the next scheduled check.`)
     }
     await table(`qbo_connection?env=eq.${ENV}`, { method: 'PATCH', body: JSON.stringify(t) })
     Object.assign(c, t)
@@ -110,6 +119,10 @@ export async function qbo(c, method, path, body) {
     body: body ? JSON.stringify(body) : undefined,
   })
   const j = await r.json().catch(() => ({}))
+  if (r.status === 401) {
+    // access token refused before its hour was up (e.g. disconnected in QuickBooks): renew once on the next check, never again with this one
+    await table(`qbo_connection?env=eq.${ENV}`, { method: 'PATCH', body: JSON.stringify({ access_expires_at: new Date(0).toISOString() }) }).catch(() => {})
+  }
   if (!r.ok || j.Fault) { const e = new Error(qboError(j, r.status)); e.status = r.status; e.tid = r.headers.get('intuit_tid'); throw e }
   return j
 }
@@ -379,6 +392,7 @@ export async function autoPush(c, budgetMs = 50000) {
       failed++
       const msg = String(e.message || e) + (e.tid ? ` (QuickBooks ref ${e.tid})` : '')
       await rpc('acct_record_push', { p_inv: Number(id), p_env: ENV, p_qbo_id: null, p_doc: null, p_total: null, p_balance: null, p_error: msg, p_by: 'auto' }).catch(() => {})
+      if (e.status === 401) break   // QuickBooks refused the login: stop here, don't try the rest with it
     }
   }
   return { due: (due ?? []).length, sent, failed, busy }
