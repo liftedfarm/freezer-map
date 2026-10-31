@@ -69,6 +69,8 @@ export interface Pallet {
   wet_lot_id?: number | null         // 117: processor return, the wet lot it came from
   their_tag?: boolean                // 117: still on the processor's tag (needs ours)
   returned_at?: string | null        // 117: when it came back from the processor
+  staged_reason?: 'received' | 'harvest' | 'processor' | 'split' | null  // 137: landed in Staging with no spot; null = put there by hand
+  staged_at?: string | null          // 137: when it went into Staging
 }
 
 /** one line when building or adding to a mixed pallet: whole package (lbs null) or lbs split off with a new tag */

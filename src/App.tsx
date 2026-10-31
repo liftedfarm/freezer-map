@@ -197,6 +197,7 @@ function describe(ix: Index, e: InvEvent, names?: Map<number, string>) {
     case 'removed': { const r = (e.details as { reason?: string } | null)?.reason
       return `${code} removed: ${r === 'used' ? 'used up' : r === 'shipped' ? 'shipped outside the app' : 'entered by mistake'} (${lbs(e.lbs)})` }
     case 'unslot': return `${code} taken out of ${whereIs(ix, e.from_slot_id)}`
+    case 'staged': return `${code} landed in ${whereIs(ix, e.to_slot_id)} (no spot yet)`
     case 'restored': { const d = e.details as { site?: string; staging?: boolean } | null
       return `${code} brought back from Archived to ${e.to_slot_id != null ? whereIs(ix, e.to_slot_id) : `Needs a spot at ${d?.site ?? ''}`} (${lbs(e.lbs)})` }
     case 'pallet_deleted': return `${code} deleted for good (was archived, ${lbs(e.lbs)})`
@@ -652,8 +653,12 @@ export default function App() {
   const unplaced = snap.pallets.filter(p => p.status === 'unslotted' && !p.container_id)
   const review = snap.pallets.filter(p => p.needs_review)
   const pendingTags = snap.pallets.filter(p => p.tag_pending)
-  const fromHarvest = snap.pallets.filter(p => p.harvest_id != null && p.status === 'in_freezer' && p.slot_id != null && ix.freezer.get(ix.slot.get(p.slot_id)?.freezer_id ?? -1)?.kind === 'staging')
-  const reviewCount = fromHarvest.length + review.length + pendingTags.length + unplaced.length
+  const inStaging = (p: Pallet) => !p.container_id && p.status === 'in_freezer' && p.slot_id != null && ix.freezer.get(ix.slot.get(p.slot_id)?.freezer_id ?? -1)?.kind === 'staging'
+  const fromHarvest = snap.pallets.filter(p => inStaging(p) && p.staged_reason === 'harvest')
+  const agingCut = Date.now() - STAGING_AGING_DAYS * 86400000
+  const aging = snap.pallets.filter(p => inStaging(p) && p.staged_at && Date.parse(p.staged_at) < agingCut)
+    .sort((a, b) => Date.parse(a.staged_at!) - Date.parse(b.staged_at!))
+  const reviewCount = aging.length + review.length + pendingTags.length + unplaced.length
   const selected = palletId != null ? (ix.pallet.get(palletId) ?? pool.find(p => p.id === palletId) ?? extra.find(p => p.id === palletId) ?? (scanned?.id === palletId ? scanned : null)) : null
   const where = (p: Pallet): string => {
     const m = p.container_id ? ix.pallet.get(p.container_id) : undefined
@@ -953,7 +958,7 @@ export default function App() {
         )}
         {view === 'map' && (
           <MapView ix={ix} freezers={siteFreezers} trailers={siteTrailers} staging={stagingOf(site)} query={query} extra={extra} where={where}
-            needsSpot={unplaced.filter(p => (p.received_site ?? siteOf(p)) === site)} onOpen={openFreezer} onPallet={setPalletId} />
+            onOpen={openFreezer} onPallet={setPalletId} />
         )}
         {view === 'freezer' && freezerId != null && (
           <FreezerView ix={ix} L={L!} plan={plan} freezer={ix.freezer.get(freezerId)!} query={query} placing={!!placing}
@@ -964,6 +969,7 @@ export default function App() {
             onSlot={tapSlot}
             onPalletTap={tapPallet}
             onSelect={() => { if (selecting) { setSelecting(false); setSel([]) } else setSelecting(true) }}
+            onOrder={id => heldBy.has(id) || ix.loadOf.has(id)}
             onCompact={compact}
             onStatus={(st) => setConfirm({
               text: `Set ${fName(ix.freezer.get(freezerId)!)} to "${st}"?`, ok: 'Update',
@@ -971,15 +977,13 @@ export default function App() {
             })} />
         )}
         {view === 'review' && (<>
-          {fromHarvest.length > 0 && <>
-            <ListView title={`Harvest staging (${fromHarvest.length})`} empty=""
-              note="Pallets logged at harvest, waiting in Staging. Open Staging on the map and move them into freezers."
-              items={fromHarvest} ix={ix} where={where} onPallet={setPalletId} />
-            <div style={{ height: 18 }} />
-          </>}
+          <ListView title={`Staging aging (${aging.length})`} empty="Nothing has sat in Staging more than 2 days."
+            note="In Staging more than 2 days and not going out on an order yet. Move them into a freezer, or put them on a load."
+            items={aging} ix={ix} where={p => `${where(p)} · ${stagedAgo(p)}${heldBy.has(p.id) || ix.loadOf.has(p.id) ? ' · on an order' : ''}`} onPallet={setPalletId} />
+          <div style={{ height: 18 }} />
           {unplaced.length > 0 && <>
-            <ListView title={`Needs a spot (${unplaced.length})`} empty=""
-              note="Pallets that aren't in a freezer slot, including ones just received from a load. Open one and tap Move to put it somewhere."
+            <ListView title={`No site yet (${unplaced.length})`} empty=""
+              note="Not in a freezer and the app doesn't know which site they're at, so they can't go to Staging on their own. Open one and tap Move."
               items={unplaced} ix={ix} where={where} onPallet={setPalletId} />
             <div style={{ height: 18 }} />
           </>}
@@ -1406,11 +1410,10 @@ function MiniGrid({ ix, slots, query }: { ix: Index; slots: Slot[]; query: strin
   )
 }
 
-function MapView({ ix, freezers, trailers = [], staging, query, extra, where, onOpen, onPallet, needsSpot = [] }: {
+function MapView({ ix, freezers, trailers = [], staging, query, extra, where, onOpen, onPallet }: {
   ix: Index; freezers: Freezer[]; trailers?: Freezer[]; staging?: Freezer; query: string; extra: Pallet[]; where: (p: Pallet) => string
-  onOpen: (id: number) => void; onPallet: (id: number) => void; needsSpot?: Pallet[]
+  onOpen: (id: number) => void; onPallet: (id: number) => void
 }) {
-  const [showSpot, setShowSpot] = useState(false)
   const ids = new Set(freezers.map(f => f.id))
   const inSite = (p: Pallet) => p.slot_id != null && ids.has(ix.slot.get(p.slot_id)?.freezer_id ?? -1)
   const tops = [...ix.pallet.values()].filter(p => !p.container_id && inSite(p))
@@ -1447,26 +1450,18 @@ function MapView({ ix, freezers, trailers = [], staging, query, extra, where, on
         </div>
       )}
       {staging && (() => {
-        const ss = ix.slotsOf.get(staging.id) ?? []
+        const ss = [...(ix.slotsOf.get(staging.id) ?? [])].sort((a, b) => a.row - b.row)
         const sp = ss.flatMap(s => ix.inSlot.get(s.id) ?? [])
+        const landed = sp.filter(p => p.staged_reason && p.staged_reason !== 'harvest').length
         return (
           <button className="stagecard" onClick={() => onOpen(staging.id)}>
-            <b>Staging</b><span className="muted">{sp.length}/26 · {lbs(sp.reduce((a, p) => a + weightOf(ix, p), 0))}</span>
-            <span className="stage-strip">{sp.slice(0, 26).map(p => { const w = swatch(p.strain); return <i key={p.id} className={p.kind === 'mixed' ? 'mx' : w.cls} style={p.kind === 'mixed' ? undefined : w.style} /> })}</span>
+            <b>Staging</b><span className="muted">{sp.length} pallet{sp.length === 1 ? '' : 's'} · {lbs(sp.reduce((a, p) => a + weightOf(ix, p), 0))} · {ss.length} spots, grows as it fills{landed > 0 && <> · <span className="landed-t">{landed} just landed</span></>}</span>
+            <span className="stage-strip">{ss.map(s => { const p = ix.inSlot.get(s.id)?.[0]; if (!p) return <i key={s.id} className="open" />
+              if (p.staged_reason && p.staged_reason !== 'harvest') return <i key={s.id} className="landed" />
+              const w = swatch(p.strain); return <i key={s.id} className={p.kind === 'mixed' ? 'mx' : w.cls} style={p.kind === 'mixed' ? undefined : w.style} /> })}</span>
           </button>
         )
       })()}
-      {needsSpot.length > 0 && <>
-        <button className="stagecard needspot" onClick={() => setShowSpot(v => !v)}>
-          <b>Needs a spot</b><span className="muted">{needsSpot.length} pallet{needsSpot.length === 1 ? '' : 's'} · {lbs(needsSpot.reduce((a, p) => a + weightOf(ix, p), 0))} · received, not in a slot yet</span>
-          <span className="muted small">{showSpot ? 'Hide' : 'Show'}</span>
-        </button>
-        {showSpot && <div className="hitlist spotlist">
-          {needsSpot.map(p => <button key={p.id} className="hit" onClick={() => onPallet(p.id)}>
-            <b>{p.code}</b> <span>{p.kind === 'mixed' ? 'Mixed' : p.strain}</span> <span className="muted">{lbs(weightOf(ix, p))}</span></button>)}
-          <p className="muted small">Tap one, then Move to put it in a slot. They can also go straight onto a load from here.</p>
-        </div>}
-      </>}
       {[freezers, trailers].map((list, li) => list.length > 0 && (
         <div key={li}>
           {li === 1 && <h3 className="map-sec">Reefer trailers{list[0]?.site === 'GVR' && <> <span className="muted">dry flower · processor license</span></>}</h3>}
@@ -1491,13 +1486,31 @@ function MapView({ ix, freezers, trailers = [], staging, query, extra, where, on
   )
 }
 
-function FreezerView({ ix, L, plan, freezer, query, placing, selecting, sel, siblings, onOpen, onBack, onSlot, onPalletTap, onStatus, onSelect, onCompact }: {
+const STAGING_AGING_DAYS = 2
+const STAGED_BADGE: Record<string, string> = { received: 'RECEIVED', harvest: 'HARVEST', processor: 'PROCESSOR', split: 'SPLIT' }
+function stagedAgo(p: Pallet): string {
+  if (!p.staged_at) return 'in Staging'
+  const d = Math.floor((Date.now() - Date.parse(p.staged_at)) / 86400000)
+  return d <= 0 ? 'in Staging today' : `in Staging ${d} day${d === 1 ? '' : 's'}`
+}
+type StageGroup = 'orders' | 'landed' | 'harvest'
+const STAGE_GROUPS: { key: StageGroup; title: string; note: string }[] = [
+  { key: 'orders', title: 'Building orders', note: 'Put here by hand, or held for an order or a load.' },
+  { key: 'landed', title: 'Just landed', note: 'Came in with no spot: off a load, a split, or back from a processor. Move them into a freezer.' },
+  { key: 'harvest', title: 'Harvest staging', note: 'Logged at harvest. Move them into freezers.' },
+]
+function readFolded(): StageGroup[] { try { return JSON.parse(localStorage.getItem('stagingFolded') ?? '[]') } catch { return [] } }
+
+function FreezerView({ ix, L, plan, freezer, query, placing, selecting, sel, siblings, onOpen, onBack, onSlot, onPalletTap, onStatus, onSelect, onCompact, onOrder }: {
   ix: Index; L: Layout; plan: Plan; freezer: Freezer; query: string; placing: boolean; selecting: boolean; sel: number[]; siblings: Freezer[]
+  onOrder?: (id: number) => boolean
   onOpen: (id: number) => void; onBack: () => void; onSlot: (s: Slot) => void
   onPalletTap: (p: Pallet, role: 'stay' | 'incoming' | 'leaving', s: Slot) => void; onStatus: (s: FreezerStatus) => void
   onSelect: () => void; onCompact: () => void
 }) {
   const staging = freezer.kind === 'staging'
+  const [folded, setFolded] = useState<StageGroup[]>(readFolded)
+  const fold = (g: StageGroup) => setFolded(f => { const n = f.includes(g) ? f.filter(x => x !== g) : [...f, g]; try { localStorage.setItem('stagingFolded', JSON.stringify(n)) } catch { /* private window */ } return n })
   const slots = ix.slotsOf.get(freezer.id) ?? []
   const grid = [...slots].sort((a, b) => a.row - b.row || a.col - b.col)
   const views = new Map(grid.map(s => [s.id, slotView(L, plan, s.id)]))
@@ -1526,7 +1539,7 @@ function FreezerView({ ix, L, plan, freezer, query, placing, selecting, sel, sib
         style={stacked && p.kind !== 'mixed' ? sw.style : undefined}
         {...(role !== 'leaving' && !placing ? draggable({ id: p.id, label: `${p.code} · ${p.kind === 'mixed' ? 'Mixed' : p.strain ?? ''}` }) : {})}
         onClick={e => { e.stopPropagation(); onPalletTap(p, role, s) }}>
-        <b>{selecting && <span className={`tick ${picked ? 'on' : ''}`}>{picked ? '✓' : ''}</span>}{p.code}{p.needs_review && <span className="flag" title={p.needs_review}>!</span>}{(p.tag_pending || on.some(c => c.tag_pending)) && <span className="flag tag" title="METRC tag pending">T</span>}{ix.loadOf.has(p.id) && <span className="flag load" title={`Planned on ${ix.loadOf.get(p.id)!.load.code}`}>L</span>}{p.pushed === false && <span className="flag np" title="Not pushed to METRC yet (Harvest log)">NP</span>}</b>
+        <b>{selecting && <span className={`tick ${picked ? 'on' : ''}`}>{picked ? '✓' : ''}</span>}{p.code}{p.needs_review && <span className="flag" title={p.needs_review}>!</span>}{(p.tag_pending || on.some(c => c.tag_pending)) && <span className="flag tag" title="METRC tag pending">T</span>}{ix.loadOf.has(p.id) && <span className="flag load" title={`Planned on ${ix.loadOf.get(p.id)!.load.code}`}>L</span>}{p.pushed === false && <span className="flag np" title="Not pushed to METRC yet (Harvest log)">NP</span>}{staging && p.staged_reason && <span className={`sbadge sb-${p.staged_reason}`} title={stagedAgo(p)}>{STAGED_BADGE[p.staged_reason]}</span>}</b>
         <span className="strain">{note ? <i className="pnote">{note}</i> : p.kind === 'mixed' ? `Mixed · ${on.length} pkg${on.length === 1 ? '' : 's'}: ${[...new Set(on.map(c => c.strain))].join(', ')}` : <>{p.product && p.product !== 'fresh_frozen' && <em className="prodtag">{PRODUCT_SHORT[p.product]}</em>}{(p.product ?? 'fresh_frozen') === 'fresh_frozen' && gradeOf(ix, p).grade === 'BHO' && <em className="prodtag bho">BHO</em>}{p.strain ?? p.label ?? 'No strain'}</>}</span>
         <span className="w">{p.kind !== 'mixed' && p.current_weight == null ? 'no weight' : lbs(weightOf(ix, p))}</span>
         {trailer && role === 'stay' && !placing && !stacked && <span className="spangrip" title="Drag to another spot on this side to make it take more space; drag back here to undo"
@@ -1540,7 +1553,7 @@ function FreezerView({ ix, L, plan, freezer, query, placing, selecting, sel, sib
         <button className="ghost" onClick={onBack}>‹ All</button>
         <div className="fz-title">
           <h2>{freezer.site} {staging ? 'Staging' : fName(freezer)}</h2>
-          <div className="muted">{ps.length} pallet{ps.length === 1 ? '' : 's'}{staging ? ` of 26` : ''} · {lbs(ps.reduce((a, p) => a + weightOf(ix, p), 0))}</div>
+          <div className="muted">{ps.length} pallet{ps.length === 1 ? '' : 's'} · {lbs(ps.reduce((a, p) => a + weightOf(ix, p), 0))}{staging ? ` · spots 1 to ${grid.length}` : ''}</div>
         </div>
         {!staging && <Select className={`status st-${freezer.status.replace(/ /g, '-')}`} value={freezer.status}
           onChange={e => onStatus(e.target.value as FreezerStatus)}>
@@ -1556,9 +1569,9 @@ function FreezerView({ ix, L, plan, freezer, query, placing, selecting, sel, sib
         {!staging ? <button className="ghost small" disabled={!next} onClick={() => next && onOpen(next.id)}>{next ? fShort(next) : ''} ›</button> : <span />}
       </div>
       {!staging && <div className="muted small-t center-t">BACK</div>}
-      {staging && <p className="muted small-note">Where orders get built. Positions fill in the order you place pallets.</p>}
-      <div className={`grid ${staging ? 'stage-grid' : ''} ${dead && placingNow ? 'dead' : ''}`}>
-        {grid.map(s => {
+      {staging && <p className="muted small-note">Where orders get built and where anything without a spot lands. Always 2 open spots at the end; more appear as it fills.</p>}
+      {(() => {
+      const slotBtn = (s: Slot) => {
           const v = views.get(s.id)!
           const occ = occupants(v)
           const all = occ.length + v.leaving.length
@@ -1584,8 +1597,37 @@ function FreezerView({ ix, L, plan, freezer, query, placing, selecting, sel, sib
               {v.leaving.map(x => tile(x.p, 'leaving', s, stacked, x.m))}
             </button>
           )
+      }
+      if (!staging) return <div className={`grid ${dead && placingNow ? 'dead' : ''}`}>{grid.map(slotBtn)}</div>
+      const groupOf = (s: Slot): StageGroup | null => {
+        const v = views.get(s.id)!
+        const p = occupants(v)[0] ?? v.leaving[0]?.p
+        if (!p) return null
+        if (onOrder?.(p.id)) return 'orders'
+        if (p.staged_reason === 'harvest') return 'harvest'
+        if (p.staged_reason) return 'landed'
+        return 'orders'
+      }
+      const open = grid.filter(s => groupOf(s) == null)
+      return <>
+        {STAGE_GROUPS.map(g => {
+          const ss = grid.filter(s => groupOf(s) === g.key)
+          if (!ss.length) return null
+          const gp = ss.flatMap(s => occupants(views.get(s.id)!))
+          const shut = folded.includes(g.key)
+          return <div key={g.key} className="stage-group">
+            <button className="stage-gh" onClick={() => fold(g.key)}>
+              <span className="caret">{shut ? '▸' : '▾'}</span><b>{g.title}</b><span className="muted"> · {gp.length} · {lbs(gp.reduce((a, p) => a + weightOf(ix, p), 0))}</span>
+            </button>
+            {!shut && <><p className="muted small-note">{g.note}</p><div className={`grid stage-grid ${dead && placingNow ? 'dead' : ''}`}>{ss.map(slotBtn)}</div></>}
+          </div>
         })}
-      </div>
+        <div className="stage-group">
+          <div className="stage-gh static"><b>Open spots</b><span className="muted"> · {open.length}</span></div>
+          <div className={`grid stage-grid ${dead && placingNow ? 'dead' : ''}`}>{open.map(slotBtn)}</div>
+        </div>
+      </>
+      })()}
       {!staging && <div className="door">DOOR</div>}
     </div>
   )

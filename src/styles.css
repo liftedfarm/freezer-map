@@ -1162,3 +1162,19 @@ html:has(.app.shell), html:has(.app.shell) body { height: 100%; overflow: hidden
 .sheet .tbl { border-collapse: collapse; }
 .sheet .tbl td, .sheet .tbl th { padding: 5px 6px; border-bottom: 1px solid var(--line); vertical-align: top; text-align: left; }
 .metrc-lic + .metrc-lic { border-top: 1px solid var(--line); margin-top: 6px; }
+
+/* 137: staging that grows */
+.stagecard .stage-strip { flex-wrap: wrap; }
+.stagecard .stage-strip i.open { background: transparent; outline: 1px dashed var(--line); }
+.stagecard .stage-strip i.landed { background: #d97706; }
+.landed-t { color: #d97706; font-weight: 600; }
+.stage-group { margin: 10px 0 4px; }
+.stage-gh { display: flex; align-items: baseline; gap: 4px; width: 100%; text-align: left; background: none; border: 0; padding: 6px 2px; color: inherit; font-size: 15px; cursor: pointer; }
+.stage-gh.static { cursor: default; }
+.stage-gh .caret { width: 14px; display: inline-block; color: var(--muted, #8a978f); }
+.stage-group .small-note { margin: 0 0 6px; }
+.sbadge { display: inline-block; font-size: 9px; font-weight: 700; border-radius: 4px; padding: 0 4px; margin-left: 4px; vertical-align: 2px; letter-spacing: .02em; }
+.sb-received { background: #d97706; color: #111; }
+.sb-split { background: #d97706; color: #111; }
+.sb-harvest { background: #3b82f6; color: #fff; }
+.sb-processor { background: #a855f7; color: #fff; }
