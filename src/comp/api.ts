@@ -62,8 +62,15 @@ export interface MAction {
   kind?: string | null; push_state?: 'checked' | 'sending' | 'sent' | 'failed' | 'waiting' | 'held' | null; stop_requested?: boolean; push_attempts?: number; push_at?: string | null
   push_by?: string | null; push_error?: string | null; push_request?: unknown; push_response?: unknown
 }
-export interface PushKind { kind: string; label: string; phase: number; sort: number; ready: boolean; mode: 'off' | 'approve' | 'auto'; updated_by: string | null; updated_at: string }
-export interface T3Conn {
+export interface PushKind { kind: string; label: string; phase: number; sort: number; ready: boolean; mode: 'off' | 'approve' | 'auto'; updated_by: string | null; updated_at: string
+  route?: 'api' | 't3'; fallback?: 'off' | 'safe' | 'check'; api_ready?: boolean; can_verify?: boolean }
+export interface UsageService { service: 't3' | 'api'; label: string; period: string; days_in_month: number; counting_since: string; days_counted: number
+  limit: number; calls: number; reads: number; writes: number; errors: number; today: number; pct: number; avg_per_day: number; projected: number; projected_pct: number
+  level: number; by_source: Record<string, number>; days: { day: string; calls: number; errors: number }[]; last_at: string | null }
+export interface Usage { warn: string | null; services: UsageService[] }
+export interface ApiConn { api_ok: boolean | null; api_tested_at: string | null; api_tested_by: string | null; api_base: string | null; api_sandbox: string | null
+  api_licenses: { license: string; name: string | null; in_api: boolean; in_app: boolean; site: string | null }[] | null; api_error: string | null }
+export interface T3Conn extends Partial<ApiConn> {
   ok: boolean | null; tested_at: string | null; tested_by: string | null; error: string | null; who: Record<string, unknown> | null
   licenses: { license: string; name: string | null; in_t3: boolean; in_app: boolean; site: string | null; permissions: string[]; permissions_error?: string; reasons_error?: string }[] | null
   reasons: Record<string, { id: number; name: string; requiresNote: boolean }[]> | null
@@ -275,6 +282,10 @@ export class CompApi {
     return j as SyncResult
   }
   testT3() { return this.metrc<T3Conn>({ action: 'test' }) }
+  testApi() { return this.metrc<ApiConn>({ action: 'test_api' }) }
+  setRoute(kind: string, route: 'api' | 't3' | null, fallback: 'off' | 'safe' | 'check' | null) { return this.rpc<void>('metrc_set_route', { p_kind: kind, p_route: route, p_fallback: fallback }) }
+  usage() { return this.rpc<Usage>('metrc_usage_now', {}) }
+  setUsage(service: 't3' | 'api' | null, limit: number | null, warn: string | null) { return this.rpc<void>('metrc_set_usage', { p_service: service, p_limit: limit, p_warn: warn }) }
   // ----- Phase 2 mapping -----
   async mapData(): Promise<MapData> {
     const all = async <T,>(q: (a: number, b: number) => PromiseLike<{ data: unknown; error: { message: string } | null }>) => {

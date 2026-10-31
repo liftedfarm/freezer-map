@@ -1,6 +1,6 @@
 // METRC through T3, overnight (vercel.json cron, ~2am California): the big jobs. Flips to flowering promote thousands of
 // immature plants with plant tags, a piece at a time; what's left continues the next night. Live only. Needs CRON_SECRET.
-import { isLive, missing, rpc, runJob, send } from './_t3.js'
+import { isLive, missing, rpc, runJob, send, useSource } from './_t3.js'
 
 export const config = { maxDuration: 300 }
 const BUDGET_MS = 270000
@@ -9,6 +9,7 @@ export default async function handler(req, res) {
   const secret = process.env.CRON_SECRET
   if (!secret || req.headers.authorization !== `Bearer ${secret}`) return send(res, 401, { error: 'no' })
   if (missing().length) return send(res, 200, { skipped: `missing ${missing().join(', ')}` })
+  useSource('overnight')
   const t0 = Date.now()
   try {
     if (!(await isLive())) return send(res, 200, { skipped: 'dry run (not live)' })

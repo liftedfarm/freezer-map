@@ -1,5 +1,6 @@
 // METRC through T3, from the app:
 //   { action: 'test' }                      Compliance Admin: connection test
+//   { action: 'test_api' }                  Compliance Admin: METRC API (Metrc Connect) connection test (138)
 //   { action: 'probe', path, query }        Compliance Admin: read-only look at a T3 collection
 //   { action: 'send', ids: [...] }          send (Live) or dry-run check to-dos
 //   { action: 'checklist', load_id }        the METRC checklist for every pending stop of a load (Depart needs it green)
@@ -16,7 +17,7 @@
 //   { action: 'package_weight', pallet_id }  TEMPORARY (114): what METRC shows right now for a pallet's tag (pallet card)
 //   { action: 'tag_range', planting_id, purpose, count, first?, after?, save? }  plant tag runs for a planting:
 //        suggest the next clean run (no first), check a run (first), or check and hold it for the planting (save)
-import { sendQueue, asUser, caller, db, isLive, missing, rpc, runJob, send, t3, testConnection } from './_t3.js'
+import { sendQueue, asUser, caller, db, isLive, missing, rpc, runJob, send, t3, testApi, testConnection, useSource } from './_t3.js'
 import { incoming, loadChecklist, receiveDelivery } from './_xfer.js'
 import { enc, packageAnywhere, t3file, up } from './_core.js'
 import { checkRun, suggestRun } from './_tagrange.js'
@@ -35,11 +36,16 @@ export default async function handler(req, res) {
   const me = await caller(req)
   if (!me) return send(res, 403, { error: 'Sign in again' })
   const body = req.body || {}
+  useSource('app')
   const t0 = Date.now()
   try {
     if (body.action === 'test') {
       if (!me.admin) return send(res, 403, { error: 'Only a Compliance Admin can test the METRC connection' })
       return send(res, 200, await testConnection(me.email))
+    }
+    if (body.action === 'test_api') {
+      if (!me.admin) return send(res, 403, { error: 'Only a Compliance Admin can test the METRC API connection' })
+      return send(res, 200, await testApi(me.email))
     }
     if (body.action === 'probe') {
       if (!me.admin) return send(res, 403, { error: 'Only a Compliance Admin' })

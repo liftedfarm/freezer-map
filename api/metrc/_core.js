@@ -4,12 +4,38 @@
 // Every write goes with applyDynamicValidation=true. Dry run (Compliance > Settings) leaves submit off, so T3 checks the
 // request against METRC without sending it. Live adds submit=true.
 
+import { AsyncLocalStorage } from 'node:async_hooks'
+
 const T3 = process.env.T3_BASE_URL || 'https://api.trackandtrace.tools'
 const SB = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL
 const ANON = process.env.VITE_SUPABASE_ANON_KEY
 const SERVICE = process.env.SUPABASE_SERVICE_ROLE_KEY
 
-export function send(res, status, body) { res.status(status).setHeader('Cache-Control', 'no-store'); return res.json(body) }
+/** answer the request (and save the call counts first: every handler answers through here) */
+export async function send(res, status, body) { await flushUsage(); res.status(status).setHeader('Cache-Control', 'no-store'); return res.json(body) }
+
+// ---------- usage meters (138): every call to T3 or the METRC API is counted, per day and source ----------
+// Source = what started the calls: worker (every minute), overnight, nightly (the METRC pull), app (someone in the app).
+const usageSource = new AsyncLocalStorage()
+/** call at the top of a handler */
+export function useSource(source) { usageSource.enterWith({ source }) }
+let pending = {}
+let pendingN = 0
+/** count one call; flushes on its own every 25 calls */
+export async function tally(service, method, ok) {
+  const source = usageSource.getStore()?.source ?? 'app'
+  const k = `${service}|${source}`
+  const p = (pending[k] ??= { service, source, reads: 0, writes: 0, errors: 0 })
+  if (String(method).toUpperCase() === 'GET') p.reads++; else p.writes++
+  if (!ok) p.errors++
+  if (++pendingN >= 25) await flushUsage()
+}
+export async function flushUsage() {
+  if (!pendingN) return
+  const rows = Object.values(pending)
+  pending = {}; pendingN = 0
+  try { await rpc('metrc_count_calls', { p_rows: rows }) } catch { /* 138 not run yet: counts are dropped, sending goes on */ }
+}
 export const missing = () => ['T3_SECRET_KEY', 'SUPABASE_SERVICE_ROLE_KEY'].filter(k => !process.env[k]).concat(SB && ANON ? [] : ['VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY'])
 
 // ---------- Supabase as the server ----------
@@ -70,10 +96,14 @@ export async function t3(method, path, { query, body } = {}) {
     for (const x of Array.isArray(v) ? v : [v]) qs.append(k, String(x))
   }
   const q = qs.toString() ? `?${qs}` : ''
-  const r = await fetch(`${T3}${path}${q}`, {
-    method, headers: { 'X-T3-API-Key': process.env.T3_SECRET_KEY, Accept: 'application/json', ...(body ? { 'Content-Type': 'application/json' } : {}) },
-    body: body ? JSON.stringify(body) : undefined,
-  })
+  let r
+  try {
+    r = await fetch(`${T3}${path}${q}`, {
+      method, headers: { 'X-T3-API-Key': process.env.T3_SECRET_KEY, Accept: 'application/json', ...(body ? { 'Content-Type': 'application/json' } : {}) },
+      body: body ? JSON.stringify(body) : undefined,
+    })
+  } catch (e) { await tally('t3', method, false); throw e }
+  await tally('t3', method, r.ok)
   const text = await r.text()
   let j = null
   try { j = text ? JSON.parse(text) : null } catch { j = text }
@@ -86,6 +116,7 @@ export const unhtml = s => String(s ?? '').replace(/&amp;/g, '&').replace(/&lt;/
 export const WRITE_MAX = 25   // METRC (through T3) takes at most 25 entries in one write
 export async function write(ctx, path, license, body) {
   const one = b => t3('POST', path, { query: { licenseNumber: license, submit: ctx.live ? 'true' : undefined, applyDynamicValidation: 'true' }, body: b })
+    .then(x => { if (ctx.live) ctx.wrote = (ctx.wrote ?? 0) + 1; return x })
     .catch(e => explain(e, path, license, b, ctx))
   if (!Array.isArray(body) || body.length <= WRITE_MAX) return one(body)
   const out = []
@@ -222,6 +253,8 @@ export async function adjustReasons(license) {
 export async function t3file(path, query) {
   const qs = new URLSearchParams(Object.entries(query || {}).filter(([, v]) => v != null && v !== '')).toString()
   const r = await fetch(`${T3}${path}${qs ? `?${qs}` : ''}`, { headers: { 'X-T3-API-Key': process.env.T3_SECRET_KEY, Accept: 'application/pdf' } })
+    .catch(async e => { await tally('t3', 'GET', false); throw e })
+  await tally('t3', 'GET', r.ok)
   const buf = Buffer.from(await r.arrayBuffer())
   if (!r.ok) { let m = buf.toString('utf8').slice(0, 400); try { const j = JSON.parse(m); m = j.message || j.error?.message || m } catch { /* text */ } throw new T3Error(m || `T3 answered ${r.status}`, r.status) }
   return { type: r.headers.get('content-type') || 'application/pdf', base64: buf.toString('base64') }

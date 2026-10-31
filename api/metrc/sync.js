@@ -2,7 +2,7 @@
 // outgoing transfers and the packages on each delivery (since the last pull). Then close to-dos METRC already shows.
 // GET = nightly cron (vercel.json, needs CRON_SECRET). POST { licenses?: [...] } = "Pull from METRC" in Compliance > METRC > Reconcile.
 // Runs out of time gracefully: what's left is picked up by the next call (the app calls again until done).
-import { caller, db, missing, rpc, send, t3 } from './_t3.js'
+import { caller, db, missing, rpc, send, t3, useSource } from './_t3.js'
 import { list } from './_core.js'
 
 export const config = { maxDuration: 300 }
@@ -360,6 +360,7 @@ async function syncPlantsOnly(license, t0) {
 export default async function handler(req, res) {
   const t0 = Date.now()
   let by = 'nightly'
+  useSource(req.method === 'GET' ? 'nightly' : 'app')
   const only = req.body?.only ?? new URL(req.url ?? '/', 'http://x').searchParams.get('only')
   if (req.method === 'GET') {
     const secret = process.env.CRON_SECRET

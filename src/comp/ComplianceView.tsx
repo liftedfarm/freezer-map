@@ -5,6 +5,7 @@ import type { Backend } from '../api'
 import { scrollTop } from '../nav'
 import { CompApi } from './api'
 import { T3Settings } from './t3'
+import { UsageWarning } from './usage'
 import type { BackupRun, Cert, Deadline, DocType, Issue, MError, Material, Overview, TestNoFile } from './api'
 import type { CTab } from './tabs'
 import type { Ctx } from './ctx'
@@ -72,6 +73,7 @@ function Dashboard({ c }: { c: Ctx }) {
   const backupTone = !ov.sp_site ? 'warn' : b?.error || (b?.failed ?? 0) > 0 ? 'bad' : b && (ago(b.started_at) ?? 9) <= 2 ? 'ok' : 'warn'
   return <div className="list">
     <DashHead title="Compliance" sub="METRC, CCOF, licenses and the paper that proves it" />
+    <UsageWarning c={c} />
     <Tiles>
       <Tile value={ov.overdue} label="Late" sub="deadlines past due" tone={ov.overdue ? 'bad' : 'ok'} onClick={() => c.go('deadlines')} />
       <Tile value={ov.due_soon} label="Due soon" sub={`${ov.due_30} in the next 30 days`} tone={ov.due_soon ? 'warn' : undefined} onClick={() => c.go('deadlines')} />
@@ -134,6 +136,7 @@ function Review({ c }: { c: Ctx }) {
   const none = dl != null && !late.length && !noDate.length && !prods.length && !noPaper.length && !tests.length && !errs.length && !stale.length && !bad.length && !c.ov.customers_missing
   return <div className="list">
     <h2>Review</h2>
+    <UsageWarning c={c} />
     {none && <p className="muted">Nothing to look at. Everything's current.</p>}
     {late.length > 0 && <Fold id="comp.late" open title="Late" count={late.length} right={<button className="linkbtn" onClick={() => c.go('deadlines')}>Deadlines ›</button>}>
       <div className="dlist">{late.map(d => <div key={d.kind + d.ref} className="drow"><span className="grow">{d.title}</span><span className={`pill ${dueTone(d)}`}>{dueText(d)}</span></div>)}</div></Fold>}

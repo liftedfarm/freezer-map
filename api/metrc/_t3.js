@@ -1,6 +1,7 @@
 // METRC through T3: the connection test and runJob (one to-do, sent or dry-run checked). Plumbing is in _core.js,
 // the senders in _pkg.js (packages), _xfer.js (transfers, manifests, receiving) and _plants.js (nursery, plantings, harvests).
-import { Held, Skip, Wait, adjustReasons, all, db, enc, list, rpc, t3 } from './_core.js'
+import { Held, Skip, Wait, adjustReasons, all, cached, db, enc, list, rpc, t3 } from './_core.js'
+import { NotReady, apiConfigured, routeLabel } from './_api.js'
 import { sendAdjust, sendCombine, sendFinish, sendNewPackageCheck, sendRepackage, sendRetag, sendShipCheck, sendSplit, sendTagCheck } from './_pkg.js'
 import { sendReceive, sendTransfer_ } from './_xfer.js'
 import {
@@ -9,7 +10,8 @@ import {
 } from './_plants.js'
 import { sendItemCreate, sendStrainCreate } from './_setup.js'
 
-export { asUser, caller, db, isLive, missing, rpc, send, setting, t3 } from './_core.js'
+export { asUser, caller, db, isLive, missing, rpc, send, setting, t3, useSource } from './_core.js'
+export { testApi } from './_api.js'
 
 // ---------- connection test ----------
 export async function testConnection(by) {
@@ -60,7 +62,11 @@ const SENDERS = {
   harvest_plants: sendHarvestPlants, harvest_package: sendHarvestPackage, harvest_waste: sendHarvestWaste, harvest_finish: sendHarvestFinish,
   strain_create: sendStrainCreate, item_create: sendItemCreate,
 }
-export const canSend = kind => !!SENDERS[kind]
+// METRC API senders, one per kind, added as each is built and tested in the sandbox (then api_ready = true for that kind).
+// Same contract as the T3 senders: (job, ctx) => { state, info, request, response }, throw Skip / Wait / Held.
+const API_SENDERS = {}
+
+export const canSend = kind => !!SENDERS[kind] || !!API_SENDERS[kind]
 const VERIFY = new Set(['tag', 'new_package', 'ship_check'])   // checks: they never change METRC
 
 /** what has to be done in METRC before this one */
@@ -94,14 +100,76 @@ async function earlier(job) {
   return null
 }
 
+// ---------- route (T3 or METRC API) and fallback (138) ----------
+/** how a failed send failed:
+ *  safe     refused before anything reached METRC (key refused, rate limit, route not set up, can't connect): fine to try the other route
+ *  unknown  it may or may not have happened (timeout, server error, connection dropped, or an earlier step of this to-do already wrote)
+ *  refused  METRC (or T3) said the data is wrong: the other route hits the same METRC rules, so it never switches */
+export function failKind(e, ctx) {
+  if (e instanceof Wait || e instanceof Skip || e instanceof Held) return null
+  const status = e?.status
+  const code = e?.cause?.code ?? e?.code
+  let k
+  if (e?.notReady || status === 401 || status === 403 || status === 429 || ['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'CERT_HAS_EXPIRED'].includes(code)) k = 'safe'
+  else if (status >= 500 || e?.name === 'TimeoutError' || e?.name === 'AbortError' || ['ECONNRESET', 'UND_ERR_SOCKET', 'ETIMEDOUT', 'UND_ERR_CONNECT_TIMEOUT'].includes(code)
+    || (e instanceof TypeError && /fetch failed/i.test(e.message))) k = 'unknown'
+  else k = 'refused'
+  // a to-do that already wrote part of itself to METRC is never "safe" to start over somewhere else
+  if (k === 'safe' && (ctx.wrote ?? 0) > 0) k = 'unknown'
+  return k
+}
+const kindRow = (ctx, kind) => cached(ctx, `kind:${kind}`, async () => (await db(`metrc_push_kinds?kind=eq.${enc(kind)}&select=*`))?.[0] ?? { kind, route: 't3', fallback: 'off' })
+function senderFor(route, kind) {
+  if (route === 'api') {
+    if (!API_SENDERS[kind]) throw new NotReady(`The app can't send "${kind}" through the METRC API yet`)
+    if (!apiConfigured()) throw new NotReady('The METRC API keys aren\'t in Vercel yet')
+    return API_SENDERS[kind]
+  }
+  if (!SENDERS[kind]) throw new NotReady(`The app can't send "${kind}" through T3 yet`)
+  if (!process.env.T3_SECRET_KEY) throw new NotReady('T3_SECRET_KEY isn\'t in Vercel')
+  return SENDERS[kind]
+}
+async function sendRouted(job, ctx) {
+  const k = await kindRow(ctx, job.kind)
+  const first = k.route === 'api' ? 'api' : 't3'
+  const other = first === 'api' ? 't3' : 'api'
+  ctx.wrote = 0; ctx.route = first
+  try {
+    return { ...(await senderFor(first, job.kind)(job, ctx)), route: first }
+  } catch (e) {
+    const how = failKind(e, ctx)
+    const may = how && ((k.fallback === 'safe' && how === 'safe') || (k.fallback === 'check' && k.can_verify && (how === 'safe' || how === 'unknown')))
+    let next = null
+    try { if (may) next = senderFor(other, job.kind) } catch { next = null }
+    if (!next) {
+      if (how === 'unknown') e.message = `${e.message} (it may or may not have reached METRC: check METRC before sending again)`
+      e.route = first
+      throw e
+    }
+    const why = `${routeLabel(first)} failed (${String(e.message).slice(0, 200)}), sent through ${routeLabel(other)} instead.`
+    ctx.route = other
+    try {
+      const r = await next(job, ctx)
+      return { ...r, route: other, info: [why, r.info].filter(Boolean).join(' ') }
+    } catch (e2) {
+      if (e2 instanceof Skip || e2 instanceof Wait || e2 instanceof Held) { e2.route = other; if (e2 instanceof Skip) e2.message = `${why} ${e2.message}`; throw e2 }
+      e2.message = `${routeLabel(first)}: ${String(e.message).slice(0, 200)}. ${routeLabel(other)}: ${e2.message}`
+      e2.route = other
+      throw e2
+    }
+  }
+}
+const saveRoute = (id, route) => (route ? db(`comp_metrc_actions?id=eq.${id}`, { method: 'PATCH', body: JSON.stringify({ push_route: route }), headers: { Prefer: 'return=minimal' } }).catch(() => {}) : null)
+
 /** run one claimed job; never throws */
 export async function runJob(job, ctx) {
   const by = ctx.by
   try {
-    if (!SENDERS[job.kind]) throw new Error(`The app can't send "${job.kind}" yet`)
+    if (!canSend(job.kind)) throw new Error(`The app can't send "${job.kind}" yet`)
     const e = await earlier(job)
     if (e) throw new Wait(`Waiting on an earlier to-do: #${e.id} ${e.action}`)
-    const r = await SENDERS[job.kind](job, ctx)
+    const r = await sendRouted(job, ctx)
+    await saveRoute(job.id, r.route)
     await rpc('metrc_result', { p_id: job.id, p_state: r.state, p_by: by, p_request: r.request ?? null, p_response: r.response ?? null, p_error: r.info ?? null })
     if (r.state === 'sent' && r.siblings?.length) await rpc('metrc_close_siblings', { p_ids: r.siblings, p_by: by, p_note: `With #${job.id}: ${r.info ?? ''}` })
     return { id: job.id, state: r.state, info: r.info }
@@ -109,10 +177,12 @@ export async function runJob(job, ctx) {
     if (e instanceof Skip) {
       // a check that passed, or METRC already shows it: done when Live (a dry run only notes it)
       const st = ctx.live || VERIFY.has(job.kind) ? 'sent' : 'checked'
+      await saveRoute(job.id, e.route)
       await rpc('metrc_result', { p_id: job.id, p_state: st, p_by: by, p_request: null, p_response: null, p_error: e.message })
       return { id: job.id, state: st, info: e.message }
     }
     const state = e instanceof Held ? 'held' : e instanceof Wait ? 'waiting' : 'failed'
+    await saveRoute(job.id, e.route)
     await rpc('metrc_result', { p_id: job.id, p_state: state, p_by: by, p_request: null, p_response: e.body ?? null, p_error: e.message }).catch(() => {})
     return { id: job.id, state, error: e.message }
   }
