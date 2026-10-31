@@ -119,7 +119,7 @@ export function StrainMetrcSheet({ sb, strainId, flash, onClose, isNew }: { sb: 
           </div>
           {hasNursery && <label className="check">
             <input type="checkbox" checked={!!coded} disabled={!plan.can_send || plan.strain.coded} onChange={e => setCoded(e.target.checked)} />
-            Nursery: use the number code {plan.strain.code} instead of the name on 1PN (strain and items){plan.strain.coded ? ' · coded (stays coded)' : ''}
+            Nursery: use the strain code {plan.strain.code} instead of the name on 1PN (strain and items){plan.strain.coded ? ' · coded (stays coded)' : ''}
           </label>}
 
           <div className="row" style={{ gap: 14, margin: '10px 0' }}>

@@ -355,6 +355,7 @@ function StrainRow({ s, p, pallets, focus, onOpen }: { s: Strain; p: StrainProfi
       {photo ? <img className="sthumb" src={photo} alt="" loading="lazy" /> : <span className="sthumb init" style={{ background: bg }}>{initials(s.name)}</span>}
       <span className="grow">
         <span className="stname"><b>{s.name}</b>
+          {s.code && <span className="pill" title="Strain code">{s.code}</span>}
           {s.trial && <span className="pill s-trial">Trial</span>}
           {s.show_on_menu === false && s.active && <span className="pill">Hidden</span>}
           {!s.active && <span className="pill">Retired</span>}

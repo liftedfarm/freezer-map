@@ -47,7 +47,7 @@ export function StrainCardHost({ backend, strains, flash, onChanged }: { backend
   const p = profiles?.get(s.id)
   const profile = p ? <StrainProfileEdit key={s.id} sb={backend.client()} p={p} flash={flash} onSaved={reloadProfiles} /> : <p className="muted">{profiles ? '' : 'Loading…'}</p>
   if (isAnyAdmin()) return (
-    <EditForm key={s.id} list="strains" row={structuredClone(s) as Partial<ListRow>} busy={busy} onClose={close} extra={profile}
+    <EditForm key={s.id} list="strains" row={structuredClone(s) as Partial<ListRow>} busy={busy} onClose={close} extra={<>{s.code && <StrainCode code={s.code} flash={flash} />}{profile}</>}
       onSave={async row => {
         setBusy(true)
         try { await backend.saveRow('strains', row); onChanged(); flash('Saved'); close() }
@@ -57,9 +57,18 @@ export function StrainCardHost({ backend, strains, flash, onChanged }: { backend
   return (
     <div className="scrim" onClick={close}><div className="sheet form" onClick={e => e.stopPropagation()}>
       <div className="sheet-h"><h2><span className="swatch" style={{ background: s.color ?? 'transparent' }} /> {s.name}</h2><button className="ghost" onClick={close}>✕</button></div>
+      {s.code && <StrainCode code={s.code} flash={flash} />}
       {(s.aliases ?? []).length > 0 && <p className="muted">Also called {s.aliases.join(', ')}</p>}
       {s.notes && <p>{s.notes}</p>}
       {profile}
     </div></div>
   )
+}
+
+/** the strain code (first letter + strain number, e.g. J143): used in METRC harvest names and coded nursery items */
+export function StrainCode({ code, flash }: { code: string; flash?: (t: string, bad?: boolean) => void }) {
+  async function copy() { try { await navigator.clipboard.writeText(code); flash?.(`${code} copied`) } catch { flash?.(code) } }
+  return <p className="row" style={{ gap: 8, alignItems: 'center' }}><span className="muted">Strain code</span> <b>{code}</b>
+    <button className="ghost small" onClick={copy}>Copy</button>
+    <span className="muted small">Used in METRC harvest names (OHR-{code}-1C-10232026-1-FF) and coded nursery items.</span></p>
 }

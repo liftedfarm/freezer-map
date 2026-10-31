@@ -165,7 +165,8 @@ function LogPage({ h, d, c, api, flash, onSaved, back }: { h: Harvest; d: CultDa
       {h.planted_strain && h.planted_strain !== h.strain && <p className="muted small">Planted as {h.planted_strain} (renamed at harvest; the planting keeps its name)</p>}
       <div className="row wrap"><span className={`kpill k-${h.kind}`}>{KIND_LABEL[h.kind]}</span>
         <span className="muted">{done ? `Finished · harvested ${fmtD(h.harvested_on, true)}` : h.stage === 'drying' ? `Drying since ${fmtD(h.harvested_on, true)}` : h.stage === 'harvesting' ? `Harvesting · started ${fmtD(h.harvested_on, true)}` : `Scheduled ${fmtD(h.planned_on, true)}`}
-          {h.plants ? ` · ${n0(h.plants)} plants scheduled` : ''}{h.acres ? ` · ${n1(h.acres)} acres` : ''}{cultBatch(h) ? ` · METRC batch ${cultBatch(h)}` : ''}</span></div>
+          {h.plants ? ` · ${n0(h.plants)} plants scheduled` : ''}{h.acres ? ` · ${n1(h.acres)} acres` : ''}</span></div>
+      <BatchName h={h} api={api} busy={busy} run={run} />
       {metrc && metrc.open > 0 && <p className="cnote">Waiting on METRC: {metrc.open} step{metrc.open === 1 ? '' : 's'} on the Compliance to-do list{metrc.due ? `, next due ${new Date(metrc.due).toLocaleString([], { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' })}` : ''}.</p>}
       {!locked && (h.kind === 'ff' || h.kind === 'dry') && <Rename h={h} d={d} api={api} busy={busy} run={run} />}
 
@@ -213,7 +214,26 @@ function LogPage({ h, d, c, api, flash, onSaved, back }: { h: Harvest; d: CultDa
   )
 }
 
-const cultBatch = (h: Harvest) => h.metrc_name ?? null
+/** the METRC harvest name: saved once the plants go to METRC; before that, what it will be. Production Admins can change it until then. */
+function BatchName({ h, api, busy, run }: { h: Harvest; api: CultApi; busy: boolean; run: (f: () => Promise<unknown>, ok: string) => Promise<void> }) {
+  const [b, setB] = useState<{ name: string; saved: boolean; generated: string | null; in_metrc: boolean } | null>(null)
+  const [ed, setEd] = useState<string | null>(null)
+  useEffect(() => { let on = true; api.batchName(h.id).then(x => { if (on) setB(x) }).catch(() => { if (on) setB(null) }); return () => { on = false } }, [h.id, h.metrc_name, h.harvested_on, h.strain, h.field_id])
+  const name = b?.name ?? h.metrc_name
+  if (!name) return null
+  const canEdit = !b?.in_metrc && can('cultivation', 'edit_finished')
+  if (ed != null) return (
+    <div className="row wrap" style={{ gap: 8, margin: '6px 0' }}>
+      <input value={ed} onChange={e => setEd(e.target.value)} style={{ minWidth: 280 }} placeholder={b?.generated ?? ''} />
+      <button className="primary small" disabled={busy} onClick={() => run(() => api.save<Harvest>('cult_harvests', { id: h.id, metrc_name: ed.trim() || null }), ed.trim() ? 'METRC name set' : 'METRC name back to the standard one').then(() => setEd(null))}>Save</button>
+      <button className="ghost small" onClick={() => setEd(null)}>Cancel</button>
+      {b?.generated && <span className="muted small">Blank = {b.generated}</span>}
+    </div>)
+  return (
+    <p className="muted small" style={{ margin: '4px 0' }}>METRC harvest <b>{name}</b>
+      {b && !b.in_metrc && <> · {b.saved ? 'typed by hand' : 'set when the plants go to METRC'}</>}
+      {canEdit && <> · <a className="linkbtn" onClick={() => setEd(b?.saved ? name : '')}>Change</a></>}</p>)
+}
 
 /** planting mix-up: the harvest (and its pallets) take the strain it really is; the planting keeps its planted name */
 function Rename({ h, d, api, busy, run }: { h: Harvest; d: CultData; api: CultApi; busy: boolean; run: (f: () => Promise<unknown>, ok: string) => Promise<void> }) {
@@ -470,7 +490,7 @@ function Finish({ h, busy, run, api, back, ready, raw, pallets }: { h: Harvest; 
   return (
     <section className="dcard">
       <div className="dcard-h"><h3>{cont ? 'Continue tomorrow' : 'Finish harvest'}</h3></div>
-      {cont && <p className="muted small">Today's part is finished as its own harvest. A new harvest is added for the rest of the planting, named {h.metrc_name ? `${h.metrc_name.replace(/-\d+$/, '')}-${(h.day_no ?? 1) + 1}` : 'with -2 on the batch name'}.</p>}
+      {cont && <p className="muted small">Today's part is finished as its own harvest. A new harvest is added for the rest of the planting, with its own METRC name (the next harvest number for this planting).</p>}
       {h.kind === 'ff' && wet > 0 && <p className="cnote">METRC: waste of <b>{n1(waste)} lbs</b> (raw {n1(wet)} − packed {n1(packed)}) is recorded 48 hours after you finish, then the harvest is finished in METRC. Both go on the Compliance to-do list.</p>}
       {h.kind === 'dry' && <p className="cnote">METRC: the plants and {n1(wet)} lbs wet weight go on the Compliance to-do list.</p>}
       <div className="hpal">
