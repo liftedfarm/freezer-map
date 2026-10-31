@@ -11,10 +11,10 @@ const MINOR = 'minorversion=75'
 
 // ---------- Intuit's sign-in addresses ----------
 // Read from Intuit's discovery document (as Intuit recommends, so a change on their side is picked up on its own).
-// Same addresses as Intuit's own OAuth library. If the document can't be read, the last good copy or these built-in ones are used.
+// Addresses from Intuit's "Authorization discovery documents" page. If the document can't be read, the last good copy or these built-in ones are used.
 const DISCOVERY_URL = ENV === 'production'
-  ? 'https://developer.intuit.com/.well-known/openid_configuration/'
-  : 'https://developer.intuit.com/.well-known/openid_sandbox_configuration/'
+  ? 'https://developer.api.intuit.com/.well-known/openid_configuration'
+  : 'https://developer.api.intuit.com/.well-known/openid_sandbox_configuration'
 const BUILT_IN = {
   authorize: 'https://appcenter.intuit.com/connect/oauth2',
   token: 'https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer',
