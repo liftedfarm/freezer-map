@@ -27,6 +27,19 @@ export const pct = (x: number | null | undefined) => (x == null || !isFinite(x) 
 export const sum = (xs: (number | null | undefined)[]) => xs.reduce<number>((a, b) => a + (b ?? 0), 0)
 
 export const KIND_LABEL: Record<HarvestKind, string> = { ff: 'Fresh frozen', dry: 'Dry', combine: 'Combine', strip: 'Strip header' }
+
+/** the in-app harvest name: the METRC harvest name's twin with the strain name instead of the strain code (142)
+ *  SITE-Strain-FIELD-MMDDYYYY-N-KIND, e.g. OHR-Jelly Cake x Oreoz-1C-10232026-1-FF. N = harvest number for the planting. Never saved. */
+export function appHarvestName(h: Harvest, all: Harvest[], c: Ctx): string {
+  const fid = h.field_id ?? (h.planting_id ? c.planting.get(h.planting_id)?.field_id ?? null : null)
+  const field = fid != null ? c.field.get(fid)?.code ?? 'X' : 'X'
+  const on = h.harvested_on ?? h.planned_on ?? new Date().toISOString().slice(0, 10)
+  const key = (x: Harvest) => [x.harvested_on ?? x.planned_on ?? '', x.day_no ?? 1, x.id] as const
+  const before = (a: Harvest, b: Harvest) => { const x = key(a), y = key(b); return x[0] < y[0] || (x[0] === y[0] && (x[1] < y[1] || (x[1] === y[1] && x[2] < y[2]))) }
+  const n = h.planting_id ? 1 + all.filter(o => o.planting_id === h.planting_id && o.id !== h.id && o.status !== 'cancelled' && before(o, h)).length : 1
+  const kind = h.kind === 'ff' ? 'FF' : h.kind === 'dry' ? 'D' : 'BM'
+  return `${h.site}-${h.strain}-${field}-${on.slice(5, 7)}${on.slice(8, 10)}${on.slice(0, 4)}-${n}-${kind}`
+}
 export const KIND_SHORT: Record<HarvestKind, string> = { ff: 'FF', dry: 'Dry', combine: 'Combine', strip: 'Strip' }
 export const isBiomass = (k: HarvestKind) => k === 'combine' || k === 'strip'
 

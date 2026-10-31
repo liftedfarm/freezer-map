@@ -3,7 +3,7 @@ import { TagInput } from '../taginput'
 import { useBack, scrollTop } from '../nav'
 import { useEffect, useRef, useState } from 'react'
 import type { CultApi } from './api'
-import { addDays, calcHarvest, fieldName, fmtD, KIND_LABEL, n0, n1, sum, today } from './calc'
+import { addDays, appHarvestName, calcHarvest, fieldName, fmtD, KIND_LABEL, n0, n1, sum, today } from './calc'
 import type { Ctx } from './calc'
 import type { CPallet, CWeight, CultData, Harvest } from './types'
 import { DateIn, errText, F, NumIn, TextIn } from './ui'
@@ -39,7 +39,7 @@ export function HarvestTab({ d, c, site, api, flash, onSaved, openFirst }: { d: 
   const done = hs.filter(h => h.status === 'done' && h.harvested_on === day)
   // a harvest day card per site with fresh frozen work that day (the picked site only, when one is picked)
   const daySites = site ? (hs.some(h => h.kind === 'ff') ? [site] : []) : [...new Set([...going, ...planned, ...done].filter(h => h.kind === 'ff').map(h => h.site))].sort()
-  const card = (h: Harvest, extra?: string) => <HCard key={h.id} h={h} c={c} extra={extra} onOpen={() => { setOpenId(h.id); scrollTop() }} />
+  const card = (h: Harvest, extra?: string) => <HCard key={h.id} h={h} c={c} name={appHarvestName(h, d.harvests, c)} extra={extra} onOpen={() => { setOpenId(h.id); scrollTop() }} />
   const order = (a: Harvest, b: Harvest) => (a.sched_order ?? 1e9) - (b.sched_order ?? 1e9) || a.site.localeCompare(b.site) || a.strain.localeCompare(b.strain)
   return (
     <div className="hlog">
@@ -90,7 +90,7 @@ function DayGroup({ label, hs, c, card, startOpen }: { label: string; hs: Harves
 }
 
 /** one harvest on the list: what it is, how big, and where it's at */
-function HCard({ h, c, extra, onOpen }: { h: Harvest; c: Ctx; extra?: string; onOpen: () => void }) {
+function HCard({ h, c, name, extra, onOpen }: { h: Harvest; c: Ctx; name: string; extra?: string; onOpen: () => void }) {
   const k = calcHarvest(c, h)
   const pl = h.planting_id ? c.planting.get(h.planting_id) : undefined
   const trial = !!pl?.trial || c.field.get(h.field_id ?? -1)?.kind === 'trials'
@@ -116,11 +116,12 @@ function HCard({ h, c, extra, onOpen }: { h: Harvest; c: Ctx; extra?: string; on
     if (h.acres) facts.push(`${n1(h.acres)} acres`)
     if (k.estBiomass) facts.push(`~${n0(k.estBiomass)} lbs biomass`)
   }
-  if (h.metrc_name) facts.push(h.metrc_name)
+  if (h.metrc_name && h.metrc_name !== name) facts.push(`METRC ${h.metrc_name}`)
   return (
     <button className="li setrow hcard" onClick={onOpen}>
       <div className="grow">
         <div><b>{h.strain}</b>{trial && <> <span className="kpill k-trial" title="Trial strain">T</span></>}{(h.day_no ?? 1) > 1 && <> <span className="kpill s-planned">Day {h.day_no}</span></>} <span className="muted">{h.site} {fieldName(c, h.field_id)}</span> <span className={`kpill k-${h.kind}`}>{KIND_LABEL[h.kind]}</span></div>
+        <div className="muted small">{name}</div>
         <div className="hfacts">{facts.map((f, i) => <span key={i}>{f}</span>)}</div>
         {(going || logged > 0) && h.kind === 'ff' ? <div className="hprog">
             <div className="hprog-bar"><i style={{ width: `${pct ?? 0}%` }} /></div>
@@ -166,6 +167,7 @@ function LogPage({ h, d, c, api, flash, onSaved, back }: { h: Harvest; d: CultDa
       <div className="row wrap"><span className={`kpill k-${h.kind}`}>{KIND_LABEL[h.kind]}</span>
         <span className="muted">{done ? `Finished · harvested ${fmtD(h.harvested_on, true)}` : h.stage === 'drying' ? `Drying since ${fmtD(h.harvested_on, true)}` : h.stage === 'harvesting' ? `Harvesting · started ${fmtD(h.harvested_on, true)}` : `Scheduled ${fmtD(h.planned_on, true)}`}
           {h.plants ? ` · ${n0(h.plants)} plants scheduled` : ''}{h.acres ? ` · ${n1(h.acres)} acres` : ''}</span></div>
+      <p className="small" style={{ margin: '6px 0 0' }}><b>{appHarvestName(h, d.harvests, c)}</b></p>
       <BatchName h={h} api={api} busy={busy} run={run} />
       {metrc && metrc.open > 0 && <p className="cnote">Waiting on METRC: {metrc.open} step{metrc.open === 1 ? '' : 's'} on the Compliance to-do list{metrc.due ? `, next due ${new Date(metrc.due).toLocaleString([], { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' })}` : ''}.</p>}
       {!locked && (h.kind === 'ff' || h.kind === 'dry') && <Rename h={h} d={d} api={api} busy={busy} run={run} />}
