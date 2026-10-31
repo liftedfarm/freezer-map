@@ -60,7 +60,7 @@ import type { LoadCtx } from './loads'
 import { lang, setLang, t } from './i18n'
 import { setMyAccess } from './fold'
 import { WeatherBar } from './weather'
-import type { Grade, Item, HarvestLot, FOrder, ModKey, UnmatchedTag, ShippedCheck, Freezer, Me, FreezerStatus, InvEvent, Load, LoadItem, LoadStop, Pallet, Site, Slot, Snapshot } from './types'
+import type { Grade, Item, HarvestLot, FOrder, ModKey, Freezer, Me, FreezerStatus, InvEvent, Load, LoadItem, LoadStop, Pallet, Site, Slot, Snapshot } from './types'
 
 const backend: Backend = makeBackend()
 // Cultivation module: its own bundle, only loaded for users who have it switched on
