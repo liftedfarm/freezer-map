@@ -363,7 +363,8 @@ export async function sendHarvestPlants(job, ctx) {
     }
     const body = src.slice(0, n).map((p, i) => {
       const last = prog.done + i + 1 === plants
-      return { actualDate: day(h.harvested_on, job), harvestName: name, id: p.id, weight: last ? r4(wet - prog.wet - per * i) : per, dryingLocationId: dry.location_id, unitOfWeightId: lb }
+      return { actualDate: day(d.metrc_date || h.harvested_on, job), harvestName: name,   // d.metrc_date: push day while catching up (146)
+        id: p.id, weight: last ? r4(wet - prog.wet - per * i) : per, dryingLocationId: dry.location_id, unitOfWeightId: lb }
     })
     lastResp = await write(ctx, '/v2/harvests/create', lic, body); lastBody = body
     if (!ctx.live) return { state: 'checked', request: body, response: lastResp, info: `Dry run OK: first ${body.length} of ${plants} plants into ${name} (${per} lb each) from ${loc.location}` }

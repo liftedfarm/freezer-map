@@ -236,7 +236,7 @@ export class CultApi {
     return (data ?? []) as TagRule[]
   }
   /** the harvest's METRC batch name: saved (it has gone to METRC or was typed) or what it will be (141) */
-  batchName(harvestId: number) { return this.rpc<{ name: string; saved: boolean; generated: string | null; in_metrc: boolean } | null>('cult_batch_name_of', { p_harvest: harvestId }) }
+  batchName(harvestId: number) { return this.rpc<{ name: string; saved: boolean; generated: string | null; in_metrc: boolean; metrc_date?: string | null } | null>('cult_batch_name_of', { p_harvest: harvestId }) }
   saveTagRule(r: Partial<TagRule> & { delete?: boolean }) { return this.rpc<TagRule>('save_tag_rule', { p: r }) }
 
   async log(limit = 150): Promise<LogRow[]> {

@@ -218,7 +218,7 @@ function LogPage({ h, d, c, api, flash, onSaved, back }: { h: Harvest; d: CultDa
 
 /** the METRC harvest name: saved once the plants go to METRC; before that, what it will be. Production Admins can change it until then. */
 function BatchName({ h, api, busy, run }: { h: Harvest; api: CultApi; busy: boolean; run: (f: () => Promise<unknown>, ok: string) => Promise<void> }) {
-  const [b, setB] = useState<{ name: string; saved: boolean; generated: string | null; in_metrc: boolean } | null>(null)
+  const [b, setB] = useState<{ name: string; saved: boolean; generated: string | null; in_metrc: boolean; metrc_date?: string | null } | null>(null)
   const [ed, setEd] = useState<string | null>(null)
   useEffect(() => { let on = true; api.batchName(h.id).then(x => { if (on) setB(x) }).catch(() => { if (on) setB(null) }); return () => { on = false } }, [h.id, h.metrc_name, h.harvested_on, h.strain, h.field_id])
   const name = b?.name ?? h.metrc_name
@@ -234,6 +234,7 @@ function BatchName({ h, api, busy, run }: { h: Harvest; api: CultApi; busy: bool
   return (
     <p className="muted small" style={{ margin: '4px 0' }}>METRC harvest <b>{name}</b>
       {b && !b.in_metrc && <> · {b.saved ? 'typed by hand' : 'set when the plants go to METRC'}</>}
+      {b && !b.in_metrc && b.metrc_date && b.metrc_date !== h.harvested_on && <> · METRC harvest date {fmtD(b.metrc_date, true)} (the day it's pushed)</>}
       {canEdit && <> · <a className="linkbtn" onClick={() => setEd(b?.saved ? name : '')}>Change</a></>}</p>)
 }
 
