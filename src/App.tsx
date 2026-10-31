@@ -652,9 +652,8 @@ export default function App() {
   const unplaced = snap.pallets.filter(p => p.status === 'unslotted' && !p.container_id)
   const review = snap.pallets.filter(p => p.needs_review)
   const pendingTags = snap.pallets.filter(p => p.tag_pending)
-  const shippedChecks = (snap.shipped ?? []).filter(c => ix.pallet.has(c.pallet_id))
   const fromHarvest = snap.pallets.filter(p => p.harvest_id != null && p.status === 'in_freezer' && p.slot_id != null && ix.freezer.get(ix.slot.get(p.slot_id)?.freezer_id ?? -1)?.kind === 'staging')
-  const reviewCount = fromHarvest.length + review.length + pendingTags.length + unplaced.length + shippedChecks.length
+  const reviewCount = fromHarvest.length + review.length + pendingTags.length + unplaced.length
   const selected = palletId != null ? (ix.pallet.get(palletId) ?? pool.find(p => p.id === palletId) ?? extra.find(p => p.id === palletId) ?? (scanned?.id === palletId ? scanned : null)) : null
   const where = (p: Pallet): string => {
     const m = p.container_id ? ix.pallet.get(p.container_id) : undefined
@@ -972,16 +971,6 @@ export default function App() {
             })} />
         )}
         {view === 'review' && (<>
-          {shippedChecks.length > 0 && <>
-            <ShippedReview checks={shippedChecks} ix={ix} where={where} busy={busy} onPallet={setPalletId}
-              run={(fn, ok) => act(fn, ok)} />
-            <div style={{ height: 18 }} />
-          </>}
-          {(snap.unmatched ?? []).length > 0 && <>
-            <UnmatchedTags tags={snap.unmatched!} busy={busy} run={(fn, ok) => act(fn, ok)}
-              find={s => { setQuery(s); setView('map') }} />
-            <div style={{ height: 18 }} />
-          </>}
           {fromHarvest.length > 0 && <>
             <ListView title={`Harvest staging (${fromHarvest.length})`} empty=""
               note="Pallets logged at harvest, waiting in Staging. Open Staging on the map and move them into freezers."
@@ -1598,71 +1587,6 @@ function FreezerView({ ix, L, plan, freezer, query, placing, selecting, sel, sib
         })}
       </div>
       {!staging && <div className="door">DOOR</div>}
-    </div>
-  )
-}
-
-function UnmatchedTags({ tags, busy, run, find }: {
-  tags: UnmatchedTag[]; busy: boolean; run: (fn: () => Promise<unknown>, ok: string) => void; find: (strain: string) => void
-}) {
-  const [open, setOpen] = useState(false)
-  return (
-    <div className="list">
-      <h2 className="tap" onClick={() => setOpen(!open)}>{open ? '▾' : '▸'} Shipped Roshi tags not on the map ({tags.length})</h2>
-      <p className="muted">Roshi shipped these METRC tags, but no pallet in the app has them, so the app can't check them. Usually the pallet's tag on the map is wrong or missing, or it was never on the map. Fix the tag on the right pallet (open it, Enter tag), or dismiss.</p>
-      {open && tags.map(t => (
-        <div key={t.package_tag} className="li">
-          <div><b>{t.strain}</b> <span className="muted">{lbs(Number(t.lbs))}{t.tags_on_line > 1 ? ` (line split over ${t.tags_on_line} tags)` : ''}</span></div>
-          <div className="muted mono">{t.package_tag}</div>
-          <div className="muted">{t.sos}{t.last_shipped ? ` · ${t.last_shipped}` : ''}</div>
-          <div className="row reqact">
-            <button className="ghost small" onClick={() => find(t.strain)}>Find {t.strain} pallets</button>
-            <button className="ghost small" onClick={() => { navigator.clipboard?.writeText(t.package_tag) }}>Copy tag</button>
-            <button className="ghost small" disabled={busy} onClick={() => run(() => backend.dismissTag(t.package_tag), 'Dismissed')}>Dismiss</button>
-          </div>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-function ShippedReview({ checks, ix, where, busy, onPallet, run }: {
-  checks: ShippedCheck[]; ix: Index; where: (p: Pallet) => string; busy: boolean; onPallet: (id: number) => void
-  run: (fn: () => Promise<unknown>, ok: string) => void
-}) {
-  const [open, setOpen] = useState<ShippedCheck | null>(null)
-  const p = open ? ix.pallet.get(open.pallet_id) : undefined
-  const left = p ? Math.max(Number(p.current_weight ?? 0) - Number(open!.new_lbs), 0) : 0
-  return (
-    <div className="list">
-      <h2>Shipped in Roshi, still in a freezer ({checks.length})</h2>
-      <p className="muted">Roshi says these METRC tags shipped, but the pallet with that tag is still on the map. Take it out, fix its weight if only part shipped, or mark it handled.</p>
-      {checks.map(c => {
-        const q = ix.pallet.get(c.pallet_id)!
-        return (
-          <button key={c.package_tag} className="li" onClick={() => setOpen(c)}>
-            <div><b>{q.code}</b> {q.strain} <span className="muted">{lbs(Number(q.current_weight ?? 0))} on the map</span> · <span className="warn-t">{lbs(Number(c.new_lbs))} shipped</span></div>
-            <div className="muted">{where(q)} · {c.sos}{c.last_shipped ? ` · last ${c.last_shipped}` : ''}</div>
-          </button>
-        )
-      })}
-      {open && p && (
-        <div className="scrim" onClick={() => setOpen(null)}>
-          <div className="sheet form" onClick={e => e.stopPropagation()}>
-            <div className="sheet-h"><h2>{p.code} · {p.strain}</h2><button className="ghost" onClick={() => setOpen(null)}>✕</button></div>
-            <p>Roshi shipped <b>{lbs(Number(open.new_lbs))}</b> from tag {open.package_tag} ({open.sos}). The map still has <b>{lbs(Number(p.current_weight ?? 0))}</b> on this pallet at {where(p)}{p.og_weight != null && Number(p.og_weight) !== Number(p.current_weight) ? <> (it started at {lbs(Number(p.og_weight))}, so it may already be adjusted)</> : null}.</p>
-            <div className="choices col">
-              <button disabled={busy} onClick={() => { run(() => backend.markShipped(p.id, `Shipped in Roshi (${open.sos})`), `${p.code} taken out of inventory`); setOpen(null) }}>
-                <b>All of it shipped</b> <span className="muted">Take {p.code} out of inventory</span></button>
-              {left > 0 && <button disabled={busy} onClick={() => { run(async () => { await backend.adjustWeight(p.id, left, `Part shipped in Roshi (${open.sos})`); await backend.ackShipped(open.package_tag) }, `${p.code} now ${lbs(left)}`); setOpen(null) }}>
-                <b>Part of it shipped</b> <span className="muted">Set {p.code} to {lbs(left)}</span></button>}
-              <button disabled={busy} onClick={() => { run(() => backend.ackShipped(open.package_tag), 'Marked handled'); setOpen(null) }}>
-                <b>Already handled</b> <span className="muted">The map is right, clear this</span></button>
-              <button onClick={() => { onPallet(p.id); setOpen(null) }}><b>Open the pallet</b> <span className="muted">Split it or fix it by hand</span></button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
