@@ -7,9 +7,37 @@ export const ENV = (process.env.QBO_ENV || 'sandbox').toLowerCase() === 'product
 export const API = process.env.QBO_API_BASE || (ENV === 'production' ? 'https://quickbooks.api.intuit.com' : 'https://sandbox-quickbooks.api.intuit.com')
 export const APP_URL = process.env.STAFF_APP_URL || 'https://freezer-map-8i3h.vercel.app'
 export const REDIRECT = process.env.QBO_REDIRECT_URI || `${APP_URL}/api/qbo/callback`
-const TOKEN_URL = process.env.QBO_TOKEN_URL || 'https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer'
-const REVOKE_URL = 'https://developer.api.intuit.com/v2/oauth2/tokens/revoke'
 const MINOR = 'minorversion=75'
+
+// ---------- Intuit's sign-in addresses ----------
+// Read from Intuit's discovery document (as Intuit recommends, so a change on their side is picked up on its own).
+// Same addresses as Intuit's own OAuth library. If the document can't be read, the last good copy or these built-in ones are used.
+const DISCOVERY_URL = ENV === 'production'
+  ? 'https://developer.intuit.com/.well-known/openid_configuration/'
+  : 'https://developer.intuit.com/.well-known/openid_sandbox_configuration/'
+const BUILT_IN = {
+  authorize: 'https://appcenter.intuit.com/connect/oauth2',
+  token: 'https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer',
+  revoke: 'https://developer.api.intuit.com/v2/oauth2/tokens/revoke',
+}
+const DISCOVERY_KEEP = 12 * 3600000, DISCOVERY_WAIT = 10 * 60000
+let discovered = null, discoveredAt = 0, discoveryFailedAt = 0
+/** only ever send our keys to an https intuit.com address */
+const intuitUrl = u => { try { const x = new URL(u); return x.protocol === 'https:' && (x.hostname === 'intuit.com' || x.hostname.endsWith('.intuit.com')) } catch { return false } }
+export async function endpoints() {
+  const now = Date.now()
+  if (!(discovered && now - discoveredAt < DISCOVERY_KEEP) && now - discoveryFailedAt > DISCOVERY_WAIT) {
+    try {
+      const r = await fetch(DISCOVERY_URL, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(4000) })
+      const d = r.ok ? await r.json() : null
+      if (!d || ![d.authorization_endpoint, d.token_endpoint, d.revocation_endpoint].every(intuitUrl)) throw new Error('unusable discovery document')
+      discovered = { authorize: d.authorization_endpoint, token: d.token_endpoint, revoke: d.revocation_endpoint }
+      discoveredAt = now
+    } catch { discoveryFailedAt = now }   // try again in 10 minutes; meanwhile the last good or built-in addresses
+  }
+  const e = discovered || BUILT_IN
+  return process.env.QBO_TOKEN_URL ? { ...e, token: process.env.QBO_TOKEN_URL } : e
+}
 
 const SB = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL
 const ANON = process.env.VITE_SUPABASE_ANON_KEY
@@ -57,13 +85,13 @@ export async function caller(req) {
 // ---------- QuickBooks login ----------
 const basic = () => 'Basic ' + Buffer.from(`${process.env.QBO_CLIENT_ID}:${process.env.QBO_CLIENT_SECRET}`).toString('base64')
 
-export function authorizeUrl(state) {
+export async function authorizeUrl(state) {
   const q = new URLSearchParams({ client_id: process.env.QBO_CLIENT_ID, response_type: 'code', scope: 'com.intuit.quickbooks.accounting', redirect_uri: REDIRECT, state })
-  return `https://appcenter.intuit.com/connect/oauth2?${q}`
+  return `${(await endpoints()).authorize}?${q}`
 }
 
 async function tokenCall(params) {
-  const r = await fetch(TOKEN_URL, { method: 'POST', headers: { Authorization: basic(), Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(params) })
+  const r = await fetch((await endpoints()).token, { method: 'POST', headers: { Authorization: basic(), Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(params) })
   const j = await r.json().catch(() => ({}))
   if (!r.ok) { const e = new Error(j.error_description || j.error || `QuickBooks sign-in failed (${r.status})`); e.status = r.status; e.code = j.error; throw e }
   return j
@@ -79,7 +107,7 @@ const tokenRow = t => ({
 export const exchangeCode = code => tokenCall({ grant_type: 'authorization_code', code, redirect_uri: REDIRECT }).then(tokenRow)
 
 export async function revoke(token) {
-  await fetch(REVOKE_URL, { method: 'POST', headers: { Authorization: basic(), Accept: 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) }).catch(() => {})
+  await fetch((await endpoints()).revoke, { method: 'POST', headers: { Authorization: basic(), Accept: 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) }).catch(() => {})
 }
 
 /** the connection for this environment, with a fresh access token */

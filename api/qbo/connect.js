@@ -12,5 +12,5 @@ export default async function handler(req, res) {
   // old unfinished sign-ins expire after 15 minutes
   await table(`qbo_oauth_states?created_at=lt.${new Date(Date.now() - 15 * 60000).toISOString()}`, { method: 'DELETE' }).catch(() => {})
   await table('qbo_oauth_states', { method: 'POST', body: JSON.stringify({ state, email: me.email, env: ENV }) })
-  return send(res, 200, { url: authorizeUrl(state), env: ENV })
+  return send(res, 200, { url: await authorizeUrl(state), env: ENV })
 }
